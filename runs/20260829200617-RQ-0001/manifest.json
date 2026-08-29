@@ -13,9 +13,9 @@
       }
     ]
   },
-  "status": "passed",
+  "status": "approved",
   "createdAt": "2026-08-29T20:06:17.040Z",
-  "updatedAt": "2026-08-29T21:05:51.977Z",
+  "updatedAt": "2026-08-29T21:07:03.436Z",
   "steps": [
     {
       "agent": "handoff",
@@ -41,5 +41,7 @@
     "lint": "skipped",
     "tests": "passed",
     "security": "skipped"
-  }
+  },
+  "approvedAt": "2026-08-29T21:07:03.436Z",
+  "approvedBy": "Codex review"
 }
