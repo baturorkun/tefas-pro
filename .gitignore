@@ -1,6 +1,9 @@
 node_modules/
 dist/
 .env
+db/.env
+db/.secrets/
+!db/.env.example
 # Keep lightweight run history; generated artifacts and logs stay local.
 runs/*
 !runs/.gitkeep
