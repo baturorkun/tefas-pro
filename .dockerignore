@@ -1,0 +1,11 @@
+.git
+.gitlab
+.env
+node_modules
+dist
+runs
+handoffs
+references
+requirements
+constraints
+*.md
