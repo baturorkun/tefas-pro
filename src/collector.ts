@@ -206,6 +206,30 @@ async function lastSizeDate(pool: pg.Pool): Promise<string | null> {
   return r.rows[0]?.d ?? null;
 }
 
+/**
+ * Dört kaynağın aynı güne ait alanlarını tek satırda birleştirir.
+ *
+ * Her kaynak ayrı upsert edilirse aynı (fund_code, trade_date) satırı birden çok
+ * kez yazılır ve sayaç gerçek satır sayısını aşar: backfill 33.336 raporlarken
+ * veritabanında 23.739 satır vardı. Önce burada birleştirilir, sonra tek sorguda
+ * yazılır.
+ */
+export function mergeDailySources(
+  code: string,
+  nav: { date: string; price: number } | null,
+  returns: { date: string; returnPct: number }[],
+  flows: { date: string; netFlow: number }[],
+): DailyRow[] {
+  const rows = new Map<string, DailyRow>();
+  const put = (date: string, patch: Partial<DailyRow>): void => {
+    rows.set(date, { ...(rows.get(date) ?? { fund_code: code, trade_date: date }), ...patch });
+  };
+  if (nav !== null) put(nav.date, { nav_per_share: nav.price });
+  for (const r of returns) put(r.date, { daily_return_pct: r.returnPct });
+  for (const f of flows) put(f.date, { net_flow: f.netFlow });
+  return [...rows.values()];
+}
+
 /** O fon için saklanmış son akış günü; artımlı çekimin başlangıcını belirler. */
 async function lastFlowDate(pool: pg.Pool, code: string): Promise<string | null> {
   const r = await pool.query<{ d: string }>(
@@ -224,31 +248,13 @@ async function ingestFund(
   flowStart: string,
   runId: number,
 ): Promise<number> {
-  let n = 0;
-
   const price = await client.price(code);
-  n += await upsertDaily(
-    pool,
-    [{ fund_code: code, trade_date: price.date, nav_per_share: price.price }],
-    runId,
-  );
   await throttle();
-
   const returns = await client.volatility(code);
-  n += await upsertDaily(
-    pool,
-    returns.map((r) => ({ fund_code: code, trade_date: r.date, daily_return_pct: r.returnPct })),
-    runId,
-  );
   await throttle();
-
   const flows = await client.cashflow(code, flowStart, today);
-  n += await upsertDaily(
-    pool,
-    flows.map((f) => ({ fund_code: code, trade_date: f.date, net_flow: f.netFlow })),
-    runId,
-  );
   await throttle();
+  const rows = mergeDailySources(code, { date: price.date, price: price.price }, returns, flows);
 
   const info = await client.info(code);
   await pool.query(
@@ -261,6 +267,9 @@ async function ingestFund(
        risk = EXCLUDED.risk, updated_at = now()`,
     [code, info.taxPct, info.managementFeePct, info.buyValorDays, info.sellValorDays, info.risk],
   );
+
+  let n = await upsertDaily(pool, rows, runId);
+
   if (info.allocation.length > 0) {
     const res = await pool.query(
       `INSERT INTO fact_fund_allocation (fund_code, as_of_date, asset_class, weight_pct, ingest_run_id)
@@ -350,7 +359,18 @@ async function ingestYieldSnapshot(
        yield_6m = EXCLUDED.yield_6m, yield_ytd = EXCLUDED.yield_ytd,
        yield_1y = EXCLUDED.yield_1y, yield_3y = EXCLUDED.yield_3y,
        yield_5y = EXCLUDED.yield_5y, ingest_run_id = EXCLUDED.ingest_run_id,
-       updated_at = now()`,
+       updated_at = now()
+     -- Diger fact tablolariyla ayni kural: degeri degismemis satir yeniden
+     -- yazilmaz. Aksi halde ayni gun ikinci kez kosuldugunda 26 satir bosuna
+     -- yazilir ve rows_upserted gercek degisimi yansitmaz.
+     WHERE (fact_fund_yield_snapshot.yield_1m, fact_fund_yield_snapshot.yield_3m,
+            fact_fund_yield_snapshot.yield_6m, fact_fund_yield_snapshot.yield_ytd,
+            fact_fund_yield_snapshot.yield_1y, fact_fund_yield_snapshot.yield_3y,
+            fact_fund_yield_snapshot.yield_5y)
+        IS DISTINCT FROM
+           (EXCLUDED.yield_1m, EXCLUDED.yield_3m, EXCLUDED.yield_6m,
+            EXCLUDED.yield_ytd, EXCLUDED.yield_1y, EXCLUDED.yield_3y,
+            EXCLUDED.yield_5y)`,
     [
       JSON.stringify(
         rows.map((r) => ({
@@ -377,6 +397,23 @@ async function main(): Promise<void> {
   const pool = makePool();
   const client = new FintablesClient();
 
+  // Toplanacak fon var mi? Bu bir ingest denemesi degil, yapilandirma kontrolu:
+  // ingest_run satiri acilmadan once yapilir ki bos takip listesi tabloda
+  // "basarisiz toplama" gibi gorunmesin.
+  const codes =
+    args.funds ??
+    (
+      await pool.query<{ fund_code: string }>(
+        'SELECT fund_code FROM watchlist ORDER BY fund_code',
+      )
+    ).rows.map((r) => r.fund_code);
+  if (codes.length === 0) {
+    await pool.end();
+    console.error('Takip listesi boş — önce pnpm db:seed');
+    process.exitCode = 1;
+    return;
+  }
+
   const runId = (
     await pool.query<{ id: number }>(
       `INSERT INTO ingest_run (source, status) VALUES ('fintables-watchlist', 'running')
@@ -389,14 +426,6 @@ async function main(): Promise<void> {
   let failed = 0;
 
   try {
-    const codes =
-      args.funds ??
-      (
-        await pool.query<{ fund_code: string }>(
-          'SELECT fund_code FROM watchlist ORDER BY fund_code',
-        )
-      ).rows.map((r) => r.fund_code);
-    if (codes.length === 0) throw new Error('Takip listesi boş — önce pnpm db:seed');
 
     // Evren yanıtı tüm fonları taşır; yalnız takip listesindekiler yazılır.
     const universe = await client.fundUniverse();

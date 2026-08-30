@@ -5,6 +5,7 @@ import {
   dailyWindows,
   isWeekend,
   monthlyWindows,
+  mergeDailySources,
   monthsBack,
   parseArgs,
   prevWeekday,
@@ -99,5 +100,34 @@ describe('parseWatchlistFile', () => {
   });
   it('geçersiz durumda patlar', () => {
     expect(() => parseWatchlistFile('AAA sahip')).toThrow(/geçersiz durum/);
+  });
+});
+
+describe('mergeDailySources', () => {
+  // Dört kaynak aynı güne farklı alanlar yazar. Ayrı ayrı upsert edilirlerse
+  // aynı satır birden çok kez yazılır ve ingest_run.rows_upserted gerçek satır
+  // sayısını aşar — backfill 33.336 raporlarken veritabanında 23.739 satır vardı.
+  it('aynı günün alanlarını tek satırda birleştirir', () => {
+    const rows = mergeDailySources(
+      'THF',
+      { date: '2026-08-28', price: 2.73 },
+      [{ date: '2026-08-28', returnPct: 1.8 }, { date: '2026-08-27', returnPct: 0.4 }],
+      [{ date: '2026-08-28', netFlow: 100 }],
+    );
+    expect(rows).toHaveLength(2);
+    const son = rows.find((r) => r.trade_date === '2026-08-28');
+    expect(son).toEqual({
+      fund_code: 'THF', trade_date: '2026-08-28',
+      nav_per_share: 2.73, daily_return_pct: 1.8, net_flow: 100,
+    });
+  });
+  it('yalnız bir kaynağı olan gün de satır üretir', () => {
+    const rows = mergeDailySources('X', null, [{ date: '2026-01-02', returnPct: 1 }], []);
+    expect(rows).toEqual([
+      { fund_code: 'X', trade_date: '2026-01-02', daily_return_pct: 1 },
+    ]);
+  });
+  it('hiç veri yoksa boş döner', () => {
+    expect(mergeDailySources('X', null, [], [])).toEqual([]);
   });
 });
