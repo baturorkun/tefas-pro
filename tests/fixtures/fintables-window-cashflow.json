@@ -1,0 +1,32 @@
+{
+ "start": "2026-08-26T00:00:00",
+ "end": "2026-08-27T00:00:00",
+ "results": [
+  {
+   "code": "AAL",
+   "management_company_id": "APY",
+   "title": "ATA PORTFÖY PARA PİYASASI (TL) FONU",
+   "type": "Para Piyasası Şemsiye Fonu",
+   "tefas": true,
+   "cumulative_cashflow": -154080385.696,
+   "end_aum": 1939154327,
+   "start_investor_count": 4469,
+   "end_investor_count": 4460,
+   "investor_count_change": -0.20138732880354506,
+   "yield": 0.0889
+  },
+  {
+   "code": "APBDL.F",
+   "management_company_id": "PGA",
+   "title": "ALBARAKA PORTFÖY BİRİNCİ GAYRİMENKUL YATIRIM FONU",
+   "type": null,
+   "tefas": false,
+   "cumulative_cashflow": null,
+   "end_aum": 52223444,
+   "start_investor_count": 6,
+   "end_investor_count": 6,
+   "investor_count_change": null,
+   "yield": -0.1044
+  }
+ ]
+}

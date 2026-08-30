@@ -237,6 +237,67 @@ export function parseYield(raw: unknown): YieldRow[] {
   });
 }
 
+
+// ─── Toplu (bulk) pencere endpoint'leri ─────────────────────────────────────
+// Fon büyüklüğünün geçmişi için tek kaynak bunlar: fon başına bir AUM endpoint'i
+// yok (/funds/{KOD}/aum|size|growth|market-cap|shares|history|statistics/ hepsi
+// 404). Bir istek tüm evreni verdiği için maliyeti gece +2 istektir.
+
+/** `/funds/growth/?start=&end=` — pencere sonundaki büyüklük ve pay adedi. */
+export interface WindowSize {
+  code: string;
+  endAum: number | null;
+  endShareCount: number | null;
+  /** Pencere getirisi; iş günü tespiti için kullanılır, saklanmaz. */
+  changePct: number | null;
+}
+
+/**
+ * `/funds/cashflow/?start=&end=` — pencere sonundaki yatırımcı sayısı.
+ *
+ * Bu endpoint `cumulative_cashflow` da döndürür ama **bilerek alınmaz**:
+ * 1 günlük pencerede AUM aritmetiğinden 5 kat sapıyor (RQ-0002'de ölçüldü).
+ * Net akış yalnız fon başına `/funds/{KOD}/cashflow/` endpoint'inden gelir.
+ */
+export interface WindowInvestors {
+  code: string;
+  endInvestorCount: number | null;
+}
+
+function windowResults(raw: unknown, ctx: string): Record<string, unknown>[] {
+  const results = asRecord(raw, ctx)['results'];
+  if (!Array.isArray(results)) throw new Error(`fintables ${ctx}: \`results\` dizisi yok`);
+  return results.map((r) => asRecord(r, ctx));
+}
+
+export function parseWindowSize(raw: unknown): WindowSize[] {
+  return windowResults(raw, 'growth').map((row) => ({
+    code: reqString(row, 'code', 'growth'),
+    endAum: numField(row, 'end_aum', 'growth'),
+    endShareCount: numField(row, 'end_shares_active', 'growth'),
+    changePct: numField(row, 'aum_change', 'growth'),
+  }));
+}
+
+export function parseWindowInvestors(raw: unknown): WindowInvestors[] {
+  return windowResults(raw, 'cashflow-window').map((row) => ({
+    code: reqString(row, 'code', 'cashflow-window'),
+    endInvestorCount: numField(row, 'end_investor_count', 'cashflow-window'),
+  }));
+}
+
+/**
+ * Hafta sonu ve tatilde API son iş gününün değerini taşır (carry-forward): o
+ * pencerede pratikte her fonun değişimi 0 olur. Ölçüm: 2026-08-22/23'te %99.9,
+ * iş günlerinde %0.1 — 0.90 eşiği ikisinin de çok uzağında. Cumartesi ve Pazar
+ * takvimden bilindiği için istek atılmaz; bu kontrol resmî tatiller içindir.
+ */
+export function isCarriedForwardWindow(rows: WindowSize[], threshold = 0.9): boolean {
+  if (rows.length === 0) return true;
+  const unchanged = rows.filter((r) => (r.changePct ?? 0) === 0).length;
+  return unchanged / rows.length >= threshold;
+}
+
 /** Chrome TLS taklidiyle (impit) API'ye tarayıcısız erişir. Durumsuz. */
 export class FintablesClient {
   private readonly impit: Impit;
@@ -274,6 +335,18 @@ export class FintablesClient {
 
   async yields(): Promise<YieldRow[]> {
     return parseYield(await this.fetchJson('/funds/yield/'));
+  }
+
+  /** Pencere sonundaki büyüklük ve pay adedi — tüm evren, tek istek. */
+  async windowSize(start: string, end: string): Promise<WindowSize[]> {
+    return parseWindowSize(await this.fetchJson(`/funds/growth/?start=${start}&end=${end}`));
+  }
+
+  /** Pencere sonundaki yatırımcı sayısı — tüm evren, tek istek. */
+  async windowInvestors(start: string, end: string): Promise<WindowInvestors[]> {
+    return parseWindowInvestors(
+      await this.fetchJson(`/funds/cashflow/?start=${start}&end=${end}`),
+    );
   }
 
   /** Ham JSON — keşif ve fixture üretimi için. */

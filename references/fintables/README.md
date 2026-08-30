@@ -24,6 +24,8 @@ index'te listelenmez ama çalışır. Kayıt: `samples/api-root.json`.
 | `GET /funds/{KOD}/cashflow/?start_date=&end_date=` | Günlük net akış serisi | 122 nokta / 335 ms |
 | `GET /funds/{KOD}/info/` | Stopaj, valör, ücret, pay adedi, yatırımcı, dağılım | tek istek |
 | `GET /funds/yield/` | 2395 fonun `yield_1m…5y` değerleri | tek istek |
+| `GET /funds/growth/?start=&end=` | Pencere sonu AUM + pay adedi, **tüm evren** | tek istek |
+| `GET /funds/cashflow/?start=&end=` | Pencere sonu yatırımcı sayısı, tüm evren | tek istek |
 
 ## Neden fon başına, neden toplu değil
 
@@ -67,6 +69,44 @@ aritmetiğiyle birebir uyuşuyor.
   ikisini ayırt eder: null veriyi, eksik alan sözleşmeyi ilgilendirir.
 - **`/fund-screener/` üyelik ister** (`403 {"non_field_errors":["Fintables'e üye
   değilsiniz."]}`). Kullanılan altı endpoint public'tir.
+
+## Aralık daraltma: hangisi kabul ediyor
+
+| Endpoint | Tarih parametresi | Ölçüm |
+|---|---|---|
+| `/funds/{KOD}/volatility/` | **Yok sayılıyor** | `start_date`/`end_date` de `start`/`end` de verilse TLY için hep 1258 nokta / 97 KB |
+| `/funds/{KOD}/cashflow/` | **Çalışıyor** | 6 ay 122 nokta / 6 KB, **12 ay 250 nokta / 11 KB**, hepsi tek istek |
+
+Getiri geçmişi daraltılamaz; her run'da tam gelir. İstek sayısı zaten fon başına
+sabit olduğu için bu ek maliyet üretmez ve kaynak bir değeri revize ederse tam
+çekim onu kendiliğinden düzeltir. Nakit akışı daraltılabildiği için artımlı
+çekilir, ama saklanan aralık 12 aydır: 6 aya göre farkı 5 KB ve karşılığında
+aylık akış günlükten türetilebilir hale gelir.
+
+## Fon büyüklüğünün tek kaynağı toplu pencere
+
+Fon başına büyüklük endpoint'i **yok**: `/funds/{KOD}/aum|size|growth|market-cap|
+investors|shares|history|statistics/` hepsi 404. AUM, pay adedi ve yatırımcı
+sayısının geçmişi yalnız toplu pencere endpoint'lerinden gelir. Bir istek tüm
+evreni verdiği için gecelik maliyet +2 istektir.
+
+Bu endpoint'lerin `cumulative_cashflow` alanı **kullanılmaz** (yukarıdaki
+ölçüme bakınız); yalnız `end_aum`, `end_shares_active` ve `end_investor_count`
+alınır.
+
+## Aylık değerler türetilir, çekilmez
+
+2026 Temmuz ölçümü, günlük seriden türetilen ile API'nin aylık penceresi:
+
+| Fon | Getiri türetilen | Getiri API | Akış türetilen | Akış API |
+|---|---|---|---|---|
+| DFI | %14,0042 | %14,0042 | 10.835.398.590 | 10.981.794.194 |
+| IVY | %-4,3217 | %-4,3217 | -43.504.155 | -48.465.329 |
+| THF | %-3,1153 | %-3,1153 | 134.014.631 | 131.118.476 |
+
+Aylık getiri dört ondalıkta birebir tutuyor. Aylık akışta iki kaynak %1-10
+ayrışıyor ve güvenilir olan türetilendir — fon başına günlük seri AUM
+aritmetiğiyle uyuşuyor, toplu endpoint'in akış alanı uyuşmuyor.
 
 ## Ban riski
 

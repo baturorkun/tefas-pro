@@ -37,15 +37,30 @@ export function parseWatchlistFile(text: string): WatchlistEntry[] {
   return out;
 }
 
-export async function upsertUniverse(pool: pg.Pool, funds: FundUniverseRow[]): Promise<number> {
-  const payload = funds.map((f) => ({
-    fund_code: f.code,
-    title: f.title,
-    fund_type: f.fundType,
-    umbrella_type: f.umbrellaType,
-    management_company_id: f.managementCompanyId,
-    is_byf: f.isByf,
-  }));
+/**
+ * Fon evreninden YALNIZ verilen kodları dim_fund'a yazar.
+ *
+ * Toplu endpoint'ler 2822 fonluk evrenin tamamını döndürür; veritabanı takip
+ * listesiyle sınırlı tutulur. Takip listesine yeni fon eklenirken kod/unvan
+ * araması bu tablodan değil, o an `/funds/` çağrılarak yapılır.
+ */
+export async function upsertWatchedFunds(
+  pool: pg.Pool,
+  funds: FundUniverseRow[],
+  codes: string[],
+): Promise<number> {
+  const wanted = new Set(codes.map((c) => c.toUpperCase()));
+  const payload = funds
+    .filter((f) => wanted.has(f.code))
+    .map((f) => ({
+      fund_code: f.code,
+      title: f.title,
+      fund_type: f.fundType,
+      umbrella_type: f.umbrellaType,
+      management_company_id: f.managementCompanyId,
+      is_byf: f.isByf,
+    }));
+  if (payload.length === 0) return 0;
   const res = await pool.query(
     `INSERT INTO dim_fund (fund_code, title, fund_type, umbrella_type,
                            management_company_id, is_byf, last_seen_at)
@@ -96,8 +111,13 @@ async function main(): Promise<void> {
   const client = new FintablesClient();
   try {
     const universe = await client.fundUniverse();
-    const dimRows = await upsertUniverse(pool, universe);
-    console.log(`Fon evreni: ${universe.length} fon → dim_fund ${dimRows} satır`);
+    const codes = entries.map((e) => e.code);
+    const missing = codes.filter((c) => !universe.some((f) => f.code === c));
+    if (missing.length > 0) {
+      throw new Error(`watchlist: fon evreninde bulunamayan kod(lar): ${missing.join(', ')}`);
+    }
+    const dimRows = await upsertWatchedFunds(pool, universe, codes);
+    console.log(`Fon evreni ${universe.length} fon döndü, takip edilen ${dimRows} tanesi yazıldı`);
     const watched = await applyWatchlist(pool, entries);
     console.log(`Takip listesi: ${watched} fon (${file})`);
   } finally {
