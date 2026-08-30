@@ -1,0 +1,47 @@
+# PostgreSQL and read-only pgweb for local macOS and remote Linux Podman hosts.
+# Host ports intentionally bind to loopback. Use an SSH tunnel for remote pgweb.
+services:
+  postgres:
+    image: docker.io/library/postgres:16
+    container_name: tefas-pro-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${TEFAS_POSTGRES_DB:-tefas}
+      POSTGRES_USER: ${TEFAS_POSTGRES_USER:-tefas}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+      POSTGRES_INITDB_ARGS: --encoding=UTF8
+    ports:
+      - "127.0.0.1:${TEFAS_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - tefas_pgdata:/var/lib/postgresql/data
+      - ./.secrets/postgres-password:/run/secrets/postgres-password:ro,Z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  pgweb:
+    image: docker.io/sosedoff/pgweb:0.17.0
+    container_name: tefas-pro-pgweb
+    restart: unless-stopped
+    command:
+      - pgweb
+      - --bind=0.0.0.0
+      - --listen=8081
+      - --readonly
+      - --host=postgres
+      - --port=5432
+      - --user=${TEFAS_POSTGRES_USER:-tefas}
+      - --passfile=/run/secrets/pgweb-pgpass
+      - --db=${TEFAS_POSTGRES_DB:-tefas}
+      - --ssl=disable
+    ports:
+      - "127.0.0.1:${TEFAS_PGWEB_PORT:-8081}:8081"
+    volumes:
+      - ./.secrets/pgpass:/run/secrets/pgweb-pgpass:ro,Z,U
+    depends_on:
+      - postgres
+
+volumes:
+  tefas_pgdata:

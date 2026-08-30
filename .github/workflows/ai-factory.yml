@@ -44,7 +44,6 @@ jobs:
       AI_CODEX_REASONING_EFFORT: ${{ vars.AI_CODEX_REASONING_EFFORT || 'medium' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
-      CODEX_HOME: ${{ runner.temp }}/aifactory-codex
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_API_URL: ${{ github.api_url }}
       GITHUB_REPOSITORY: ${{ github.repository }}
@@ -77,6 +76,10 @@ jobs:
 
       - name: Install AI Factory and project dependencies
         run: |
+          # actions/checkout marks the workspace safe under a temporary HOME that
+          # later steps do not see. In a container job the workspace belongs to the
+          # host runner user, so git refuses to discover the repository here.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git clone --branch "$AIFACTORY_REF" --single-branch "$AIFACTORY_REPO_URL" ../aifactory
           pnpm --dir ../aifactory install --frozen-lockfile
           pnpm --dir ../aifactory -r run typecheck
@@ -92,6 +95,7 @@ jobs:
         env:
           REQUIREMENT_ID: ${{ steps.requirement.outputs.id }}
           SOURCE_REF: ${{ github.sha }}
+          CODEX_HOME: ${{ runner.temp }}/aifactory-codex
         run: |
           DECISION="$(pnpm --dir ../aifactory --silent factory -- --project "$GITHUB_WORKSPACE" requirement decision "$REQUIREMENT_ID")"
           case "$DECISION" in
