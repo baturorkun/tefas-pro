@@ -13,25 +13,28 @@
       }
     ]
   },
-  "status": "running",
+  "status": "approved",
   "createdAt": "2026-08-30T12:10:28.773Z",
-  "updatedAt": "2026-08-30T12:10:54.926Z",
+  "updatedAt": "2026-08-30T12:11:14.073Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-08-30T12:10:54.926Z"
+      "status": "passed",
+      "startedAt": "2026-08-30T12:10:54.926Z",
+      "finishedAt": "2026-08-30T12:10:59.603Z",
+      "retries": 0
     }
   ],
   "artifacts": [],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
-  }
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "skipped"
+  },
+  "approvedAt": "2026-08-30T12:11:14.074Z",
+  "approvedBy": "batur"
 }
