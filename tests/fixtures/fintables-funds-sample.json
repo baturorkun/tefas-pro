@@ -1,0 +1,77 @@
+[
+ {
+  "code": "AC3",
+  "fund_type": "mutual",
+  "title": "PARDUS PORTFÖY ÜÇÜNCÜ SERBEST (DÖVİZ) FON",
+  "type": "Serbest Şemsiye Fonu",
+  "management_company": {
+   "code": "PA1",
+   "title": "PARDUS PORTFÖY YÖNETİMİ A.Ş.",
+   "logo": "https://storage.fintables.com/media/uploads/fund-management-logos/pardus_portfoy_icon.png"
+  },
+  "categories": [
+   {
+    "title": "Döviz Fon",
+    "slug": "doviz-fon"
+   }
+  ],
+  "has_portfolio": false,
+  "is_byf": false
+ },
+ {
+  "code": "AE1",
+  "fund_type": "pension",
+  "title": "AGESA HAYAT VE EMEKLİLİK A.Ş. BİRİNCİ PARA PİYASASI EMEKLİLİK YATIRIM FONU",
+  "type": "Para Piyasası Fonu",
+  "management_company": {
+   "code": "BEF2370",
+   "title": "AGESA HAYAT VE EMEKLİLİK A.Ş.",
+   "logo": "https://storage.fintables.com/media/uploads/fund-management-logos/AgeSA_Emeklilik_icon.png"
+  },
+  "categories": [],
+  "has_portfolio": false,
+  "is_byf": false
+ },
+ {
+  "code": "AH8",
+  "fund_type": "pension",
+  "title": "ANADOLU HAYAT EMEKLİLİK A.Ş. KARMA EMEKLİLİK YATIRIM FONU",
+  "type": "Karma Fon",
+  "management_company": {
+   "code": "BEF860",
+   "title": "ANADOLU HAYAT EMEKLİLİK A.Ş.",
+   "logo": "https://storage.fintables.com/media/uploads/fund-management-logos/Anadolu_Emeklilik_icon.png"
+  },
+  "categories": [],
+  "has_portfolio": false,
+  "is_byf": false
+ },
+ {
+  "code": "ALR",
+  "fund_type": "pension",
+  "title": "ALLIANZ YAŞAM VE EMEKLİLİK A.Ş. KARMA EMEKLİLİK YATIRIM FONU",
+  "type": "Karma Fon",
+  "management_company": {
+   "code": "BEF1844",
+   "title": "ALLIANZ YAŞAM VE EMEKLİLİK A.Ş.",
+   "logo": "https://storage.fintables.com/media/uploads/fund-management-logos/Allianz_Sigorta_icon_GzYbteh.png"
+  },
+  "categories": [],
+  "has_portfolio": false,
+  "is_byf": false
+ },
+ {
+  "code": "ALZ",
+  "fund_type": "pension",
+  "title": "ALLIANZ YAŞAM VE EMEKLİLİK A.Ş. BAŞLANGIÇ EMEKLİLİK YATIRIM FONU",
+  "type": "Başlangıç Fonu",
+  "management_company": {
+   "code": "BEF1844",
+   "title": "ALLIANZ YAŞAM VE EMEKLİLİK A.Ş.",
+   "logo": "https://storage.fintables.com/media/uploads/fund-management-logos/Allianz_Sigorta_icon_GzYbteh.png"
+  },
+  "categories": [],
+  "has_portfolio": false,
+  "is_byf": false
+ }
+]

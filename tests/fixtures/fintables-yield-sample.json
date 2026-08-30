@@ -1,0 +1,62 @@
+{
+ "start": null,
+ "end": null,
+ "results": [
+  {
+   "code": "AAK",
+   "management_company_id": "APY",
+   "title": "ATA PORTFÖY ÇOKLU VARLIK DEĞİŞKEN FONU",
+   "type": "Değişken Şemsiye Fonu",
+   "tefas": false,
+   "yield_1m": null,
+   "yield_3m": null,
+   "yield_6m": null,
+   "yield_ytd": null,
+   "yield_1y": null,
+   "yield_3y": null,
+   "yield_5y": null
+  },
+  {
+   "code": "AAL",
+   "management_company_id": "APY",
+   "title": "ATA PORTFÖY PARA PİYASASI (TL) FONU",
+   "type": "Para Piyasası Şemsiye Fonu",
+   "tefas": true,
+   "yield_1m": 1.81,
+   "yield_3m": 6.77,
+   "yield_6m": 17.24,
+   "yield_ytd": 24.5,
+   "yield_1y": 42.48,
+   "yield_3y": 244.88,
+   "yield_5y": 395.92
+  },
+  {
+   "code": "AAS",
+   "management_company_id": "APY",
+   "title": "ATA PORTFÖY FON SEPETİ SERBEST FON",
+   "type": "Serbest Şemsiye Fonu",
+   "tefas": true,
+   "yield_1m": 9.52,
+   "yield_3m": 8.17,
+   "yield_6m": 21.6,
+   "yield_ytd": 24.12,
+   "yield_1y": 39.59,
+   "yield_3y": 133.33,
+   "yield_5y": 274.41
+  },
+  {
+   "code": "AAV",
+   "management_company_id": "APY",
+   "title": "ATA PORTFÖY İKİNCİ HİSSE SENEDİ (TL) FONU (HİSSE SENEDİ YOĞUN FON)",
+   "type": "Hisse Senedi Şemsiye Fonu",
+   "tefas": true,
+   "yield_1m": 6.81,
+   "yield_3m": 6.09,
+   "yield_6m": 2.25,
+   "yield_ytd": 22.07,
+   "yield_1y": 23.22,
+   "yield_3y": 99.09,
+   "yield_5y": 1252.34
+  }
+ ]
+}
