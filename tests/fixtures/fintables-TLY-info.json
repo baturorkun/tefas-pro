@@ -1,0 +1,43 @@
+{
+ "tax": 0.175,
+ "management_fee": 2,
+ "buy_valor": 1,
+ "sell_valor": 2,
+ "risk": 7,
+ "shares_active": 29887510,
+ "investor_count": 0,
+ "last_asset": [
+  {
+   "title": "Finansman Bonosu",
+   "value": 4.01
+  },
+  {
+   "title": "Hisse Senedi",
+   "value": 79.76
+  },
+  {
+   "title": "Özel Sektör Kira Sert.",
+   "value": 3.06
+  },
+  {
+   "title": "Repo",
+   "value": -7.61
+  },
+  {
+   "title": "Ters-Repo",
+   "value": 14.19
+  },
+  {
+   "title": "Vadeli İşlemler Nakit Teminatları",
+   "value": 0.13
+  },
+  {
+   "title": "Mevduat (TL)",
+   "value": 1.53
+  },
+  {
+   "title": "Yatırım Fonları Katılma Payları",
+   "value": 4.93
+  }
+ ]
+}
