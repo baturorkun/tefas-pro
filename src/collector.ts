@@ -71,10 +71,16 @@ function throttle(): Promise<void> {
   return sleep(THROTTLE_MS + Math.floor(Math.random() * 400));
 }
 
-/** Gün grain'indeki alanlar farklı endpoint'lerden gelir; hepsi aynı satıra
- *  yazılır ve yalnız kendi sütununu günceller. */
-type DailyField = 'nav_per_share' | 'daily_return_pct' | 'net_flow' | 'shares_active' | 'investor_count';
-
+/**
+ * Gün grain'indeki alanlar farklı endpoint'lerden gelir (/price/, /volatility/,
+ * /cashflow/, /info/) ve hepsi aynı satıra yazılır. Bir çağrı yalnız elindeki
+ * alanları taşır; geri kalanı undefined bırakır ve COALESCE sayesinde daha önce
+ * yazılmış değer korunur. Bu yüzden alan listesi SQL'e gömülü ve sabittir —
+ * sorgu metni girdiye göre değişmez.
+ *
+ * COALESCE'in sonucu: bir alan bir kez dolduktan sonra NULL'a döndürülemez. Bu
+ * ingest için doğru davranış, çünkü kaynaklar veri ekler, silmez.
+ */
 interface DailyRow {
   fund_code: string;
   trade_date: string;
@@ -88,22 +94,25 @@ interface DailyRow {
 export async function upsertDaily(
   pool: pg.Pool,
   rows: DailyRow[],
-  fields: DailyField[],
   runId: number,
 ): Promise<number> {
   if (rows.length === 0) return 0;
-  const cols = fields.join(', ');
-  const sel = fields.map((f) => `r.${f}`).join(', ');
-  const decl = fields
-    .map((f) => `${f} ${f === 'investor_count' ? 'integer' : 'numeric'}`)
-    .join(', ');
-  const set = fields.map((f) => `${f} = EXCLUDED.${f}`).join(', ');
   const res = await pool.query(
-    `INSERT INTO fact_fund_daily (fund_code, trade_date, ${cols}, ingest_run_id)
-     SELECT r.fund_code, r.trade_date, ${sel}, $2
-     FROM jsonb_to_recordset($1::jsonb) AS r(fund_code text, trade_date date, ${decl})
+    `INSERT INTO fact_fund_daily (fund_code, trade_date, nav_per_share, daily_return_pct,
+                                  net_flow, shares_active, investor_count, ingest_run_id)
+     SELECT r.fund_code, r.trade_date, r.nav_per_share, r.daily_return_pct,
+            r.net_flow, r.shares_active, r.investor_count, $2
+     FROM jsonb_to_recordset($1::jsonb) AS r(
+       fund_code text, trade_date date, nav_per_share numeric, daily_return_pct numeric,
+       net_flow numeric, shares_active numeric, investor_count integer)
      ON CONFLICT (fund_code, trade_date) DO UPDATE SET
-       ${set}, ingest_run_id = EXCLUDED.ingest_run_id, updated_at = now()`,
+       nav_per_share    = COALESCE(EXCLUDED.nav_per_share, fact_fund_daily.nav_per_share),
+       daily_return_pct = COALESCE(EXCLUDED.daily_return_pct, fact_fund_daily.daily_return_pct),
+       net_flow         = COALESCE(EXCLUDED.net_flow, fact_fund_daily.net_flow),
+       shares_active    = COALESCE(EXCLUDED.shares_active, fact_fund_daily.shares_active),
+       investor_count   = COALESCE(EXCLUDED.investor_count, fact_fund_daily.investor_count),
+       ingest_run_id    = EXCLUDED.ingest_run_id,
+       updated_at       = now()`,
     [JSON.stringify(rows), runId],
   );
   return res.rowCount ?? 0;
@@ -124,7 +133,6 @@ async function ingestFund(
   n += await upsertDaily(
     pool,
     [{ fund_code: code, trade_date: price.date, nav_per_share: price.price }],
-    ['nav_per_share'],
     runId,
   );
   await throttle();
@@ -133,7 +141,6 @@ async function ingestFund(
   n += await upsertDaily(
     pool,
     returns.map((r) => ({ fund_code: code, trade_date: r.date, daily_return_pct: r.returnPct })),
-    ['daily_return_pct'],
     runId,
   );
   await throttle();
@@ -142,7 +149,6 @@ async function ingestFund(
   n += await upsertDaily(
     pool,
     flows.map((f) => ({ fund_code: code, trade_date: f.date, net_flow: f.netFlow })),
-    ['net_flow'],
     runId,
   );
   await throttle();
@@ -169,7 +175,6 @@ async function ingestFund(
           investor_count: info.investorCount ?? undefined,
         },
       ],
-      ['shares_active', 'investor_count'],
       runId,
     );
   }

@@ -13,24 +13,57 @@
       }
     ]
   },
-  "status": "queued",
+  "status": "needs-fix",
   "createdAt": "2026-08-30T10:08:44.728Z",
-  "updatedAt": "2026-08-30T10:08:44.735Z",
+  "updatedAt": "2026-08-30T10:25:04.512Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "pending",
+      "status": "needs-fix",
+      "startedAt": "2026-08-30T10:25:00.080Z",
+      "finishedAt": "2026-08-30T10:25:04.512Z",
       "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "db/migrations/001_collation.sql",
+    "db/migrations/002_ingest.sql",
+    "db/migrations/003_dimensions.sql",
+    "db/migrations/004_watchlist.sql",
+    "db/migrations/005_facts.sql",
+    "db/migrations/006_analytics.sql",
+    "db/watchlist.txt",
+    "package.json",
+    "pnpm-lock.yaml",
+    "references/fintables/README.md",
+    "references/fintables/samples/api-root.json",
+    "references/fintables/samples/fund-cashflow.json",
+    "references/fintables/samples/fund-info.json",
+    "references/fintables/samples/fund-price.json",
+    "references/fintables/samples/fund-volatility.json",
+    "src/collector.ts",
+    "src/db/migrate.ts",
+    "src/db/pool.ts",
+    "src/db/seed.ts",
+    "src/sources/fintables.ts",
+    "tests/collector.test.ts",
+    "tests/fintables.test.ts",
+    "tests/fixtures/fintables-TLY-cashflow.json",
+    "tests/fixtures/fintables-TLY-info.json",
+    "tests/fixtures/fintables-TLY-price.json",
+    "tests/fixtures/fintables-TLY-volatility.json",
+    "tests/fixtures/fintables-funds-sample.json",
+    "tests/fixtures/fintables-yield-sample.json",
+    "tsconfig.build.json",
+    "tsconfig.json"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "failed"
   }
 }
