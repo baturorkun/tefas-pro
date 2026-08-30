@@ -1,0 +1,42 @@
+# Uygulama sunucusu image'ı.
+#
+# Collector'ınkiyle aynı desen — Debian tabanlı Node, çünkü impit native
+# modülünün prebuilt binary'si glibc'ye bağlı — ama collector oneshot'tır,
+# bu uzun ömürlüdür: port dinler, healthcheck taşır, restart ile yönetilir.
+FROM docker.io/library/node:22-bookworm-slim AS build
+
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY tsconfig.json tsconfig.build.json ./
+COPY src ./src
+RUN pnpm build
+
+FROM docker.io/library/node:22-bookworm-slim
+
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --prod
+
+COPY --from=build /app/dist ./dist
+COPY public ./public
+COPY src/styles.css ./src/styles.css
+COPY db/migrations ./db/migrations
+
+# Container içinde 127.0.0.1 yalnız container'ı kapsar; servis dışarıdan
+# erişilemez olurdu. Host'a açılan yüzeyi podman'ın port yayını sınırlar.
+ENV HOST=0.0.0.0
+ENV PORT=8282
+EXPOSE 8282
+
+USER node
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8282)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+ENTRYPOINT ["node", "dist/server/index.js"]

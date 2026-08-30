@@ -9,7 +9,8 @@
     "test": "vitest run && bash tests/db-install.test.sh",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
-    "collect": "tsx src/collector.ts"
+    "collect": "tsx src/collector.ts",
+    "serve": "tsx src/server/index.ts"
   },
   "dependencies": {
     "impit": "^0.14.4",
