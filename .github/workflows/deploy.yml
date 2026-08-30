@@ -1,0 +1,240 @@
+name: Deploy
+
+# main ve requirement branch'leri kendi slot'una açılır; branch silinince slot'u
+# da kaldırılır. Port şeması: scripts/resolve-deployment-target.sh
+on:
+  push:
+    branches:
+      - main
+      - 'factory/RQ-*'
+  delete:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Yapılacak işlem
+        type: choice
+        options: [deploy, cleanup]
+        default: deploy
+      rq_number:
+        description: Elle cleanup için RQ numarası (örn. 7)
+        required: false
+
+permissions:
+  contents: read
+
+# Aynı branch için üst üste gelen çalışmalar birbirini iptal eder; yarım kalan
+# bir deploy'un üstüne ikincisi binmesin.
+concurrency:
+  group: deploy-${{ github.event.ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality
+    # Lifecycle'ın kendi kayıt commit'leri kod değiştirmez; deploy tetiklemesin.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       !startsWith(github.event.head_commit.message, 'requirement('))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.9 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck, test, build
+        run: |
+          pnpm typecheck
+          pnpm test
+          pnpm build
+
+  deploy:
+    name: Deploy ${{ github.ref_name }}
+    if: >-
+      needs.quality.result == 'success' &&
+      (github.event_name != 'workflow_dispatch' || inputs.operation == 'deploy')
+    needs: [quality]
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve deployment slot and port
+        id: target
+        run: |
+          chmod +x scripts/resolve-deployment-target.sh
+          scripts/resolve-deployment-target.sh "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Verify database stack
+        env:
+          NETWORK: ${{ vars.TEFAS_NETWORK || 'tefas-pro-db_default' }}
+        run: |
+          command -v podman >/dev/null || { echo "podman yok"; exit 1; }
+          podman network exists "$NETWORK" || {
+            echo "Ağ bulunamadı: $NETWORK. Önce db/install.sh remote."; exit 1; }
+          podman ps --format '{{.Names}}' | grep -qx tefas-pro-postgres || {
+            echo "tefas-pro-postgres ayakta değil."; exit 1; }
+
+      - name: Prepare slot database
+        id: db
+        env:
+          SLOT: ${{ steps.target.outputs.slot }}
+          DB_ENV_FILE: ${{ vars.TEFAS_DB_ENV_FILE || '/opt/tefas-pro/db/.env' }}
+        run: |
+          # Parola GitHub'a hiç çıkmaz: sunucudaki db/.env'den okunur.
+          [ -r "$DB_ENV_FILE" ] || { echo "Okunamadı: $DB_ENV_FILE"; exit 1; }
+          PGPASS="$(sed -n 's/^TEFAS_POSTGRES_PASSWORD=//p' "$DB_ENV_FILE" | head -1)"
+          PGUSER_="$(sed -n 's/^TEFAS_POSTGRES_USER=//p' "$DB_ENV_FILE" | head -1)"
+          PGUSER_="${PGUSER_:-tefas}"
+          MAIN_DB="$(sed -n 's/^TEFAS_POSTGRES_DB=//p' "$DB_ENV_FILE" | head -1)"
+          MAIN_DB="${MAIN_DB:-tefas}"
+          [ -n "$PGPASS" ] || { echo "Parola okunamadı."; exit 1; }
+
+          if [ "$SLOT" = "main" ]; then
+            SLOT_DB="$MAIN_DB"
+          else
+            SLOT_DB="${MAIN_DB}_$(printf '%s' "$SLOT" | tr '-' '_')"
+          fi
+
+          psql_main() { podman exec -i tefas-pro-postgres psql -U "$PGUSER_" -d postgres "$@"; }
+          exists="$(psql_main -tAc "SELECT 1 FROM pg_database WHERE datname='${SLOT_DB}'")"
+
+          if [ "$SLOT_DB" != "$MAIN_DB" ] && [ -z "$exists" ]; then
+            # TEMPLATE kullanılamaz: main veritabanına açık bağlantı varken
+            # CREATE DATABASE ... TEMPLATE reddedilir ve main sunucusu sürekli
+            # bağlı. pg_dump aktif bağlantıyla çalışır.
+            echo "Slot veritabanı oluşturuluyor: ${SLOT_DB} (${MAIN_DB} kopyası)"
+            psql_main -c "CREATE DATABASE \"${SLOT_DB}\""
+            podman exec tefas-pro-postgres pg_dump -U "$PGUSER_" -d "$MAIN_DB" \
+              | podman exec -i tefas-pro-postgres psql -U "$PGUSER_" -d "$SLOT_DB" -q
+            echo "seeded=true" >> "$GITHUB_OUTPUT"
+          else
+            # Var olan slot yeniden tohumlanmaz; üzerinde yapılan denemeler
+            # her deploy'da silinirdi.
+            echo "seeded=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "::add-mask::${PGPASS}"
+          echo "url=postgresql://${PGUSER_}:${PGPASS}@postgres:5432/${SLOT_DB}" >> "$GITHUB_OUTPUT"
+          echo "name=${SLOT_DB}" >> "$GITHUB_OUTPUT"
+
+      - name: Build server image
+        env:
+          SLOT: ${{ steps.target.outputs.slot }}
+        run: podman build --format docker -f server/Containerfile -t "localhost/tefas-pro-server:${SLOT}" .
+
+      - name: Write runtime environment
+        env:
+          SLOT: ${{ steps.target.outputs.slot }}
+          DB_URL: ${{ steps.db.outputs.url }}
+          ADMIN_INITIAL_PASSWORD: ${{ secrets.ADMIN_INITIAL_PASSWORD }}
+        run: |
+          [ -n "$ADMIN_INITIAL_PASSWORD" ] || {
+            echo "ADMIN_INITIAL_PASSWORD secret'ı tanımlı değil."; exit 1; }
+          root="${RUNNER_WORKSPACE}/tefas-pro-deployments/${SLOT}"
+          mkdir -p "$root"
+          umask 077
+          printf 'DATABASE_URL=%s\nADMIN_INITIAL_PASSWORD=%s\nSESSION_TTL=43200\nSECURE_COOKIE=false\n' \
+            "$DB_URL" "$ADMIN_INITIAL_PASSWORD" > "${root}/runtime.env"
+          chmod 600 "${root}/runtime.env"
+
+      - name: Run migrations on slot database
+        env:
+          SLOT: ${{ steps.target.outputs.slot }}
+          NETWORK: ${{ vars.TEFAS_NETWORK || 'tefas-pro-db_default' }}
+        run: |
+          # Parola --env-file ile verilir; komut satırına yazılsa ps çıktısında
+          # görünürdü.
+          podman run --rm --network "$NETWORK" \
+            --env-file "${RUNNER_WORKSPACE}/tefas-pro-deployments/${SLOT}/runtime.env" \
+            --entrypoint node "localhost/tefas-pro-server:${SLOT}" dist/db/migrate.js
+
+      - name: Replace slot container
+        env:
+          SLOT: ${{ steps.target.outputs.slot }}
+          PORT: ${{ steps.target.outputs.port }}
+          NETWORK: ${{ vars.TEFAS_NETWORK || 'tefas-pro-db_default' }}
+        run: |
+          name="tefas-pro-${SLOT}"
+          podman rm -f "$name" >/dev/null 2>&1 || true
+          podman run -d --name "$name" \
+            --network "$NETWORK" \
+            --env-file "${RUNNER_WORKSPACE}/tefas-pro-deployments/${SLOT}/runtime.env" \
+            --restart unless-stopped \
+            -p "${PORT}:8282" \
+            "localhost/tefas-pro-server:${SLOT}" >/dev/null
+
+      - name: Verify deployment
+        env:
+          SLOT: ${{ steps.target.outputs.slot }}
+          PORT: ${{ steps.target.outputs.port }}
+          SEEDED: ${{ steps.db.outputs.seeded }}
+          SLOT_DB: ${{ steps.db.outputs.name }}
+        run: |
+          for _ in $(seq 1 30); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:${PORT}/healthz" || true)"
+            [ "$code" = "200" ] && break
+            sleep 2
+          done
+          [ "$code" = "200" ] || {
+            echo "Sağlık kontrolü başarısız (HTTP ${code})"
+            podman logs --tail 30 "tefas-pro-${SLOT}"
+            exit 1; }
+          {
+            echo "### Deploy: \`${SLOT}\`"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Port | ${PORT} |"
+            echo "| Veritabanı | \`${SLOT_DB}\` |"
+            echo "| main'den tohumlandı | ${SEEDED} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  cleanup:
+    name: Cleanup slot
+    if: >-
+      github.event_name == 'delete' ||
+      (github.event_name == 'workflow_dispatch' && inputs.operation == 'cleanup')
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Remove slot container and database
+        env:
+          REF_NAME: ${{ github.event.ref }}
+          RQ_INPUT: ${{ inputs.rq_number }}
+          DB_ENV_FILE: ${{ vars.TEFAS_DB_ENV_FILE || '/opt/tefas-pro/db/.env' }}
+        run: |
+          chmod +x scripts/resolve-deployment-target.sh
+          target="${RQ_INPUT:+rq-${RQ_INPUT}}"
+          target="${target:-$REF_NAME}"
+          if ! out="$(scripts/resolve-deployment-target.sh "$target" 2>/dev/null)"; then
+            echo "RQ numarası çıkarılamadı: ${target:-<boş>}; yapılacak bir şey yok"
+            exit 0
+          fi
+          slot="$(printf '%s' "$out" | sed -n 's/^slot=//p')"
+          # main slot'u hiçbir koşulda silinmez.
+          if [ "$slot" = "main" ]; then
+            echo "main slot'u korunur; silinmez."
+            exit 0
+          fi
+          podman rm -f "tefas-pro-${slot}" >/dev/null 2>&1 || true
+          podman rmi -f "localhost/tefas-pro-server:${slot}" >/dev/null 2>&1 || true
+          if [ -r "$DB_ENV_FILE" ]; then
+            u="$(sed -n 's/^TEFAS_POSTGRES_USER=//p' "$DB_ENV_FILE" | head -1)"; u="${u:-tefas}"
+            m="$(sed -n 's/^TEFAS_POSTGRES_DB=//p' "$DB_ENV_FILE" | head -1)"; m="${m:-tefas}"
+            db="${m}_$(printf '%s' "$slot" | tr '-' '_')"
+            podman exec -i tefas-pro-postgres psql -U "$u" -d postgres \
+              -c "DROP DATABASE IF EXISTS \"${db}\" WITH (FORCE)" || true
+          fi
+          rm -rf "${RUNNER_WORKSPACE}/tefas-pro-deployments/${slot}"
+          echo "Slot kaldırıldı: ${slot}"

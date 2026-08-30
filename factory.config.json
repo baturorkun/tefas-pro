@@ -41,7 +41,9 @@
       "tsconfig.build.json",
       "collector",
       "package.json",
-      "vitest.config.ts"
+      "vitest.config.ts",
+      "scripts",
+      "server"
     ],
     "commands": {
       "typeCheck": "pnpm typecheck",

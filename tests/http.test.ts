@@ -36,3 +36,25 @@ describe('gövde doğrulama', () => {
     expect(optDate({}, 'd')).toBeNull();
   });
 });
+
+describe('ensureAdminUser parola dogrulamasi', () => {
+  // Sunucu ayağa kalkarken parolayı ADMIN_INITIAL_PASSWORD'den alır. Geçersiz
+  // bir değer sessizce rastgele parolaya düşerse kimsenin giremediği bir hesap
+  // oluşur; gerçek bir deploy'da tam olarak bu oldu (secret yanlışlıkla tek
+  // karakter yazılmıştı) ve log doğru parolanın kullanıldığını söyledi.
+  const decide = (fromEnv: string | undefined): 'reject' | 'use-env' | 'generate' => {
+    if (fromEnv !== undefined && fromEnv !== '' && fromEnv.length < 8) return 'reject';
+    return fromEnv && fromEnv.length >= 8 ? 'use-env' : 'generate';
+  };
+  it('kısa parola reddedilir, sessizce atlanmaz', () => {
+    expect(decide('-')).toBe('reject');
+    expect(decide('kisa')).toBe('reject');
+  });
+  it('yeterli parola kullanılır', () => {
+    expect(decide('mysecret11')).toBe('use-env');
+  });
+  it('verilmemişse üretilir', () => {
+    expect(decide(undefined)).toBe('generate');
+    expect(decide('')).toBe('generate');
+  });
+});

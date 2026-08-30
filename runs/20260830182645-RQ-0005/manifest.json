@@ -1,0 +1,40 @@
+{
+  "runId": "20260830182645-RQ-0005",
+  "requirementId": "RQ-0005",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260830182645-RQ-0005/handoff.md",
+  "projectGuidelines": {
+    "combinedSha256": "73bde0d690f8ec23c37c27be97d17c628d2f60e56f49bffbe0810fd5769a70fb",
+    "files": [
+      {
+        "path": "AGENTS.md",
+        "sha256": "35dbcb26a57ab038e0e772629d210a83e459fa6674e4582d4ed0ed52b8bd28f8"
+      }
+    ]
+  },
+  "status": "approved",
+  "createdAt": "2026-08-30T18:26:45.722Z",
+  "updatedAt": "2026-08-30T18:27:03.391Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-08-30T18:26:45.993Z",
+      "finishedAt": "2026-08-30T18:26:51.372Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "skipped"
+  },
+  "approvedAt": "2026-08-30T18:27:03.392Z",
+  "approvedBy": "batur"
+}
