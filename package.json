@@ -6,7 +6,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc --project tsconfig.build.json",
-    "test": "vitest run && bash tests/db-install.test.sh",
+    "test": "vitest run && bash tests/db-install.test.sh && bash tests/deployment-target.test.sh",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "collect": "tsx src/collector.ts",
