@@ -13,25 +13,32 @@
       }
     ]
   },
-  "status": "running",
+  "status": "approved",
   "createdAt": "2026-08-30T19:48:39.887Z",
-  "updatedAt": "2026-08-30T19:49:35.508Z",
+  "updatedAt": "2026-08-30T19:58:49.666Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-08-30T19:49:35.508Z"
+      "status": "passed",
+      "startedAt": "2026-08-30T19:49:35.508Z",
+      "finishedAt": "2026-08-30T19:57:33.728Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "collector/install.sh",
+    "src/collector.ts",
+    "tests/collector.test.ts"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
-  }
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-08-30T19:58:49.666Z",
+  "approvedBy": "batur"
 }
