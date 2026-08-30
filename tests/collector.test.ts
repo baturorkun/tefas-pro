@@ -9,6 +9,7 @@ import {
   monthsBack,
   parseArgs,
   prevWeekday,
+  rankUniverse,
   todayIso,
 } from '../src/collector.js';
 import { parseWatchlistFile } from '../src/db/seed.js';
@@ -129,5 +130,32 @@ describe('mergeDailySources', () => {
   });
   it('hiç veri yoksa boş döner', () => {
     expect(mergeDailySources('X', null, [], [])).toEqual([]);
+  });
+});
+
+describe('rankUniverse', () => {
+  const f = (code: string, y: number) => ({ code, title: code, yieldCustom: y });
+  it('en iyi ve en kötüyü doğru sırada verir', () => {
+    const r = rankUniverse([f('A', 5), f('B', -3), f('C', 10), f('D', -8)], 2);
+    expect(r.top.map((x) => x.code)).toEqual(['C', 'A']);
+    expect(r.bottom.map((x) => x.code)).toEqual(['D', 'B']);
+    expect(r.excluded).toBe(0);
+  });
+  it('makul sınırın dışındakini eler ve sayısını bildirir', () => {
+    // Ölçülen gerçek örnek: DDS 1 ay için %3.375.100 döndürüyor. Kaynağın kendi
+    // değeri; çizilirse grafiğin ölçeğini yok eder.
+    const r = rankUniverse([f('DDS', 3375100), f('A', 66), f('B', 55)], 2);
+    expect(r.top.map((x) => x.code)).toEqual(['A', 'B']);
+    expect(r.excluded).toBe(1);
+  });
+  it('sınır simetriktir', () => {
+    expect(rankUniverse([f('X', -5000), f('A', 1)], 2, 1000).excluded).toBe(1);
+  });
+  it('liste kısaysa olan kadarını verir', () => {
+    const r = rankUniverse([f('A', 1)], 5);
+    expect(r.top).toHaveLength(1);
+  });
+  it('boş girdi boş sonuç', () => {
+    expect(rankUniverse([], 5)).toEqual({ top: [], bottom: [], excluded: 0 });
   });
 });

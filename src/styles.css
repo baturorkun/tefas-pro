@@ -267,6 +267,30 @@ td.actions { text-align: right; }
 .status-user   { color: var(--muted); background: var(--panel); border-color: var(--line); }
 .status-passive { color: var(--danger); background: var(--danger-tint); border-color: #5c3535; }
 
+/* ─── Grafik ───────────────────────────────────────────────────────────── */
+
+.section-title {
+  display: flex; align-items: baseline; gap: .6rem;
+  margin: 2rem 0 .9rem; font-size: 1rem; font-weight: 600; color: var(--text);
+}
+.section-sub { font-size: .78rem; font-weight: 400; color: var(--muted-dim); }
+
+.chart-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.chart-grid .panel { margin-bottom: 0; }
+
+.bar-chart { display: block; width: 100%; height: auto; overflow: visible; }
+.bar-chart text { font-family: var(--font); dominant-baseline: middle; }
+.bar-code  { font-size: 12px; font-weight: 600; fill: var(--text-strong); }
+.bar-value { font-size: 12px; font-family: var(--mono); text-anchor: end; }
+.bar-value.pos { fill: var(--accent-soft); }
+.bar-value.neg { fill: var(--danger); }
+.bar-days  { font-size: 10px; fill: var(--muted-dim); text-anchor: end; }
+.bar-pos   { fill: var(--accent); opacity: .85; }
+.bar-neg   { fill: var(--danger); opacity: .75; }
+.bar-zero  { stroke: var(--line); stroke-width: 1; }
+
+@media (max-width: 1100px) { .chart-grid { grid-template-columns: 1fr; } }
+
 /* ─── Durumlar ─────────────────────────────────────────────────────────── */
 
 .empty-state { padding: 2.5rem 1rem; text-align: center; color: var(--muted-dim); font-size: .9rem; }

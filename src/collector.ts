@@ -391,6 +391,108 @@ async function ingestYieldSnapshot(
   return res.rowCount ?? 0;
 }
 
+/** Dashboard'ın gösterdiği pencereler. Gün sayısı takvim günüdür. */
+const RANK_WINDOWS: { key: '1w' | '1m'; days: number }[] = [
+  { key: '1w', days: 7 },
+  { key: '1m', days: 30 },
+];
+/** Pencere ve yön başına saklanan fon sayısı. */
+const RANK_SIZE = 15;
+/**
+ * Makul getiri sınırı, yüzde. Üstündeki değerler gerçek getiri değil veri
+ * artefaktıdır ve grafiğin ölçeğini yok eder.
+ *
+ * Ölçülen örnek: DDS (DENİZ PORTFÖY DAMLA SERBEST ÖZEL FON) 1 ay için
+ * %3.375.100 döndürüyor. Kaynağın kendi değeri, bizim parse hatamız değil —
+ * fonun günlük serisinde +%14.100'lük günler var ve aynı yanıtta yield_5y
+ * -%99,01 diyor, yani veri kendi içinde de tutarsız. Bu tip fonlar NAV'ı sıfıra
+ * yakın bir tabandan başlayan özel fonlar.
+ *
+ * Sınır kesin bir eşik değil, makullük sınırıdır: bir ayda %1000'i aşan getiri
+ * gerçek değildir. Elenen satır sayısı log'a yazılır, sessizce atılmaz.
+ */
+const RANK_PLAUSIBLE_PCT = 1000;
+
+export interface RankedFund {
+  code: string;
+  title: string;
+  yieldCustom: number;
+}
+
+/**
+ * Evren getirilerini sıralar, makul sınırın dışındakileri eler ve her yönden
+ * `size` kadar döndürür. Saf fonksiyon: elenen sayısı çağırana bildirilir ki
+ * filtreleme sessiz kalmasın.
+ */
+export function rankUniverse(
+  rows: RankedFund[],
+  size: number,
+  bound = RANK_PLAUSIBLE_PCT,
+): { top: RankedFund[]; bottom: RankedFund[]; excluded: number } {
+  const kept = rows.filter((r) => Math.abs(r.yieldCustom) <= bound);
+  const sorted = [...kept].sort((a, b) => b.yieldCustom - a.yieldCustom);
+  return {
+    top: sorted.slice(0, size),
+    bottom: sorted.slice(-size).reverse(),
+    excluded: rows.length - kept.length,
+  };
+}
+
+/**
+ * Tüm evren için bir pencerenin getiri sıralaması. Evrenin tamamı saklanmaz —
+ * RQ-0003'ün "yalnız takip listesi" kuralı korunur — yalnız en iyi ve en kötü
+ * RANK_SIZE fon yazılır; dashboard'ın ihtiyacı bu kadar.
+ */
+async function ingestUniverseRanks(
+  pool: pg.Pool,
+  client: FintablesClient,
+  today: string,
+  runId: number,
+): Promise<number> {
+  let n = 0;
+  for (const w of RANK_WINDOWS) {
+    const rows = await client.yields({ start: addDays(today, -w.days), end: today });
+    await throttle();
+    const withValue: RankedFund[] = rows
+      .filter((r): r is typeof r & { yieldCustom: number } => r.yieldCustom !== null)
+      .map((r) => ({ code: r.code, title: r.title, yieldCustom: r.yieldCustom }));
+    const { top, bottom, excluded } = rankUniverse(withValue, RANK_SIZE);
+    if (excluded > 0) {
+      console.log(
+        `  ${w.key}: ${String(excluded)} fon makul sınırın dışında, sıralamaya alınmadı ` +
+          `(|getiri| > %${String(RANK_PLAUSIBLE_PCT)})`,
+      );
+    }
+    if (top.length === 0) continue;
+    const payload = [
+      ...top.map((r, i) => ({ direction: 'top', rank: i + 1, r })),
+      ...bottom.map((r, i) => ({ direction: 'bottom', rank: i + 1, r })),
+    ].map((x) => ({
+      direction: x.direction,
+      rank: x.rank,
+      fund_code: x.r.code,
+      title: x.r.title,
+      return_pct: x.r.yieldCustom,
+    }));
+    const res = await pool.query(
+      `INSERT INTO fact_universe_yield_rank
+         (as_of_date, window_key, direction, rank, fund_code, title, return_pct, ingest_run_id)
+       SELECT $2::date, $3, r.direction, r.rank, r.fund_code, r.title, r.return_pct, $4
+       FROM jsonb_to_recordset($1::jsonb) AS r(
+         direction text, rank integer, fund_code text, title text, return_pct numeric)
+       ON CONFLICT (as_of_date, window_key, direction, rank) DO UPDATE SET
+         fund_code = EXCLUDED.fund_code, title = EXCLUDED.title,
+         return_pct = EXCLUDED.return_pct, ingest_run_id = EXCLUDED.ingest_run_id,
+         updated_at = now()
+       WHERE (fact_universe_yield_rank.fund_code, fact_universe_yield_rank.return_pct)
+          IS DISTINCT FROM (EXCLUDED.fund_code, EXCLUDED.return_pct)`,
+      [JSON.stringify(payload), today, w.key, runId],
+    );
+    n += res.rowCount ?? 0;
+  }
+  return n;
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const today = todayIso();
@@ -435,6 +537,7 @@ async function main(): Promise<void> {
     if (!args.skipYield) {
       upserted += await ingestYieldSnapshot(pool, client, today, runId);
       await throttle();
+      upserted += await ingestUniverseRanks(pool, client, today, runId);
     }
 
     console.log(

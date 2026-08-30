@@ -280,3 +280,113 @@ export async function watchlistOverview(pool: pg.Pool): Promise<unknown[]> {
   );
   return r.rows;
 }
+
+// ─── Dashboard ──────────────────────────────────────────────────────────────
+
+export interface RankEntry {
+  fundCode: string;
+  title: string | null;
+  returnPct: string;
+  /** Yalnız takip listesi sıralamasında dolu: pencerede kaç iş günü var. */
+  days: number | null;
+}
+
+export interface DashboardData {
+  metrics: {
+    watchlist: number;
+    openPositions: number;
+    dataDate: string | null;
+    lastRun: { id: number; status: string; finishedAt: string | null } | null;
+  };
+  watchlistRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
+  universeRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
+  universeDate: string | null;
+}
+
+const RANK_LIMIT = 10;
+
+/**
+ * Takip listesi sıralaması saklanan günlük seriden hesaplanır; sayfa açılışında
+ * dış servise istek atılmaz. Evren sıralaması collector'ın günlük snapshot'ından
+ * okunur.
+ */
+export async function dashboard(pool: pg.Pool, userId: number): Promise<DashboardData> {
+  const [counts, lastRun, wl, uni, uniDate] = await Promise.all([
+    pool.query<{ watchlist: string; open_positions: string; data_date: string | null }>(
+      `SELECT (SELECT count(*) FROM watchlist) AS watchlist,
+              (SELECT count(*) FROM portfolio_transaction
+                WHERE user_id = $1 AND sell_date IS NULL) AS open_positions,
+              (SELECT to_char(max(trade_date), 'YYYY-MM-DD') FROM fact_fund_daily
+                WHERE daily_return_pct IS NOT NULL) AS data_date`,
+      [userId],
+    ),
+    pool.query<{ id: number; status: string; finished_at: string | null }>(
+      `SELECT id, status, to_char(finished_at AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM-DD HH24:MI')
+                AS finished_at
+       FROM ingest_run ORDER BY id DESC LIMIT 1`,
+    ),
+    pool.query<{
+      fund_code: string; title: string | null;
+      return_1w: string | null; days_1w: string; return_1m: string | null; days_1m: string;
+    }>(
+      `SELECT fund_code, title, return_1w::text, days_1w::text, return_1m::text, days_1m::text
+       FROM analytics.watchlist_returns`,
+    ),
+    pool.query<{
+      window_key: string; direction: string; fund_code: string;
+      title: string | null; return_pct: string;
+    }>(
+      `SELECT window_key, direction, fund_code, title, return_pct::text
+       FROM fact_universe_yield_rank
+       WHERE as_of_date = (SELECT max(as_of_date) FROM fact_universe_yield_rank)
+       ORDER BY window_key, direction, rank`,
+    ),
+    pool.query<{ d: string | null }>(
+      `SELECT to_char(max(as_of_date), 'YYYY-MM-DD') AS d FROM fact_universe_yield_rank`,
+    ),
+  ]);
+
+  const byWindow = (win: '1w' | '1m'): { top: RankEntry[]; bottom: RankEntry[] } => {
+    const rows = wl.rows
+      .map((r) => ({
+        fundCode: r.fund_code,
+        title: r.title,
+        returnPct: win === '1w' ? r.return_1w : r.return_1m,
+        days: Number(win === '1w' ? r.days_1w : r.days_1m),
+      }))
+      .filter((r) => r.returnPct !== null)
+      .map((r): RankEntry => ({ ...r, returnPct: r.returnPct as string }))
+      .sort((a, b) => Number(b.returnPct) - Number(a.returnPct));
+    // "En çok kaybettiren" yalnız gerçekten kaybettirenleri listeler. Alttan N
+    // almak yanlış olurdu: takip listesi küçük ve çoğu fon artıdayken panel
+    // pozitif değerlerle dolar, başlığı yalanlar.
+    const losers = rows.filter((r) => Number(r.returnPct) < 0);
+    return {
+      top: rows.slice(0, RANK_LIMIT),
+      bottom: losers.slice(-RANK_LIMIT).reverse(),
+    };
+  };
+
+  const universe: Record<string, { top: RankEntry[]; bottom: RankEntry[] }> = {};
+  for (const r of uni.rows) {
+    const slot = (universe[r.window_key] ??= { top: [], bottom: [] });
+    const list = r.direction === 'top' ? slot.top : slot.bottom;
+    if (list.length < RANK_LIMIT) {
+      list.push({ fundCode: r.fund_code, title: r.title, returnPct: r.return_pct, days: null });
+    }
+  }
+
+  const c = counts.rows[0]!;
+  const run = lastRun.rows[0];
+  return {
+    metrics: {
+      watchlist: Number(c.watchlist),
+      openPositions: Number(c.open_positions),
+      dataDate: c.data_date,
+      lastRun: run ? { id: run.id, status: run.status, finishedAt: run.finished_at } : null,
+    },
+    watchlistRanks: { '1w': byWindow('1w'), '1m': byWindow('1m') },
+    universeRanks: universe,
+    universeDate: uniDate.rows[0]?.d ?? null,
+  };
+}
