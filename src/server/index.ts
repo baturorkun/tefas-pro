@@ -85,6 +85,15 @@ export async function ensureAdminUser(pool: pg.Pool): Promise<void> {
   if (Number(existing.rows[0]?.n ?? 0) > 0) return;
 
   const fromEnv = process.env.ADMIN_INITIAL_PASSWORD;
+  // Verilmiş ama geçersiz bir parola sessizce rastgele parolaya düşerse, kimsenin
+  // giremediği bir hesap oluşur ve log "ADMIN_INITIAL_PASSWORD ile verildi" diyerek
+  // yanıltır. Yanlış yapılandırma gürültülü başarısız olmalı.
+  if (fromEnv !== undefined && fromEnv !== '' && fromEnv.length < 8) {
+    throw new Error(
+      `ADMIN_INITIAL_PASSWORD en az 8 karakter olmalı (${String(fromEnv.length)} verildi). ` +
+        'Boş bırakılırsa rastgele bir parola üretilir.',
+    );
+  }
   const password = fromEnv && fromEnv.length >= 8 ? fromEnv : generatePassword();
   await createUser(pool, {
     username: 'admin',
