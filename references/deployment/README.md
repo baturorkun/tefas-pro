@@ -48,11 +48,30 @@ etiketlerini taşımalıdır.
 **Veritabanı yığını.** `tefas-pro-postgres` ayakta ve compose ağı kurulu
 olmalıdır (`db/install.sh remote`).
 
+**Firewall: podman DNAT için FORWARD kuralı.** ufw'nin `9000:9999/tcp ALLOW IN`
+kuralı tek başına yetmez. podman published portu netavark ile DNAT eder, paket
+INPUT değil FORWARD zincirinden geçer ve ufw'nin FORWARD politikası DROP'tur.
+Slot container'ları `tefas-pro-db_default` ağında (10.89.0.0/16) ve içeride 8282
+dinliyor; buna karşılık gelen kural bir kez eklenmelidir:
+
+```bash
+ufw route allow proto tcp to 10.89.0.0/16 port 8282
+```
+
+Bu kural olmadan slot sunucunun kendi içinden erişilebilir ama dışarıdan
+bağlantı sessizce düşer. Aynı sunucudaki NetForgeSH'in kuralı
+(`10.88.0.0/16 dpt:8000`) farklı ağ ve porta ait olduğu için tefas-pro'yu
+kapsamaz.
+
 **Repository secret:**
 
 | Ad | Neden |
 |---|---|
-| `ADMIN_INITIAL_PASSWORD` | İlk admin kullanıcısının parolası |
+| `ADMIN_INITIAL_PASSWORD` | İlk admin kullanıcısının parolası. En az 8 karakter; kısa bir değer sunucuyu gürültülü biçimde durdurur, sessizce rastgele parolaya düşmez. |
+
+Secret'ı yazarken `gh secret set <ad> --repo <repo>` kullanıp değeri stdin'den
+verin. `--body -` **stdin okumaz**, `-` karakterinin kendisini değer olarak
+yazar — bu gerçekten yaşandı ve kimsenin giremediği bir admin hesabı üretti.
 
 PostgreSQL parolası **secret olarak tutulmaz**: runner sunucunun üzerinde
 koştuğu için `/opt/tefas-pro/db/.env` dosyasından okunur ve GitHub'a hiç
