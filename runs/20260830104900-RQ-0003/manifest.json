@@ -13,25 +13,45 @@
       }
     ]
   },
-  "status": "running",
+  "status": "approved",
   "createdAt": "2026-08-30T10:49:00.802Z",
-  "updatedAt": "2026-08-30T10:49:08.589Z",
+  "updatedAt": "2026-08-30T11:12:11.312Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-08-30T10:49:08.589Z"
+      "status": "passed",
+      "startedAt": "2026-08-30T10:49:08.589Z",
+      "finishedAt": "2026-08-30T11:11:58.929Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    ".gitignore",
+    "collector/Containerfile",
+    "collector/install.sh",
+    "db/migrations/007_calendar.sql",
+    "db/migrations/008_watchlist_only.sql",
+    "db/migrations/009_monthly_analytics.sql",
+    "factory.config.json",
+    "references/fintables/README.md",
+    "src/collector.ts",
+    "src/db/seed.ts",
+    "src/sources/fintables.ts",
+    "tests/collector.test.ts",
+    "tests/fintables.test.ts",
+    "tests/fixtures/fintables-window-cashflow.json",
+    "tests/fixtures/fintables-window-growth.json",
+    "vitest.config.ts"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
-  }
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-08-30T11:12:11.313Z",
+  "approvedBy": "batur"
 }
