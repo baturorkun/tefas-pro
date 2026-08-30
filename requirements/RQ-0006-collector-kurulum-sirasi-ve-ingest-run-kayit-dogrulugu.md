@@ -8,6 +8,8 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-08-30T19:47:33.696Z"
 branch: "factory/RQ-0006"
 createdFromCommit: "1f97b11205f00ce8bfde186e3924fbf1e7daf874"
+githubPullRequestUrl: "https://github.com/baturorkun/tefas-pro/pull/12"
+githubPullRequestIid: 12
 githubIssueUrl: "https://github.com/baturorkun/tefas-pro/issues/11"
 githubIssueIid: 11
 repositoryProvider: github
