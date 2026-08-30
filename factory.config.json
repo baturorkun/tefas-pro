@@ -38,7 +38,10 @@
       ".gitlab-ci.yml",
       ".github/workflows",
       "tsconfig.json",
-      "tsconfig.build.json"
+      "tsconfig.build.json",
+      "collector",
+      "package.json",
+      "vitest.config.ts"
     ],
     "commands": {
       "typeCheck": "pnpm typecheck",

@@ -2,12 +2,16 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
+  isCarriedForwardWindow,
   parseCashflow,
   parseFundUniverse,
   parseInfo,
   parsePrice,
   parseVolatility,
+  parseWindowInvestors,
+  parseWindowSize,
   parseYield,
+  type WindowSize,
 } from '../src/sources/fintables.js';
 
 const fixture = (name: string): unknown =>
@@ -114,5 +118,51 @@ describe('parseYield', () => {
     });
     expect(one[0]?.yield3y).toBeNull();
     expect(one[0]?.yield1m).toBe(1);
+  });
+});
+
+describe('parseWindowSize', () => {
+  const w = parseWindowSize(fixture('fintables-window-growth.json'));
+  it('pencere sonundaki büyüklük ve pay adedini alır', () => {
+    expect(w[0]?.code).toBe('AAL');
+    expect(w[0]?.endAum).toBe(1939154327);
+    expect(w[0]?.endShareCount).toBe(552534679);
+  });
+  it('start_aum sıfır olan fonda değişim null gelir', () => {
+    expect(w[1]?.changePct).toBeNull();
+    expect(w[1]?.endAum).toBe(0);
+  });
+  it('results yoksa patlar', () => {
+    expect(() => parseWindowSize({ start: null, end: null })).toThrow(/results/);
+  });
+});
+
+describe('parseWindowInvestors', () => {
+  const w = parseWindowInvestors(fixture('fintables-window-cashflow.json'));
+  it('yalnız yatırımcı sayısını alır', () => {
+    expect(w[0]).toEqual({ code: 'AAL', endInvestorCount: 4460 });
+  });
+  it('cumulative_cashflow tipe hiç girmez', () => {
+    // Toplu endpoint'in bu alanı 1 günlük pencerede AUM aritmetiğinden 5 kat
+    // sapıyor; net akış yalnız fon başına endpoint'ten gelmeli.
+    expect(Object.keys(w[0] as object)).toEqual(['code', 'endInvestorCount']);
+  });
+});
+
+describe('isCarriedForwardWindow', () => {
+  const row = (change: number | null): WindowSize => ({
+    code: 'X', endAum: 1, endShareCount: 1, changePct: change,
+  });
+  it('hepsi sıfırsa tatil/hafta sonu penceresi', () => {
+    expect(isCarriedForwardWindow([row(0), row(0), row(0)])).toBe(true);
+  });
+  it('gerçek hareket varsa iş günü', () => {
+    expect(isCarriedForwardWindow([row(0.5), row(-1), row(0)])).toBe(false);
+  });
+  it('boş yanıt taşınmış sayılır (fact yazılmaz)', () => {
+    expect(isCarriedForwardWindow([])).toBe(true);
+  });
+  it('null değişim sıfır sayılır', () => {
+    expect(isCarriedForwardWindow([row(null), row(0)])).toBe(true);
   });
 });
