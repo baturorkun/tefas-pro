@@ -13,25 +13,33 @@
       }
     ]
   },
-  "status": "running",
+  "status": "passed",
   "createdAt": "2026-08-30T18:07:36.249Z",
-  "updatedAt": "2026-08-30T18:07:56.040Z",
+  "updatedAt": "2026-08-30T18:11:09.430Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-08-30T18:07:56.040Z"
+      "status": "passed",
+      "startedAt": "2026-08-30T18:07:56.040Z",
+      "finishedAt": "2026-08-30T18:11:09.429Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    ".github/workflows/deploy.yml",
+    "factory.config.json",
+    "package.json",
+    "references/deployment/README.md",
+    "scripts/resolve-deployment-target.sh",
+    "tests/deployment-target.test.sh"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "skipped"
   }
 }

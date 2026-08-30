@@ -90,13 +90,17 @@ local_output="$(PATH="${test_root}/bin:/usr/bin:/bin" MOCK_LOG="${test_root}/cal
 [[ -f "${test_root}/db/.env" ]] || fail "local mode must create db/.env"
 cmp --silent "${test_root}/db/.env" "${test_root}/db/.env.example" || fail "local mode must seed db/.env from the example"
 [[ -d "${test_root}/db/.secrets" ]] || fail "local mode must create a protected secret directory"
-secrets_mode="$(stat -f '%Lp' "${test_root}/db/.secrets" 2>/dev/null || stat -c '%a' "${test_root}/db/.secrets")"
+# GNU stat once denenir: BSD'nin -f'i macOS'ta dosya modunu verir ama Linux'ta
+# "filesystem" anlamina gelir ve HATA VERMEDEN baska bir sey dondurur, bu yuzden
+# || yedegi hic devreye girmez. GNU'nun -c'si ise macOS'ta gecersiz secenek olup
+# duzgunce basarisiz olur.
+secrets_mode="$(stat -c '%a' "${test_root}/db/.secrets" 2>/dev/null || stat -f '%Lp' "${test_root}/db/.secrets")"
 [[ "${secrets_mode}" == "700" ]] || fail "secret directory must use mode 0700"
 [[ -f "${test_root}/db/.secrets/pgpass" ]] || fail "local mode must create a pgweb password file"
-pgpass_mode="$(stat -f '%Lp' "${test_root}/db/.secrets/pgpass" 2>/dev/null || stat -c '%a' "${test_root}/db/.secrets/pgpass")"
+pgpass_mode="$(stat -c '%a' "${test_root}/db/.secrets/pgpass" 2>/dev/null || stat -f '%Lp' "${test_root}/db/.secrets/pgpass")"
 [[ "${pgpass_mode}" == "600" ]] || fail "pgweb password file must use mode 0600"
 [[ -f "${test_root}/db/.secrets/postgres-password" ]] || fail "local mode must create a PostgreSQL password file"
-postgres_password_mode="$(stat -f '%Lp' "${test_root}/db/.secrets/postgres-password" 2>/dev/null || stat -c '%a' "${test_root}/db/.secrets/postgres-password")"
+postgres_password_mode="$(stat -c '%a' "${test_root}/db/.secrets/postgres-password" 2>/dev/null || stat -f '%Lp' "${test_root}/db/.secrets/postgres-password")"
 [[ "${postgres_password_mode}" == "600" ]] || fail "PostgreSQL password file must use mode 0600"
 [[ "${local_output}" == *"PostgreSQL hazır"* ]] || fail "local mode must report PostgreSQL readiness"
 [[ "${local_output}" == *"pgweb hazır"* ]] || fail "local mode must report pgweb readiness"
