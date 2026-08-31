@@ -30,7 +30,7 @@ interface WatchlistRow {
   fundCode: string;
   title: string | null;
   /** Sunucuda kullanıcının kendi işlemlerinden türetilir. */
-  status: 'owned' | 'sold' | 'watch';
+  status: 'sold' | 'watch';
   addedAt: string;
   note: string | null;
   navDate: string | null;
@@ -503,14 +503,13 @@ function watchlistForm(onDone: () => void): HTMLElement {
 }
 
 const STATUS_LABEL: Record<WatchlistRow['status'], string> = {
-  owned: 'sahibim',
   sold: 'çıktım',
   watch: 'izliyorum',
 };
 
 async function watchlistView(reload: () => void): Promise<Node[]> {
   const rows = (await api('/api/watchlist')) as WatchlistRow[];
-  const owned = rows.filter((r) => r.status === 'owned').length;
+  const sold = rows.filter((r) => r.status === 'sold').length;
   const dates = rows.map((r) => r.navDate).filter((d): d is string => d !== null).sort();
   const gainers = rows.filter((r) => Number(r.dailyReturnPct ?? 0) > 0).length;
 
@@ -545,14 +544,14 @@ async function watchlistView(reload: () => void): Promise<Node[]> {
 
   return [
     el('div', { class: 'metric-grid' }, [
-      metric('Takip listem', String(rows.length), 'fon'),
-      metric('Sahip olduğum', String(owned), `${String(rows.length - owned)} yalnız izliyorum`),
+      metric('Takip listem', String(rows.length), 'portföyümde olmayan fon'),
+      metric('Çıktığım', String(sold), `${String(rows.length - sold)} hiç almadığım`),
       metric('Günü artıda', String(gainers), `${String(rows.length - gainers)} eksi veya yatay`),
       metric('Son veri', dates.at(-1) ?? '—', 'NAV tarihi'),
     ]),
     panel(
       'Takip listem',
-      `${String(rows.length)} fon`,
+      `${String(rows.length)} fon · portföyüme aldığım fon burada görünmez`,
       table(
         ['Fon', 'Durum', 'NAV tarihi', 'NAV', 'Günlük', 'Net akış', 'Stopaj', 'Satış valörü', ''],
         body,

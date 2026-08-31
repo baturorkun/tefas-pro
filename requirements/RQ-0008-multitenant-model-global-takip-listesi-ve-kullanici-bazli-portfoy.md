@@ -86,6 +86,29 @@ işlemlerini görüyor (RQ-0004'te doğrulandı). Bu korunur.
 işlemler `admin` üzerinde duruyor; `admin` yönetim hesabıdır, portföy taşımamalı.
 Mevcut 36 takip satırı da `batur`'un listesi olur.
 
+## Takip listesi = bende olmayan fonlar
+
+"Portföyüm" ve "takip listem" ayrı iki soru: biri elimdekiler, diğeri aday
+olarak izlediklerim. İkisi üst üste binerse liste bilgi taşımaz — nitekim
+bindi: 36 takip satırının 26'sı zaten sahip olunan fonlardı.
+
+Açık pozisyonu olan fon takip listesinde **görünmez**. Ama satırı silinmez;
+`analytics.watchlist_visible` gösterirken süzer:
+
+```sql
+user_watchlist MINUS (o kullanıcının açık pozisyondaki fonları)
+```
+
+Silmek yerine süzmenin sebebi: fondan tamamen çıkıldığında listede
+kendiliğinden geri belirsin. Silseydik kullanıcı her satıştan sonra fonu elle
+geri eklemek zorunda kalırdı — oysa satış sonrası dönem tam da izlemek
+istediği dönem. Satır korunduğu için notu ve eklenme tarihi de kaybolmuyor.
+
+Listeden kalıcı çıkarmak isteyen `DELETE /api/watchlist/:code` kullanır.
+
+Collector'ın kümesi bundan etkilenmez: gizlenen fonun zaten açık pozisyonu var,
+o daldan toplanmayı sürdürür.
+
 ## Durum artık türetilir
 
 `watchlist.status` alanı kaldırılır. Elle tutulduğu için zaten yanlış: 36 fonun
@@ -97,9 +120,11 @@ Asıl sebep başka: **durum kullanıcıya göre değişir.** Aynı fon bir kulla
 
 | Durum | Koşul |
 |---|---|
-| Sahibim | O kullanıcının o fonda satılmamış işlemi var |
 | Çıktım | İşlemi var ama hepsi satılmış |
-| İzliyorum | İşlemi yok, takip listesinde var |
+| İzliyorum | Hiç işlemi yok |
+
+"Sahibim" diye bir durum yok: açık pozisyonu olan fon listede zaten
+görünmüyor, portföy ekranının konusu.
 
 ## Kapsam
 
@@ -109,7 +134,8 @@ Asıl sebep başka: **durum kullanıcıya göre değişir.** Aynı fon bir kulla
   hesaplanır; her fon bir kez toplanır. Kapalı pozisyon kümeye girmez.
 - Takip listesine fon ekleme ve çıkarma uçları; kullanıcı yalnız kendi listesini
   değiştirir.
-- Takip listesi görünümü kullanıcının kendi listesini ve türetilmiş durumu gösterir.
+- Takip listesi görünümü kullanıcının kendi listesini ve türetilmiş durumu
+  gösterir; açık pozisyonu olan fonlar listeden süzülür.
 - Portföye işlem girildiğinde fon o kullanıcının takip listesinde yoksa eklenir
   (mevcut davranış korunur).
 - `pnpm db:seed <kullanıcı>` — tohum dosyası artık kime uygulanacağını bilmeli.
@@ -139,8 +165,13 @@ Asıl sebep başka: **durum kullanıcıya göre değişir.** Aynı fon bir kulla
       toplanmaya devam eder.
 - [ ] Tamamen satılmış bir fon takip listesinden çıkınca toplanmayı bırakır;
       takip listesinde kaldığı sürece toplanmayı sürdürür.
-- [ ] Fon durumu (sahibim / çıktım / izliyorum) işlemlerden türetilir ve
-      kullanıcıya göre değişir; tabloda `status` alanı yoktur.
+- [ ] Fon durumu (çıktım / izliyorum) işlemlerden türetilir ve kullanıcıya göre
+      değişir; tabloda `status` alanı yoktur.
+- [ ] Takip listesindeki bir fondan alım yapılınca fon listeden kaybolur,
+      `user_watchlist` satırı silinmez.
+- [ ] O fondan tamamen çıkılınca fon listede kendiliğinden geri belirir; not ve
+      eklenme tarihi korunur.
+- [ ] Listeden kalıcı çıkarma yalnız kullanıcının açık isteğiyle olur.
 - [ ] `pnpm db:seed` kullanıcı adı olmadan çalışmaz; olmayan kullanıcı reddedilir.
 - [ ] `pnpm db:user transfer` kaynakta satır bırakmaz; devir tek transaction'dır.
 - [ ] Yapılandırılmış quality gate'ler (typecheck, test, build) geçer.

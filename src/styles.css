@@ -261,7 +261,6 @@ td.actions { text-align: right; }
 }
 .status-open   { color: var(--accent); background: var(--accent-tint); border-color: #2c5f57; }
 .status-closed { color: var(--muted-dim); background: var(--panel); border-color: var(--line); }
-.status-owned  { color: var(--accent); background: var(--accent-tint); border-color: #2c5f57; }
 .status-watch  { color: var(--warn); background: #e8c07d1a; border-color: #5c4a2a; }
 .status-sold   { color: var(--muted-dim); background: var(--panel); border-color: var(--line); }
 .status-admin  { color: var(--accent-soft); background: var(--accent-tint); border-color: #2c5f57; }
