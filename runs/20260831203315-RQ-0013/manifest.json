@@ -13,25 +13,30 @@
       }
     ]
   },
-  "status": "running",
+  "status": "passed",
   "createdAt": "2026-08-31T20:33:15.207Z",
-  "updatedAt": "2026-08-31T20:33:33.285Z",
+  "updatedAt": "2026-08-31T20:35:36.588Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
+      "status": "passed",
       "startedAt": "2026-08-31T20:33:33.285Z",
+      "finishedAt": "2026-08-31T20:35:36.587Z",
       "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "db/migrations/021_drop_future_rows.sql",
+    "src/collector.ts",
+    "tests/collector.test.ts"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
   }
 }
