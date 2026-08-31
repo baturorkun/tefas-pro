@@ -13,25 +13,32 @@
       }
     ]
   },
-  "status": "running",
+  "status": "passed",
   "createdAt": "2026-08-31T14:29:18.746Z",
-  "updatedAt": "2026-08-31T14:29:27.007Z",
+  "updatedAt": "2026-08-31T14:37:41.008Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-08-31T14:29:27.007Z"
+      "status": "passed",
+      "startedAt": "2026-08-31T14:29:27.007Z",
+      "finishedAt": "2026-08-31T14:37:41.007Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "requirements/RQ-0009-dashboard-grafiklerinde-sahiplik-ayrimi-ve-takip-listesi-toggle.md",
+    "src/main.ts",
+    "src/server/index.ts",
+    "src/server/repository.ts",
+    "src/styles.css"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
   }
 }
