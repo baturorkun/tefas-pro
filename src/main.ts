@@ -63,6 +63,22 @@ interface RankEntry {
   people?: string | null;
 }
 
+interface PortfolioRow {
+  fundCode: string;
+  title: string | null;
+  dailyReturnPct: string | null;
+  return1m: string | null;
+  return3m: string | null;
+  days: number;
+  units: string;
+  cost: string;
+  value: string;
+  gain: string;
+  returnPct: string;
+  navDate: string | null;
+  asOfDate: string | null;
+}
+
 interface PositionSummary {
   cost: string;
   value: string;
@@ -93,7 +109,7 @@ interface Dashboard {
   investorRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
 }
 
-type ViewId = 'dashboard' | 'portfolio' | 'watchlist' | 'users';
+type ViewId = 'dashboard' | 'portfolio' | 'transactions' | 'watchlist' | 'users';
 
 const root = document.getElementById('app');
 
@@ -620,7 +636,7 @@ function transactionForm(existing: Transaction | null, onDone: () => void): HTML
   return form;
 }
 
-async function portfolioView(reload: () => void): Promise<Node[]> {
+async function transactionsView(reload: () => void): Promise<Node[]> {
   const rows = (await api('/api/transactions')) as Transaction[];
   const open = rows.filter((t) => t.sellDate === null);
   const funds = new Set(open.map((t) => t.fundCode));
@@ -662,13 +678,89 @@ async function portfolioView(reload: () => void): Promise<Node[]> {
       metric('Son işlem', last ?? '—', 'alış tarihi'),
     ]),
     panel(
-      'İşlemler',
-      `${String(rows.length)} kayıt`,
+      'Fon Hareketleri',
+      `${String(rows.length)} kayıt · ${String(open.length)} açık`,
       table(
         ['Fon', 'Adet', 'Alış', 'Banka', 'Satış', 'Durum', ''],
         body,
       ),
       transactionForm(null, reload),
+    ),
+  ];
+}
+
+// ─── Portföyüm görünümü ─────────────────────────────────────────────────────
+
+/**
+ * Fon başına açık pozisyon. Salt okunur: bu türetilmiş bir görünüm, düzenlenecek
+ * satırı yok. Düzenleme "Fon Hareketleri"nde, işlem başına.
+ */
+async function portfolioView(): Promise<Node[]> {
+  const rows = (await api('/api/portfolio')) as PortfolioRow[];
+  const sum = (f: (r: PortfolioRow) => number): number => rows.reduce((a, r) => a + f(r), 0);
+  const cost = sum((r) => Number(r.cost));
+  const value = sum((r) => Number(r.value));
+  const gain = value - cost;
+  const winners = rows.filter((r) => Number(r.returnPct) > 0).length;
+
+  const num = (v: string | null, digits = 2): string =>
+    v === null ? '—' : Number(v).toLocaleString('tr-TR', {
+      minimumFractionDigits: digits, maximumFractionDigits: digits,
+    });
+
+  const body = rows.map((r) => {
+    // NAV günü veri gününden eskiyse fiyat getirilerle taşınmıştır. Taşınmış
+    // bir fiyat ölçülmüş gibi görünmemeli; hücre bunu söyler.
+    const carried = r.navDate !== null && r.asOfDate !== null && r.navDate < r.asOfDate;
+    return el('tr', {}, [
+      el('td', {}, [
+        el('span', { class: 'fund-code' }, [r.fundCode]),
+        el('span', { class: 'fund-title' }, [r.title ?? '']),
+      ]),
+      el('td', {}, [signed(r.dailyReturnPct)]),
+      el('td', {}, [signed(r.return1m)]),
+      el('td', {}, [signed(r.return3m)]),
+      el('td', { class: 'num' }, [`${String(r.days)}g`]),
+      el('td', { class: 'num' }, [num(r.units, 0)]),
+      el('td', { class: 'num' }, [num(r.cost, 0)]),
+      el('td', { class: 'num' }, [
+        num(r.value, 0),
+        ...(carried
+          ? [el('span', {
+              class: 'carried',
+              title: `Fiyat ${r.navDate ?? ''} NAV'ından getirilerle taşındı`,
+            }, ['~'])]
+          : []),
+      ]),
+      el('td', {}, [signed(r.gain, ' ₺')]),
+      el('td', {}, [signed(r.returnPct)]),
+    ]);
+  });
+
+  const foot = el('tr', { class: 'total-row' }, [
+    el('td', {}, [`TOPLAM (${String(rows.length)})`]),
+    el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []),
+    el('td', { class: 'num' }, [num(String(cost), 0)]),
+    el('td', { class: 'num' }, [num(String(value), 0)]),
+    el('td', {}, [signed(String(gain), ' ₺')]),
+    el('td', {}, [signed(cost === 0 ? null : String((value / cost - 1) * 100))]),
+  ]);
+
+  return [
+    el('div', { class: 'metric-grid' }, [
+      metric('Maliyet', money(String(cost)), `${String(rows.length)} fon`),
+      metric('Bugünkü değer', money(String(value)), rows[0]?.asOfDate ?? '—'),
+      metric('Kâr / zarar', money(String(gain)),
+        cost === 0 ? '—' : `%${(((value / cost) - 1) * 100).toFixed(2)}`),
+      metric('Kârda', String(winners), `${String(rows.length - winners)} zararda`),
+    ]),
+    panel(
+      'Portföyüm',
+      'açık pozisyonlar, fon başına',
+      table(
+        ['Fon', 'Gün %', '1 ay %', '3 ay %', 'Süre', 'Adet', 'Maliyet ₺', 'Değer ₺', 'K/Z', 'K/Z %'],
+        [...body, foot],
+      ),
     ),
   ];
 }
@@ -862,6 +954,7 @@ async function usersView(reload: () => void): Promise<Node[]> {
 const VIEWS: { id: ViewId; label: string; icon: string; adminOnly: boolean; crumb: string }[] = [
   { id: 'dashboard', label: 'Panel', icon: '▦', adminOnly: false, crumb: 'Genel' },
   { id: 'portfolio', label: 'Portföyüm', icon: '◈', adminOnly: false, crumb: 'Genel' },
+  { id: 'transactions', label: 'Fon Hareketleri', icon: '⇄', adminOnly: false, crumb: 'Genel' },
   { id: 'watchlist', label: 'Takip listem', icon: '☰', adminOnly: false, crumb: 'Genel' },
   { id: 'users', label: 'Kullanıcılar', icon: '⚇', adminOnly: true, crumb: 'Yönetim' },
 ];
@@ -912,7 +1005,8 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
   let bodyNodes: Node[];
   try {
     if (current.id === 'dashboard') bodyNodes = await dashboardView(reload);
-    else if (current.id === 'portfolio') bodyNodes = await portfolioView(reload);
+    else if (current.id === 'portfolio') bodyNodes = await portfolioView();
+    else if (current.id === 'transactions') bodyNodes = await transactionsView(reload);
     else if (current.id === 'watchlist') bodyNodes = await watchlistView(reload);
     else bodyNodes = await usersView(reload);
   } catch (err) {
