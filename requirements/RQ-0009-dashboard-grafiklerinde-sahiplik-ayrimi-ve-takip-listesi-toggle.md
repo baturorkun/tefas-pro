@@ -1,6 +1,6 @@
 ---
 id: RQ-0009
-status: draft
+status: ready
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -35,9 +35,9 @@ Her bar, o fonun kullanıcı için ne olduğunu gösterir:
 | Görünüm | Anlam |
 |---|---|
 | Dolu bar | Açık pozisyonum var |
-| Taralı bar | Takip listemde, pozisyonum yok |
+| İçi boş bar (kenarlıklı) | Takip listemde, pozisyonum yok |
 
-Ayrım renkle değil dokuyla yapılır. Renk zaten getirinin işareti — artı yeşil,
+Ayrım dolgu-boşluk ile yapılır, renkle değil. Renk zaten getirinin işareti — artı yeşil,
 eksi kırmızı. Sahipliği de renge yüklersek iki bilgi tek kanalda çakışır ve
 grafik okunmaz olur.
 
@@ -65,7 +65,9 @@ Sunucuya yazmaya değmez, kullanıcı başına bir tercih değil o an bakılan g
 - `analytics.fund_returns` sorgusuna kullanıcının sahiplik durumu eklenir;
   view kullanıcı bazlı süzülemez, süzme `dashboard()` sorgusunda yapılır.
 - `RankEntry` bir `owned: boolean` alanı taşır.
-- `barChart()` dolu ve taralı bar çizer; efsane (legend) panel başlığında.
+- `barChart()` dolu ve içi boş bar çizer; efsane (legend) toggle'ın yanında.
+  SVG deseni (pattern) denendi ve bırakıldı: desen dolgunun yerine geçtiği için
+  barın artı/eksi rengini yiyordu.
 - Dört grafiği yöneten tek toggle; varsayılan açık, `localStorage`'da saklanır.
 - Toggle kapalıyken sıralama yalnız açık pozisyonlardan hesaplanır — grafikten
   bar gizlemek değil, listeyi baştan süzmek. Aksi halde top-10'da 3 fon kalırdı.
@@ -73,8 +75,10 @@ Sunucuya yazmaya değmez, kullanıcı başına bir tercih değil o an bakılan g
 ## Acceptance Criteria
 
 - [ ] Dört grafikte de portföydeki fonlar ile takip listesindeki fonlar
-      birbirinden ayırt edilebilir; ayrım dokuyla yapılır, renk getiriyi
+      birbirinden ayırt edilebilir; ayrım dolgu-boşlukla yapılır, renk getiriyi
       göstermeye devam eder.
+- [ ] Boş kalan kayıp grafiği "veri yok" demez; kaybettiren fon olmadığını
+      söyler.
 - [ ] Panelde ayrımın ne anlama geldiğini söyleyen bir efsane vardır.
 - [ ] Varsayılan görünüm bugünkü kapsamı korur: collector'ın topladığı tüm
       fonlar sıralamada.

@@ -375,6 +375,8 @@ export interface RankEntry {
   returnPct: string;
   /** Pencerede kaç iş günü veri olduğu. */
   days: number | null;
+  /** Bu kullanıcının o fonda açık pozisyonu var mı. Saklanmaz, türetilir. */
+  owned: boolean;
 }
 
 export interface DashboardData {
@@ -394,7 +396,11 @@ const RANK_LIMIT = 10;
  * Sıralama saklanan günlük seriden hesaplanır; sayfa açılışında dış servise
  * istek atılmaz. Kapsam takip edilen fonlar: veri yalnız onlar için toplanır.
  */
-export async function dashboard(pool: pg.Pool, userId: number): Promise<DashboardData> {
+export async function dashboard(
+  pool: pg.Pool,
+  userId: number,
+  onlyOwned = false,
+): Promise<DashboardData> {
   const [counts, lastRun, wl] = await Promise.all([
     pool.query<{
       watchlist: string; tracked_funds: string; open_positions: string; data_date: string | null;
@@ -413,11 +419,26 @@ export async function dashboard(pool: pg.Pool, userId: number): Promise<Dashboar
        FROM ingest_run ORDER BY id DESC LIMIT 1`,
     ),
     pool.query<{
-      fund_code: string; title: string | null;
+      fund_code: string; title: string | null; owned: boolean;
       return_1w: string | null; days_1w: string; return_1m: string | null; days_1m: string;
     }>(
-      `SELECT fund_code, title, return_1w::text, days_1w::text, return_1m::text, days_1m::text
-       FROM analytics.fund_returns`,
+      // Sahiplik view'a konamaz: kullanıcıya göre değişir, view parametre
+      // almaz. Sıralamanın kendisi kullanıcıdan bağımsız — fonun getirisi
+      // herkes için aynı — bu yüzden yalnız `owned` sütunu kullanıcıya bağlı.
+      //
+      // `onlyOwned` grafiği süzmez, listeyi baştan daraltır: bar gizlemek
+      // top-10'u üçe düşürür ve "en çok kazandıran 10" başlığını yalanlardı.
+      `SELECT r.fund_code, r.title, r.return_1w::text, r.days_1w::text,
+              r.return_1m::text, r.days_1m::text,
+              EXISTS (SELECT 1 FROM portfolio_transaction p
+                      WHERE p.user_id = $1 AND p.fund_code = r.fund_code
+                        AND p.sell_date IS NULL) AS owned
+       FROM analytics.fund_returns r
+       WHERE NOT $2::boolean
+          OR EXISTS (SELECT 1 FROM portfolio_transaction p
+                     WHERE p.user_id = $1 AND p.fund_code = r.fund_code
+                       AND p.sell_date IS NULL)`,
+      [userId, onlyOwned],
     ),
   ]);
 
@@ -426,6 +447,7 @@ export async function dashboard(pool: pg.Pool, userId: number): Promise<Dashboar
       .map((r) => ({
         fundCode: r.fund_code,
         title: r.title,
+        owned: r.owned,
         returnPct: win === '1w' ? r.return_1w : r.return_1m,
         days: Number(win === '1w' ? r.days_1w : r.days_1m),
       }))
