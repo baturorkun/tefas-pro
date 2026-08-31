@@ -53,6 +53,8 @@ interface RankEntry {
   title: string | null;
   returnPct: string;
   days: number | null;
+  /** Açık pozisyonum var mı. Dolu / içi boş bar ayrımı buna bakar. */
+  owned: boolean;
 }
 
 interface Dashboard {
@@ -199,8 +201,8 @@ function svg<K extends keyof SVGElementTagNameMap>(
  * Barlar gruptaki en büyük mutlak değere göre ölçeklenir; negatifler sıfır
  * çizgisinin solunda ve tehlike rengiyle çizilir.
  */
-function barChart(entries: RankEntry[]): SVGSVGElement | HTMLElement {
-  if (entries.length === 0) return el('div', { class: 'empty-state' }, ['Veri yok.']);
+function barChart(entries: RankEntry[], emptyText = 'Veri yok.'): SVGSVGElement | HTMLElement {
+  if (entries.length === 0) return el('div', { class: 'empty-state' }, [emptyText]);
 
   const W = 520;
   const ROW = 26;
@@ -228,7 +230,7 @@ function barChart(entries: RankEntry[]): SVGSVGElement | HTMLElement {
     const x = v >= 0 ? zeroX : zeroX - len;
 
     root.append(
-      svg('title', {}, `${e.fundCode} — ${e.title ?? ''}`),
+      svg('title', {}, `${e.fundCode} — ${e.title ?? ''} · ${e.owned ? 'portföyümde' : 'takip listemde'}`),
       svg('text', { x: '0', y: String(y + 13), class: 'bar-code' }, e.fundCode),
       svg('rect', {
         x: String(x),
@@ -236,7 +238,9 @@ function barChart(entries: RankEntry[]): SVGSVGElement | HTMLElement {
         width: String(Math.max(len, 1)),
         height: '14',
         rx: '3',
-        class: v >= 0 ? 'bar-pos' : 'bar-neg',
+        // Sahiplik dokuyla ayrılır, renkle değil: renk zaten getirinin işareti.
+        // İkisini de renge yüklemek iki bilgiyi tek kanalda çakıştırırdı.
+        class: `${v >= 0 ? 'bar-pos' : 'bar-neg'}${e.owned ? '' : ' bar-watch'}`,
       }),
       svg(
         'text',
@@ -259,26 +263,93 @@ function barChart(entries: RankEntry[]): SVGSVGElement | HTMLElement {
   return root;
 }
 
-function chartPanel(title: string, meta: string, entries: RankEntry[]): HTMLElement {
+/**
+ * Boş kayıp grafiği "Veri yok." demez: kaybettiren fon olmaması veri eksikliği
+ * değil, iyi haber. Toggle kapatılınca gerçekten oluyor — açık pozisyonların
+ * hiçbiri son ayda ekside değilse panel boş kalıyor.
+ */
+function chartPanel(
+  title: string,
+  meta: string,
+  entries: RankEntry[],
+  emptyText?: string,
+): HTMLElement {
   return el('section', { class: 'panel' }, [
     el('div', { class: 'panel-heading' }, [
       el('h2', {}, [title]),
       el('span', { class: 'header-meta' }, [meta]),
     ]),
-    el('div', { class: 'panel-body' }, [barChart(entries)]),
+    el('div', { class: 'panel-body' }, [barChart(entries, emptyText)]),
   ]);
 }
 
 // ─── Dashboard ──────────────────────────────────────────────────────────────
 
-async function dashboardView(): Promise<Node[]> {
-  const d = (await api('/api/dashboard')) as Dashboard;
+const ONLY_OWNED_KEY = 'tefas.dashboard.onlyOwned';
+
+/**
+ * Toggle durumu tarayıcıda saklanır: bu bir kullanıcı tercihi değil, o an
+ * bakılan görünüm. Sunucuya yazmak gereksiz yazma trafiği olurdu.
+ *
+ * localStorage erişimi try/catch içinde: gizli sekmede veya site verisi
+ * kapalıyken okuma da yazma da exception atar ve panel hiç açılmazdı.
+ */
+function readOnlyOwned(): boolean {
+  try {
+    return localStorage.getItem(ONLY_OWNED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeOnlyOwned(value: boolean): void {
+  try {
+    localStorage.setItem(ONLY_OWNED_KEY, value ? '1' : '0');
+  } catch {
+    // Saklanamıyorsa görünüm yine doğru, yalnız yenilemede sıfırlanır.
+  }
+}
+
+/**
+ * Dört grafiğin ortak kontrolü. Panel başına ayrı olsaydı bir panelde takip
+ * listesi varken diğerinde yokken sıralamalar karşılaştırılamazdı.
+ */
+function watchlistToggle(checked: boolean, onChange: (v: boolean) => void): HTMLElement {
+  const input = el('input', { type: 'checkbox', id: 'toggle-watchlist' });
+  input.checked = checked;
+  input.addEventListener('change', () => {
+    onChange(input.checked);
+  });
+  return el('div', { class: 'chart-toolbar' }, [
+    el('label', { class: 'toggle', for: 'toggle-watchlist' }, [
+      input,
+      el('span', {}, ['Takip listem de gösterilsin']),
+    ]),
+    el('div', { class: 'chart-legend' }, [
+      el('div', { class: 'legend-item' }, [
+        el('span', { class: 'legend-swatch legend-owned' }),
+        el('span', {}, ['portföyümde']),
+      ]),
+      el('div', { class: 'legend-item' }, [
+        el('span', { class: 'legend-swatch legend-watch' }),
+        el('span', {}, ['takip listemde']),
+      ]),
+    ]),
+  ]);
+}
+
+async function dashboardView(reload: () => void): Promise<Node[]> {
+  // Toggle kapalıyken sıralama sunucuda baştan daraltılır, grafikte bar
+  // gizlenmez: gizleseydik top-10'da üç bar kalır, başlık yalan olurdu.
+  const onlyOwned = readOnlyOwned();
+  const d = (await api(`/api/dashboard${onlyOwned ? '?onlyOwned=1' : ''}`)) as Dashboard;
   const m = d.metrics;
   const run = m.lastRun;
 
+  const kapsam = onlyOwned ? 'yalnız portföyüm' : 'takip edilen fonlar';
   const grid = (nodes: Node[]): HTMLElement => el('div', { class: 'chart-grid' }, nodes);
 
-  const nodes: Node[] = [
+  return [
     el('div', { class: 'metric-grid' }, [
       metric('Takip listem', String(m.watchlist), `${String(m.trackedFunds)} fon toplanıyor`),
       metric('Açık pozisyon', String(m.openPositions), 'portföyümde'),
@@ -289,20 +360,19 @@ async function dashboardView(): Promise<Node[]> {
         run ? `#${String(run.id)} · ${run.status}` : 'henüz koşmadı',
       ),
     ]),
+    watchlistToggle(!onlyOwned, (dahil) => {
+      writeOnlyOwned(!dahil);
+      reload();
+    }),
     grid([
-      chartPanel('En çok kazandıran (1 hafta)', 'takip edilen fonlar', d.watchlistRanks['1w']?.top ?? []),
-      chartPanel('En çok kazandıran (1 ay)', 'takip edilen fonlar', d.watchlistRanks['1m']?.top ?? []),
-      chartPanel(
-        'En çok kaybettiren (1 hafta)', 'takip edilen fonlar',
-        d.watchlistRanks['1w']?.bottom ?? [],
-      ),
-      chartPanel(
-        'En çok kaybettiren (1 ay)', 'takip edilen fonlar',
-        d.watchlistRanks['1m']?.bottom ?? [],
-      ),
+      chartPanel('En çok kazandıran (1 hafta)', kapsam, d.watchlistRanks['1w']?.top ?? []),
+      chartPanel('En çok kazandıran (1 ay)', kapsam, d.watchlistRanks['1m']?.top ?? []),
+      chartPanel('En çok kaybettiren (1 hafta)', kapsam,
+        d.watchlistRanks['1w']?.bottom ?? [], 'Haftayı ekside kapatan fon yok.'),
+      chartPanel('En çok kaybettiren (1 ay)', kapsam,
+        d.watchlistRanks['1m']?.bottom ?? [], 'Ayı ekside kapatan fon yok.'),
     ]),
   ];
-  return nodes;
 }
 
 // ─── Giriş ──────────────────────────────────────────────────────────────────
@@ -707,7 +777,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
 
   let bodyNodes: Node[];
   try {
-    if (current.id === 'dashboard') bodyNodes = await dashboardView();
+    if (current.id === 'dashboard') bodyNodes = await dashboardView(reload);
     else if (current.id === 'portfolio') bodyNodes = await portfolioView(reload);
     else if (current.id === 'watchlist') bodyNodes = await watchlistView(reload);
     else bodyNodes = await usersView(reload);

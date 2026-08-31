@@ -289,6 +289,28 @@ td.actions { text-align: right; }
 .bar-neg   { fill: var(--danger); opacity: .75; }
 .bar-zero  { stroke: var(--line); stroke-width: 1; }
 
+/* Takip listesindeki fon: içi boş bar. Dolgu düşer, kenar kalır — böylece
+   artı/eksi rengi korunur. Deseni (pattern) tercih etmedik: desen dolgunun
+   yerine geçtiği için barın rengini yiyordu. */
+.bar-watch      { fill-opacity: .16; stroke-width: 1.5; }
+.bar-pos.bar-watch { stroke: var(--accent); }
+.bar-neg.bar-watch { stroke: var(--danger); }
+
+/* Grafik araç çubuğu: toggle solda, efsane sağda */
+.chart-toolbar { display: flex; align-items: center; justify-content: space-between;
+                 gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.toggle        { display: flex; align-items: center; gap: 8px;
+                 font-size: 13px; color: var(--text); cursor: pointer; }
+.toggle input  { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+/* Grafik efsanesi */
+.chart-legend      { display: flex; gap: 14px; align-items: center;
+                     font-size: 11px; color: var(--muted-dim); }
+.legend-item       { display: flex; gap: 5px; align-items: center; }
+.legend-swatch     { width: 16px; height: 9px; border-radius: 2px; }
+.legend-owned      { background: var(--accent); opacity: .85; }
+.legend-watch      { border: 1.5px solid var(--accent); background: #45d6bc29; }
+
 @media (max-width: 1100px) { .chart-grid { grid-template-columns: 1fr; } }
 
 /* ─── Durumlar ─────────────────────────────────────────────────────────── */

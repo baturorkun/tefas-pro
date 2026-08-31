@@ -266,7 +266,9 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
       }
 
       if (path === '/api/dashboard' && method === 'GET') {
-        sendJson(res, 200, await dashboard(pool, user.id));
+        // ?onlyOwned=1 — takip listesi fonlarını sıralamadan çıkarır.
+        const onlyOwned = url.searchParams.get('onlyOwned') === '1';
+        sendJson(res, 200, await dashboard(pool, user.id, onlyOwned));
         return;
       }
 
