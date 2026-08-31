@@ -58,7 +58,7 @@ Toplanacak fon kümesi bir tablo değil, bir sorgudur:
 
 ```
 DISTINCT( tüm kullanıcıların takip listeleri
-        ∪ tüm kullanıcıların portföylerindeki fonlar )
+        ∪ tüm kullanıcıların AÇIK pozisyondaki fonları )
 ```
 
 Bir fon kaç kullanıcıyı ilgilendirirse ilgilendirsin **bir kez** toplanır. Piyasa
@@ -67,6 +67,15 @@ verisi global kalır; THF'nin NAV'ını kullanıcı başına tekrar çekmek ayn�
 
 Portföyün de kümeye girmesi şart: bir kullanıcı fonu takip listesinden çıkarsa
 ama pozisyonu duruyorsa verisi kesilmemelidir.
+
+Bu gerekçe yalnız **açık** pozisyon için geçerli. Kapalı pozisyon da kümede
+olsaydı, aylar önce çıkılmış ve takip listesinden de silinmiş bir fon sonsuza
+kadar toplanırdı — kimse istemediği halde.
+
+Satılmış bir fonu bir süre daha izlemek isteyen onu takip listesinde tutar.
+Bu artık kullanıcının kararı, portföy geçmişinin yan etkisi değil. Kapalı
+pozisyonun kâr/zarar hesabı da etkilenmez: satış tarihine kadarki NAV zaten
+`fact_fund_daily`'de duruyor ve silinmiyor.
 
 ## Portföy kullanıcıya aittir
 
@@ -96,8 +105,8 @@ Asıl sebep başka: **durum kullanıcıya göre değişir.** Aynı fon bir kulla
 
 - `watchlist` → `user_watchlist(user_id, fund_code, added_at)`; `status` kaldırılır.
 - `batur` kullanıcısı oluşturulur; 94 işlem ve 36 takip satırı ona taşınır.
-- Collector'ın fon kümesi takip listeleri ile portföylerin birleşiminden
-  hesaplanır; her fon bir kez toplanır.
+- Collector'ın fon kümesi takip listeleri ile açık pozisyonların birleşiminden
+  hesaplanır; her fon bir kez toplanır. Kapalı pozisyon kümeye girmez.
 - Takip listesine fon ekleme ve çıkarma uçları; kullanıcı yalnız kendi listesini
   değiştirir.
 - Takip listesi görünümü kullanıcının kendi listesini ve türetilmiş durumu gösterir.
@@ -124,10 +133,12 @@ Asıl sebep başka: **durum kullanıcıya göre değişir.** Aynı fon bir kulla
 - [ ] Geçersiz fon kodu reddedilir; fon `dim_fund`'a fintables'tan doğrulanarak
       eklenir.
 - [ ] Aynı fon aynı kullanıcı tarafından iki kez eklenirse hata vermez.
-- [ ] Collector'ın topladığı fon kümesi takip listeleri ile portföylerin
+- [ ] Collector'ın topladığı fon kümesi takip listeleri ile açık pozisyonların
       birleşimidir; iki kullanıcı aynı fonu izlese de fon bir kez toplanır.
 - [ ] Bir kullanıcı fonu takip listesinden çıkarsa ama açık pozisyonu varsa fon
       toplanmaya devam eder.
+- [ ] Tamamen satılmış bir fon takip listesinden çıkınca toplanmayı bırakır;
+      takip listesinde kaldığı sürece toplanmayı sürdürür.
 - [ ] Fon durumu (sahibim / çıktım / izliyorum) işlemlerden türetilir ve
       kullanıcıya göre değişir; tabloda `status` alanı yoktur.
 - [ ] `pnpm db:seed` kullanıcı adı olmadan çalışmaz; olmayan kullanıcı reddedilir.

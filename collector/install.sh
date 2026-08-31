@@ -119,8 +119,8 @@ require_network() {
 # ingest_run tablosunda kalici bir "failed" satiri birakirdi. Kurulumun kendisi
 # basarilidir; eksik olan yapilandirmadir.
 #
-# Kaynak analytics.tracked_fund: tum kullanicilarin takip listeleri ile
-# portfoylerinin birlesimi. Collector'in okudugu kumeyle ayni sorgu.
+# Kaynak analytics.tracked_fund: tum kullanicilarin takip listeleri ile acik
+# pozisyonlarinin birlesimi. Collector'in okudugu kumeyle ayni sorgu.
 tracked_count() {
   podman exec tefas-pro-postgres psql -U tefas -d tefas -tAc \
     'SELECT count(*) FROM analytics.tracked_fund' 2>/dev/null | tr -d '[:space:]'

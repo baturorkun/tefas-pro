@@ -402,8 +402,11 @@ async function main(): Promise<void> {
   // "basarisiz toplama" gibi gorunmesin.
   //
   // Kaynak tek bir kullanicinin listesi degil: analytics.tracked_fund tum
-  // kullanicilarin takip listeleri ile portfoylerinin birlesimidir. Collector
-  // kimin ekledigine bakmaz, fon basina bir kez toplar.
+  // kullanicilarin takip listeleri ile ACIK pozisyonlarinin birlesimidir.
+  // Collector kimin ekledigine bakmaz, fon basina bir kez toplar.
+  //
+  // Tamamen satilmis bir fon yalniz takip listesinde kaldigi surece toplanir;
+  // bu kullanicinin karari, portfoy gecmisinin yan etkisi degil.
   const codes =
     args.funds ??
     (
