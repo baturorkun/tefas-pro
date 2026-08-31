@@ -69,6 +69,10 @@ const SECURE_COOKIE = process.env.SECURE_COOKIE === 'true';
  * Statik dosyalar sabit bir eşlemeden servis edilir. İstekten gelen yol dosya
  * sistemine hiç dokunmaz, böylece yol aşımı (`../`) mümkün değildir.
  */
+// Tarayıcıya giden SPA derlenmiş dosyadan servis edilir; sunucunun kendisi
+// tsx ile kaynaktan koşar. İkisi ayrı olduğu için `dist/main.js` bayatlarsa
+// backend yeniyken arayüz eski uçları çağırmayı sürdürür ve hata anlaşılmaz
+// olur — bu yüzden `pnpm serve` önce build eder.
 const STATIC: Record<string, { file: string; type: string }> = {
   '/': { file: 'public/index.html', type: 'text/html; charset=utf-8' },
   '/index.html': { file: 'public/index.html', type: 'text/html; charset=utf-8' },
