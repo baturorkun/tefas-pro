@@ -296,6 +296,12 @@ td.actions { text-align: right; }
 .bar-pos.bar-watch { stroke: var(--accent); }
 .bar-neg.bar-watch { stroke: var(--danger); }
 
+/* Bölüm başlığı: panel ile aynı hizada, grafik ızgarasının üstünde */
+.section-title { font-size: 13px; font-weight: 600; letter-spacing: .06em;
+                 text-transform: uppercase; color: var(--muted-dim);
+                 margin: 26px 0 12px; }
+.section-title:first-child { margin-top: 0; }
+
 /* Grafik araç çubuğu: toggle solda, efsane sağda */
 .chart-toolbar { display: flex; align-items: center; justify-content: space-between;
                  gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }

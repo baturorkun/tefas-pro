@@ -377,6 +377,19 @@ export interface RankEntry {
   days: number | null;
   /** Bu kullanıcının o fonda açık pozisyonu var mı. Saklanmaz, türetilir. */
   owned: boolean;
+  /** Yalnız pozisyon sıralamasında dolu: o fondaki kâr/zarar, TL. */
+  gain?: string | null;
+}
+
+export interface PositionSummary {
+  cost: string;
+  value: string;
+  gain: string;
+  gainPct: string;
+  /** Kapanmış pozisyonlardan gerçekleşmiş kâr. */
+  realizedGain: string;
+  winners: number;
+  losers: number;
 }
 
 export interface DashboardData {
@@ -388,6 +401,11 @@ export interface DashboardData {
     lastRun: { id: number; status: string; finishedAt: string | null } | null;
   };
   watchlistRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
+  positions: {
+    summary: PositionSummary | null;
+    top: RankEntry[];
+    bottom: RankEntry[];
+  };
 }
 
 const RANK_LIMIT = 10;
@@ -401,7 +419,7 @@ export async function dashboard(
   userId: number,
   onlyOwned = false,
 ): Promise<DashboardData> {
-  const [counts, lastRun, wl] = await Promise.all([
+  const [counts, lastRun, wl, pos, posSum] = await Promise.all([
     pool.query<{
       watchlist: string; tracked_funds: string; open_positions: string; data_date: string | null;
     }>(
@@ -440,6 +458,39 @@ export async function dashboard(
                        AND p.sell_date IS NULL)`,
       [userId, onlyOwned],
     ),
+    // Pozisyon sıralaması. Kapanmışlar listeye girmez — artık pozisyon
+    // değiller; gerçekleşmiş kârları özet şeridinde duruyor.
+    //
+    // Simülasyonlar (takip listesi, added_at'ten alınmış gibi) yalnız toggle
+    // açıkken. Kapalıyken satır hiç gelmez, sıralama yeniden hesaplanır.
+    pool.query<{
+      fund_code: string; title: string | null; simulated: boolean;
+      days: string; return_pct: string; gain: string | null;
+    }>(
+      `SELECT fund_code, title, simulated, days::text, return_pct::text, gain::text
+       FROM analytics.position_return
+       WHERE user_id = $1 AND is_open AND (NOT simulated OR NOT $2::boolean)`,
+      [userId, onlyOwned],
+    ),
+    // Özet yalnız gerçek pozisyonlardan; simülasyonun TL tutarı yok.
+    pool.query<{
+      cost: string | null; value: string | null; gain: string | null;
+      gain_pct: string | null; realized: string | null;
+      winners: string; losers: string;
+    }>(
+      `SELECT sum(cost)  FILTER (WHERE is_open)::text     AS cost,
+              sum(value) FILTER (WHERE is_open)::text     AS value,
+              sum(gain)  FILTER (WHERE is_open)::text     AS gain,
+              round((sum(value) FILTER (WHERE is_open)
+                     / nullif(sum(cost) FILTER (WHERE is_open), 0) - 1) * 100, 2)::text
+                                                          AS gain_pct,
+              sum(gain)  FILTER (WHERE NOT is_open)::text AS realized,
+              count(*) FILTER (WHERE is_open AND return_pct > 0)::text AS winners,
+              count(*) FILTER (WHERE is_open AND return_pct < 0)::text AS losers
+       FROM analytics.position_return
+       WHERE user_id = $1 AND NOT simulated`,
+      [userId],
+    ),
   ]);
 
   const byWindow = (win: '1w' | '1m'): { top: RankEntry[]; bottom: RankEntry[] } => {
@@ -464,6 +515,21 @@ export async function dashboard(
     };
   };
 
+  const positionRows = pos.rows
+    .map((r): RankEntry => ({
+      fundCode: r.fund_code,
+      title: r.title,
+      returnPct: r.return_pct,
+      days: Number(r.days),
+      owned: !r.simulated,
+      gain: r.gain,
+    }))
+    .sort((a, b) => Number(b.returnPct) - Number(a.returnPct));
+  // Kayıp listesi gerçekten kaybettirenleri gösterir; alttan N almak
+  // hepsi artıdayken paneli pozitif değerlerle doldurup başlığı yalanlardı.
+  const positionLosers = positionRows.filter((r) => Number(r.returnPct) < 0);
+  const ps = posSum.rows[0];
+
   const c = counts.rows[0]!;
   const run = lastRun.rows[0];
   return {
@@ -475,5 +541,21 @@ export async function dashboard(
       lastRun: run ? { id: run.id, status: run.status, finishedAt: run.finished_at } : null,
     },
     watchlistRanks: { '1w': byWindow('1w'), '1m': byWindow('1m') },
+    positions: {
+      summary:
+        ps?.cost == null
+          ? null
+          : {
+              cost: ps.cost,
+              value: ps.value ?? '0',
+              gain: ps.gain ?? '0',
+              gainPct: ps.gain_pct ?? '0',
+              realizedGain: ps.realized ?? '0',
+              winners: Number(ps.winners),
+              losers: Number(ps.losers),
+            },
+      top: positionRows.slice(0, RANK_LIMIT),
+      bottom: positionLosers.slice(-RANK_LIMIT).reverse(),
+    },
   };
 }
