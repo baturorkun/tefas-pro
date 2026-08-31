@@ -1,0 +1,45 @@
+{
+  "runId": "20260831194855-RQ-0011",
+  "requirementId": "RQ-0011",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260831194855-RQ-0011/handoff.md",
+  "projectGuidelines": {
+    "combinedSha256": "73bde0d690f8ec23c37c27be97d17c628d2f60e56f49bffbe0810fd5769a70fb",
+    "files": [
+      {
+        "path": "AGENTS.md",
+        "sha256": "35dbcb26a57ab038e0e772629d210a83e459fa6674e4582d4ed0ed52b8bd28f8"
+      }
+    ]
+  },
+  "status": "approved",
+  "createdAt": "2026-08-31T19:48:55.243Z",
+  "updatedAt": "2026-08-31T19:53:13.070Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-08-31T19:49:20.943Z",
+      "finishedAt": "2026-08-31T19:53:05.779Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "db/migrations/019_fund_flow.sql",
+    "requirements/RQ-0011-fon-giris-cikis-grafikleri-1-hafta-ve-1-ay-net-akis.md",
+    "src/main.ts",
+    "src/server/repository.ts"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-08-31T19:53:13.070Z",
+  "approvedBy": "human"
+}

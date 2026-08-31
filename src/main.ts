@@ -57,6 +57,8 @@ interface RankEntry {
   owned: boolean;
   /** Yalnız pozisyon sıralamasında dolu: o fondaki kâr/zarar, TL. */
   gain?: string | null;
+  /** Yalnız akış sıralamasında dolu: pencere net akışı, TL. */
+  flow?: string | null;
 }
 
 interface PositionSummary {
@@ -83,6 +85,8 @@ interface Dashboard {
     top: RankEntry[];
     bottom: RankEntry[];
   };
+  /** Para akışı: `returnPct` oranı (%), `flow` TL tutarını taşır. */
+  flowRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
 }
 
 type ViewId = 'dashboard' | 'portfolio' | 'watchlist' | 'users';
@@ -218,14 +222,27 @@ function svg<K extends keyof SVGElementTagNameMap>(
  * Barlar gruptaki en büyük mutlak değere göre ölçeklenir; negatifler sıfır
  * çizgisinin solunda ve tehlike rengiyle çizilir.
  */
-function barChart(entries: RankEntry[], emptyText = 'Veri yok.'): SVGSVGElement | HTMLElement {
+interface ChartOpts {
+  emptyText?: string;
+  /**
+   * Akış grafiğinde sağ sütun hem oranı hem TL tutarını taşır: sıralamayı
+   * oran belirler, büyüklüğü tutar anlatır. İkisi de görünmezse bar ya
+   * anlamsız (yalnız TL) ya da soyut (yalnız oran) kalır.
+   */
+  withFlow?: boolean;
+}
+
+function barChart(
+  entries: RankEntry[],
+  { emptyText = 'Veri yok.', withFlow = false }: ChartOpts = {},
+): SVGSVGElement | HTMLElement {
   if (entries.length === 0) return el('div', { class: 'empty-state' }, [emptyText]);
 
   const W = 520;
   const ROW = 26;
   const LABEL = 52;   // fon kodu sütunu
   const DAYS = 28;    // iş günü sütunu — bar buraya taşmamalı
-  const VALUE = 62;   // yüzde sütunu
+  const VALUE = withFlow ? 132 : 62;   // değer sütunu
   const H = entries.length * ROW + 6;
   const plotW = W - LABEL - DAYS - VALUE;
   const max = Math.max(...entries.map((e) => Math.abs(Number(e.returnPct))), 0.0001);
@@ -266,7 +283,8 @@ function barChart(entries: RankEntry[], emptyText = 'Veri yok.'): SVGSVGElement 
       svg(
         'text',
         { x: String(W), y: String(y + 13), class: `bar-value ${v >= 0 ? 'pos' : 'neg'}` },
-        `${v > 0 ? '+' : ''}${v.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}%`,
+        `${v > 0 ? '+' : ''}${v.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}%` +
+          (withFlow ? ` · ${money(e.flow ?? null)}` : ''),
       ),
     );
     if (e.days !== null) {
@@ -293,14 +311,14 @@ function chartPanel(
   title: string,
   meta: string,
   entries: RankEntry[],
-  emptyText?: string,
+  opts: ChartOpts = {},
 ): HTMLElement {
   return el('section', { class: 'panel' }, [
     el('div', { class: 'panel-heading' }, [
       el('h2', {}, [title]),
       el('span', { class: 'header-meta' }, [meta]),
     ]),
-    el('div', { class: 'panel-body' }, [barChart(entries, emptyText)]),
+    el('div', { class: 'panel-body' }, [barChart(entries, opts)]),
   ]);
 }
 
@@ -386,11 +404,25 @@ function positionSection(
         ]),
     el('div', { class: 'chart-grid' }, [
       chartPanel('En çok kazandıran pozisyonlarım', kapsam, p.top,
-        'Henüz ölçülebilir pozisyon yok.'),
+        { emptyText: 'Henüz ölçülebilir pozisyon yok.' }),
       chartPanel('En çok kaybettiren pozisyonlarım', kapsam, p.bottom,
-        'Zararda pozisyonum yok.'),
+        { emptyText: 'Zararda pozisyonum yok.' }),
     ]),
   ];
+}
+
+/**
+ * Akış paneli. Sıralama net akışın pencere BAŞINDAKİ büyüklüğe oranına göre.
+ *
+ * Ham TL fon büyüklüğünü sıralar, sıkıntıyı değil: HRZ parasının üçte birini
+ * kaybederken −0,12 mr₺ olduğu için ham listede görünmez, PRY ise 112 mr₺'lik
+ * fonun %7'siyle üçüncü sıraya çıkar.
+ */
+function flowPanel(title: string, meta: string, rows: RankEntry[], yon: string): HTMLElement {
+  return chartPanel(title, meta, rows, {
+    withFlow: true,
+    emptyText: `Bu pencerede ${yon} olan fon yok.`,
+  });
 }
 
 async function dashboardView(reload: () => void): Promise<Node[]> {
@@ -425,9 +457,18 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
       chartPanel('En çok kazandıran (1 hafta)', kapsam, d.watchlistRanks['1w']?.top ?? []),
       chartPanel('En çok kazandıran (1 ay)', kapsam, d.watchlistRanks['1m']?.top ?? []),
       chartPanel('En çok kaybettiren (1 hafta)', kapsam,
-        d.watchlistRanks['1w']?.bottom ?? [], 'Haftayı ekside kapatan fon yok.'),
+        d.watchlistRanks['1w']?.bottom ?? [],
+        { emptyText: 'Haftayı ekside kapatan fon yok.' }),
       chartPanel('En çok kaybettiren (1 ay)', kapsam,
-        d.watchlistRanks['1m']?.bottom ?? [], 'Ayı ekside kapatan fon yok.'),
+        d.watchlistRanks['1m']?.bottom ?? [],
+        { emptyText: 'Ayı ekside kapatan fon yok.' }),
+    ]),
+    el('h2', { class: 'section-title' }, ['Para akışı']),
+    grid([
+      flowPanel('En çok giriş olan (1 hafta)', kapsam, d.flowRanks['1w']?.top ?? [], 'giriş'),
+      flowPanel('En çok giriş olan (1 ay)', kapsam, d.flowRanks['1m']?.top ?? [], 'giriş'),
+      flowPanel('En çok çıkış olan (1 hafta)', kapsam, d.flowRanks['1w']?.bottom ?? [], 'çıkış'),
+      flowPanel('En çok çıkış olan (1 ay)', kapsam, d.flowRanks['1m']?.bottom ?? [], 'çıkış'),
     ]),
   ];
 }
