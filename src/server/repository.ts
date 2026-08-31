@@ -265,20 +265,106 @@ export async function deleteTransaction(
   return (r.rowCount ?? 0) > 0;
 }
 
-/** Admin ekranı için takip listesi özeti. */
-export async function watchlistOverview(pool: pg.Pool): Promise<unknown[]> {
+// ─── Takip listesi ──────────────────────────────────────────────────────────
+
+export interface WatchlistRow {
+  fundCode: string;
+  title: string | null;
+  /** İşlemlerden türetilir; tabloda saklanmaz. Sahip olunan fon listede yok. */
+  status: 'sold' | 'watch';
+  addedAt: string;
+  note: string | null;
+  navDate: string | null;
+  navPerShare: string | null;
+  dailyReturnPct: string | null;
+  netFlow: string | null;
+  taxPct: string | null;
+  sellValorDays: number | null;
+}
+
+/**
+ * Kullanıcının kendi takip listesi: sahip OLMADIĞI fonlar.
+ *
+ * Açık pozisyonu olan fon listede görünmez (analytics.watchlist_visible);
+ * elimdekiler "Portföyüm"ün, izlediklerim bu listenin konusu. Satır silinmediği
+ * için fondan tamamen çıkıldığında listede kendiliğinden geri belirir.
+ *
+ * `status` sütun değil, o kullanıcının işlemlerinden türetiliyor: aynı fon biri
+ * için "çıktım", diğeri için "izliyorum" olabilir. Saklanan tek bir sütun bunu
+ * taşıyamaz — eski `watchlist.status` bu yüzden gerçekle uyuşmuyordu.
+ */
+export async function listWatchlist(pool: pg.Pool, userId: number): Promise<WatchlistRow[]> {
   const r = await pool.query(
     // date sütunları to_char ile biçimlenir: pg sürücüsü date'i JS Date'e
     // çevirir ve JSON'a "2026-08-31T00:00:00.000Z" olarak serileşir.
-    `SELECT fund_code AS "fundCode", status, title,
-            to_char(nav_date, 'YYYY-MM-DD') AS "navDate",
-            nav_per_share::text AS "navPerShare",
-            round(daily_return_pct, 4)::text AS "dailyReturnPct",
-            round(net_flow)::text AS "netFlow",
-            tax_pct::text AS "taxPct", sell_valor_days AS "sellValorDays"
-     FROM analytics.watchlist_latest ORDER BY fund_code`,
+    `SELECT w.fund_code AS "fundCode", l.title,
+            CASE WHEN count(t.id) > 0 THEN 'sold' ELSE 'watch' END AS status,
+            to_char(w.added_at AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM-DD') AS "addedAt",
+            w.note,
+            to_char(l.nav_date, 'YYYY-MM-DD') AS "navDate",
+            l.nav_per_share::text AS "navPerShare",
+            round(l.daily_return_pct, 4)::text AS "dailyReturnPct",
+            round(l.net_flow)::text AS "netFlow",
+            l.tax_pct::text AS "taxPct", l.sell_valor_days AS "sellValorDays"
+     FROM analytics.watchlist_visible w
+     JOIN analytics.fund_latest l USING (fund_code)
+     LEFT JOIN portfolio_transaction t
+            ON t.fund_code = w.fund_code AND t.user_id = w.user_id
+     WHERE w.user_id = $1
+     GROUP BY w.fund_code, w.added_at, w.note, l.title, l.nav_date, l.nav_per_share,
+              l.daily_return_pct, l.net_flow, l.tax_pct, l.sell_valor_days
+     ORDER BY w.fund_code`,
+    [userId],
   );
-  return r.rows;
+  return r.rows as WatchlistRow[];
+}
+
+/**
+ * Portföye işlem girildiğinde çağrılır: fon kullanıcının listesinde yoksa
+ * eklenir. Notu ezmez — kullanıcının kendi yazdığı not, sonradan girilen bir
+ * işlem yüzünden silinmemeli.
+ */
+export async function trackFundForUser(
+  pool: pg.Pool,
+  userId: number,
+  fundCode: string,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO user_watchlist (user_id, fund_code) VALUES ($1, $2)
+     ON CONFLICT (user_id, fund_code) DO NOTHING`,
+    [userId, fundCode],
+  );
+}
+
+/** Zaten varsa notu günceller; iki kez eklemek hata değil. */
+export async function addToWatchlist(
+  pool: pg.Pool,
+  userId: number,
+  fundCode: string,
+  note: string | null,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO user_watchlist (user_id, fund_code, note) VALUES ($1, $2, $3)
+     ON CONFLICT (user_id, fund_code) DO UPDATE SET note = EXCLUDED.note`,
+    [userId, fundCode, note],
+  );
+}
+
+/**
+ * Yalnız kullanıcının kendi satırını siler. Fonun verisi silinmez: başka bir
+ * kullanıcı takip ediyor ya da bu kullanıcının pozisyonu duruyor olabilir,
+ * ikisinde de collector toplamayı sürdürür.
+ */
+export async function removeFromWatchlist(
+  pool: pg.Pool,
+  userId: number,
+  fundCode: string,
+): Promise<boolean> {
+  const r = await pool.query('DELETE FROM user_watchlist WHERE user_id = $1 AND fund_code = $2', [
+    userId,
+    fundCode,
+  ]);
+  return (r.rowCount ?? 0) > 0;
 }
 
 // ─── Dashboard ──────────────────────────────────────────────────────────────
@@ -287,13 +373,14 @@ export interface RankEntry {
   fundCode: string;
   title: string | null;
   returnPct: string;
-  /** Yalnız takip listesi sıralamasında dolu: pencerede kaç iş günü var. */
+  /** Pencerede kaç iş günü veri olduğu. */
   days: number | null;
 }
 
 export interface DashboardData {
   metrics: {
     watchlist: number;
+    trackedFunds: number;
     openPositions: number;
     dataDate: string | null;
     lastRun: { id: number; status: string; finishedAt: string | null } | null;
@@ -304,14 +391,16 @@ export interface DashboardData {
 const RANK_LIMIT = 10;
 
 /**
- * Takip listesi sıralaması saklanan günlük seriden hesaplanır; sayfa açılışında
- * dış servise istek atılmaz. Evren sıralaması collector'ın günlük snapshot'ından
- * okunur.
+ * Sıralama saklanan günlük seriden hesaplanır; sayfa açılışında dış servise
+ * istek atılmaz. Kapsam takip edilen fonlar: veri yalnız onlar için toplanır.
  */
 export async function dashboard(pool: pg.Pool, userId: number): Promise<DashboardData> {
   const [counts, lastRun, wl] = await Promise.all([
-    pool.query<{ watchlist: string; open_positions: string; data_date: string | null }>(
-      `SELECT (SELECT count(*) FROM watchlist) AS watchlist,
+    pool.query<{
+      watchlist: string; tracked_funds: string; open_positions: string; data_date: string | null;
+    }>(
+      `SELECT (SELECT count(*) FROM analytics.watchlist_visible WHERE user_id = $1) AS watchlist,
+              (SELECT count(*) FROM analytics.tracked_fund) AS tracked_funds,
               (SELECT count(*) FROM portfolio_transaction
                 WHERE user_id = $1 AND sell_date IS NULL) AS open_positions,
               (SELECT to_char(max(trade_date), 'YYYY-MM-DD') FROM fact_fund_daily
@@ -328,7 +417,7 @@ export async function dashboard(pool: pg.Pool, userId: number): Promise<Dashboar
       return_1w: string | null; days_1w: string; return_1m: string | null; days_1m: string;
     }>(
       `SELECT fund_code, title, return_1w::text, days_1w::text, return_1m::text, days_1m::text
-       FROM analytics.watchlist_returns`,
+       FROM analytics.fund_returns`,
     ),
   ]);
 
@@ -358,6 +447,7 @@ export async function dashboard(pool: pg.Pool, userId: number): Promise<Dashboar
   return {
     metrics: {
       watchlist: Number(c.watchlist),
+      trackedFunds: Number(c.tracked_funds),
       openPositions: Number(c.open_positions),
       dataDate: c.data_date,
       lastRun: run ? { id: run.id, status: run.status, finishedAt: run.finished_at } : null,

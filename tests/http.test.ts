@@ -13,6 +13,10 @@ describe('matchPath', () => {
   it('sabit parça uymazsa eşleşmez', () => {
     expect(matchPath('/api/transactions/:id', '/api/users/42')).toBeNull();
   });
+  // Yalnız `:id` tanınırsa `:code` sabit metin sayılır ve rota hiç eşleşmez.
+  it(':id dışındaki parametre adlarını da yakalar', () => {
+    expect(matchPath('/api/watchlist/:code', '/api/watchlist/THF')).toBe('THF');
+  });
 });
 
 describe('gövde doğrulama', () => {

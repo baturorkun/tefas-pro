@@ -1,29 +1,29 @@
-# Takip listesi. Satır başına: FON_KODU [owned|watching]
-# Durum verilmezse "watching" varsayılır. # ile başlayan satır yorumdur.
-# pnpm db:seed bu dosyayı okur ve watchlist tablosuna uygular.
-AFS owned
-AFT owned
-CPT owned
-DFI owned
-DOH owned
-FJB owned
-GBZ owned
-GPG owned
-GUH owned
-ICH owned
-IJC owned
-IKP owned
-IVY owned
-KHA owned
-PIL owned
-PNU owned
-PTO owned
-RBR owned
-TAU owned
-THF owned
-TLY owned
-TMG owned
-TP2 owned
-YAY owned
-YIT owned
-YZC owned
+# Takip listesi tohumu. Satır başına bir fon kodu; # ile başlayan satır yorum.
+# pnpm db:seed <kullanıcı> bu dosyayı okur ve o kullanıcının listesine yazar.
+# Durum sütunu yok: sahip/izleniyor ayrımı kullanıcının işlemlerinden çıkar.
+AFS
+AFT
+CPT
+DFI
+DOH
+FJB
+GBZ
+GPG
+GUH
+ICH
+IJC
+IKP
+IVY
+KHA
+PIL
+PNU
+PTO
+RBR
+TAU
+THF
+TLY
+TMG
+TP2
+YAY
+YIT
+YZC

@@ -84,22 +84,19 @@ describe('iş günü pencereleri', () => {
 });
 
 describe('parseWatchlistFile', () => {
-  it('durum verilmezse watching', () => {
-    expect(parseWatchlistFile('AAA\nBBB owned\n')).toEqual([
-      { code: 'AAA', status: 'watching' },
-      { code: 'BBB', status: 'owned' },
-    ]);
+  it('satır başına bir fon kodu okur', () => {
+    expect(parseWatchlistFile('AAA\nBBB\n')).toEqual(['AAA', 'BBB']);
   });
   it('yorum ve boş satırları atlar', () => {
-    expect(parseWatchlistFile('# not\n\n  \nCCC owned\n')).toEqual([
-      { code: 'CCC', status: 'owned' },
-    ]);
+    expect(parseWatchlistFile('# not\n\n  \nCCC\n')).toEqual(['CCC']);
   });
   it('kodu büyük harfe çevirir', () => {
-    expect(parseWatchlistFile('ddd')[0]?.code).toBe('DDD');
+    expect(parseWatchlistFile('ddd')[0]).toBe('DDD');
   });
-  it('geçersiz durumda patlar', () => {
-    expect(() => parseWatchlistFile('AAA sahip')).toThrow(/geçersiz durum/);
+  // Durum artık işlemlerden türetiliyor. Eski dosyadan kalmış bir "owned"
+  // sessizce yok sayılırsa kullanıcı yazdığının uygulandığını sanır.
+  it('kaldırılmış durum sütununda patlar', () => {
+    expect(() => parseWatchlistFile('AAA owned')).toThrow(/durum sütunu kaldırıldı/);
   });
 });
 

@@ -168,7 +168,7 @@ export async function upsertDaily(pool: pg.Pool, rows: DailyRow[], runId: number
      FROM jsonb_to_recordset($1::jsonb) AS r(
        fund_code text, trade_date date, nav_per_share numeric, daily_return_pct numeric,
        net_flow numeric, shares_active numeric, investor_count integer, aum numeric)
-     WHERE EXISTS (SELECT 1 FROM watchlist w WHERE w.fund_code = r.fund_code)
+     WHERE EXISTS (SELECT 1 FROM analytics.tracked_fund t WHERE t.fund_code = r.fund_code)
      ON CONFLICT (fund_code, trade_date) DO UPDATE SET
        nav_per_share    = COALESCE(EXCLUDED.nav_per_share, fact_fund_daily.nav_per_share),
        daily_return_pct = COALESCE(EXCLUDED.daily_return_pct, fact_fund_daily.daily_return_pct),
@@ -296,7 +296,7 @@ async function ingestFund(
 
 /**
  * Bir pencerenin sonundaki büyüklük, pay adedi ve yatırımcı sayısını yazar.
- * İki toplu endpoint tüm evreni döndürür; watchlist filtresi upsertDaily'de.
+ * İki toplu endpoint tüm evreni döndürür; takip filtresi upsertDaily'de.
  * Taşınmış (tatil) pencere yazılmaz ve takvime işlenir.
  */
 async function ingestSizeWindow(
@@ -353,7 +353,7 @@ async function ingestYieldSnapshot(
      FROM jsonb_to_recordset($1::jsonb) AS r(
        fund_code text, yield_1m numeric, yield_3m numeric, yield_6m numeric,
        yield_ytd numeric, yield_1y numeric, yield_3y numeric, yield_5y numeric)
-     WHERE EXISTS (SELECT 1 FROM watchlist w WHERE w.fund_code = r.fund_code)
+     WHERE EXISTS (SELECT 1 FROM analytics.tracked_fund t WHERE t.fund_code = r.fund_code)
      ON CONFLICT (fund_code, as_of_date) DO UPDATE SET
        yield_1m = EXCLUDED.yield_1m, yield_3m = EXCLUDED.yield_3m,
        yield_6m = EXCLUDED.yield_6m, yield_ytd = EXCLUDED.yield_ytd,
@@ -400,16 +400,23 @@ async function main(): Promise<void> {
   // Toplanacak fon var mi? Bu bir ingest denemesi degil, yapilandirma kontrolu:
   // ingest_run satiri acilmadan once yapilir ki bos takip listesi tabloda
   // "basarisiz toplama" gibi gorunmesin.
+  //
+  // Kaynak tek bir kullanicinin listesi degil: analytics.tracked_fund tum
+  // kullanicilarin takip listeleri ile ACIK pozisyonlarinin birlesimidir.
+  // Collector kimin ekledigine bakmaz, fon basina bir kez toplar.
+  //
+  // Tamamen satilmis bir fon yalniz takip listesinde kaldigi surece toplanir;
+  // bu kullanicinin karari, portfoy gecmisinin yan etkisi degil.
   const codes =
     args.funds ??
     (
       await pool.query<{ fund_code: string }>(
-        'SELECT fund_code FROM watchlist ORDER BY fund_code',
+        'SELECT fund_code FROM analytics.tracked_fund ORDER BY fund_code',
       )
     ).rows.map((r) => r.fund_code);
   if (codes.length === 0) {
     await pool.end();
-    console.error('Takip listesi boş — önce pnpm db:seed');
+    console.error('Takip edilen fon yok — önce panelden fon ekleyin');
     process.exitCode = 1;
     return;
   }

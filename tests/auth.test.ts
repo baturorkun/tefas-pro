@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseAddArgs } from '../src/db/user.js';
 
 import {
   clearCookie,
@@ -69,5 +70,25 @@ describe('çerez', () => {
     expect(readCookie(undefined, 'tefas_session')).toBeNull();
     // Ön ek eşleşmesi olmamalı: "session" ile "tefas_session" karışmaz.
     expect(readCookie('tefas_session_old=zzz', 'tefas_session')).toBeNull();
+  });
+});
+
+describe('parseAddArgs', () => {
+  it('varsayılan tip user, parola üretilecek', () => {
+    expect(parseAddArgs(['batur'])).toEqual({ username: 'batur', type: 'user', password: null });
+  });
+  it('--admin ve --password okunur', () => {
+    expect(parseAddArgs(['ali', '--admin', '--password', 'gizli123'])).toEqual({
+      username: 'ali', type: 'admin', password: 'gizli123',
+    });
+  });
+  it('değersiz --password patlar', () => {
+    expect(() => parseAddArgs(['ali', '--password'])).toThrow(/değer bekler/);
+  });
+  it('bilinmeyen seçenek patlar', () => {
+    expect(() => parseAddArgs(['ali', '--root'])).toThrow(/Bilinmeyen seçenek/);
+  });
+  it('kullanıcı adı yoksa patlar', () => {
+    expect(() => parseAddArgs(['--admin'])).toThrow(/Kullanım/);
   });
 });
