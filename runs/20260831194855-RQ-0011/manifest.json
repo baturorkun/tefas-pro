@@ -13,25 +13,31 @@
       }
     ]
   },
-  "status": "running",
+  "status": "passed",
   "createdAt": "2026-08-31T19:48:55.243Z",
-  "updatedAt": "2026-08-31T19:49:20.944Z",
+  "updatedAt": "2026-08-31T19:53:05.780Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-08-31T19:49:20.943Z"
+      "status": "passed",
+      "startedAt": "2026-08-31T19:49:20.943Z",
+      "finishedAt": "2026-08-31T19:53:05.779Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "db/migrations/019_fund_flow.sql",
+    "requirements/RQ-0011-fon-giris-cikis-grafikleri-1-hafta-ve-1-ay-net-akis.md",
+    "src/main.ts",
+    "src/server/repository.ts"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
   }
 }
