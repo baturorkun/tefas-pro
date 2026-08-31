@@ -1,0 +1,42 @@
+[
+  {
+    "gate": "schemaCheck",
+    "status": "passed",
+    "output": "0 step file(s) valid",
+    "durationMs": 0
+  },
+  {
+    "gate": "build",
+    "status": "skipped",
+    "output": "No targetProject.commands.build configured.",
+    "durationMs": 0
+  },
+  {
+    "gate": "typeCheck",
+    "status": "passed",
+    "output": "> tefas-pro@0.1.0 typecheck /Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro\n> tsc --noEmit",
+    "durationMs": 1253,
+    "command": "pnpm typecheck",
+    "cwd": "/Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro"
+  },
+  {
+    "gate": "lint",
+    "status": "skipped",
+    "output": "No targetProject.commands.lint configured.",
+    "durationMs": 0
+  },
+  {
+    "gate": "tests",
+    "status": "passed",
+    "output": "> tefas-pro@0.1.0 test /Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro\n> vitest run && bash tests/db-install.test.sh && bash tests/deployment-target.test.sh\n\n\n RUN  v2.1.9 /Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro\n\n ✓ tests/http.test.ts (10 tests) 3ms\n ✓ tests/fintables.test.ts (25 tests) 5ms\n ✓ tests/collector.test.ts (19 tests) 5ms\n ✓ tests/auth.test.ts (11 tests) 191ms\n\n Test Files  4 passed (4)\n      Tests  65 passed (65)\n   Start at  11:18:08\n   Duration  542ms (transform 126ms, setup 0ms, collect 224ms, tests 204ms, environment 0ms, prepare 308ms)\n\nPASS: install help documents local and remote modes\nPASS: rendered Compose config enforces images, isolation, persistence, and secret handling\nPASS: local mode rejects a symlinked secret directory\nPASS: local mode creates environment and verifies services\nPASS: local mode supports podman-compose fallback\nPASS: remote mode rejects option-like SSH targets\nPASS: remote mode rejects the development password\nPASS: remote mode rejects quoted or non-canonical passwords\nPASS: remote mode rejects low-entropy passwords\nPASS: remote mode rejects unsafe database identifiers\nPASS: remote mode validates service host port ranges\nPASS: remote mode validates SSH port range\nPASS: remote mode rejects dangerous system directories\nPASS: remote no-service mode copies, starts, verifies, and reports tunnel\nPASS: remote mode installs and verifies a rootless systemd service\nPASS: remote mode rejects an unexpected systemd state\nPASS: remote mode installs and verifies a root systemd service\nPASS: main taban porta düşer\nPASS: RQ branch\"i taban + numara portuna düşer\nPASS: baştaki sıfırlar sekizlik yorumlanmaz\nPASS: büyük/küçük harf duyarsız\nPASS: taban port 9000-9099 aralığıyla çakışmıyor\nPASS: geçersiz branch adı reddedilir",
+    "durationMs": 3742,
+    "command": "pnpm test",
+    "cwd": "/Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro"
+  },
+  {
+    "gate": "security",
+    "status": "skipped",
+    "output": "No files to scan.",
+    "durationMs": 0
+  }
+]

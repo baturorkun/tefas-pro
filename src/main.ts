@@ -45,7 +45,24 @@ interface UserRow {
   isActive: boolean;
 }
 
-type ViewId = 'portfolio' | 'watchlist' | 'users';
+interface RankEntry {
+  fundCode: string;
+  title: string | null;
+  returnPct: string;
+  days: number | null;
+}
+
+interface Dashboard {
+  metrics: {
+    watchlist: number;
+    openPositions: number;
+    dataDate: string | null;
+    lastRun: { id: number; status: string; finishedAt: string | null } | null;
+  };
+  watchlistRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
+}
+
+type ViewId = 'dashboard' | 'portfolio' | 'watchlist' | 'users';
 
 const root = document.getElementById('app');
 
@@ -155,6 +172,135 @@ function table(headers: string[], rows: HTMLElement[]): HTMLElement {
   ]);
 }
 
+// ─── Grafik ─────────────────────────────────────────────────────────────────
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function svg<K extends keyof SVGElementTagNameMap>(
+  tag: K,
+  attrs: Record<string, string> = {},
+  text?: string,
+): SVGElementTagNameMap[K] {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+/**
+ * Yatay bar grafik, satır içi SVG. Grafik kütüphanesi kullanılmaz: iki bar
+ * grafik bir bağımlılığı hak etmiyor ve kütüphane kendi paletini getirseydi
+ * tasarım ikiye bölünürdü. Renkler CSS custom property'lerden gelir.
+ *
+ * Barlar gruptaki en büyük mutlak değere göre ölçeklenir; negatifler sıfır
+ * çizgisinin solunda ve tehlike rengiyle çizilir.
+ */
+function barChart(entries: RankEntry[]): SVGSVGElement | HTMLElement {
+  if (entries.length === 0) return el('div', { class: 'empty-state' }, ['Veri yok.']);
+
+  const W = 520;
+  const ROW = 26;
+  const LABEL = 52;   // fon kodu sütunu
+  const DAYS = 28;    // iş günü sütunu — bar buraya taşmamalı
+  const VALUE = 62;   // yüzde sütunu
+  const H = entries.length * ROW + 6;
+  const plotW = W - LABEL - DAYS - VALUE;
+  const max = Math.max(...entries.map((e) => Math.abs(Number(e.returnPct))), 0.0001);
+  const hasNeg = entries.some((e) => Number(e.returnPct) < 0);
+  // Negatif değer varsa sıfır çizgisi ortada, yoksa solda.
+  const zeroX = LABEL + (hasNeg ? plotW / 2 : 0);
+  const scale = (hasNeg ? plotW / 2 : plotW) / max;
+
+  const root = svg('svg', {
+    viewBox: `0 0 ${String(W)} ${String(H)}`,
+    class: 'bar-chart',
+    role: 'img',
+  });
+
+  entries.forEach((e, i) => {
+    const v = Number(e.returnPct);
+    const y = i * ROW + 3;
+    const len = Math.abs(v) * scale;
+    const x = v >= 0 ? zeroX : zeroX - len;
+
+    root.append(
+      svg('title', {}, `${e.fundCode} — ${e.title ?? ''}`),
+      svg('text', { x: '0', y: String(y + 13), class: 'bar-code' }, e.fundCode),
+      svg('rect', {
+        x: String(x),
+        y: String(y + 3),
+        width: String(Math.max(len, 1)),
+        height: '14',
+        rx: '3',
+        class: v >= 0 ? 'bar-pos' : 'bar-neg',
+      }),
+      svg(
+        'text',
+        { x: String(W), y: String(y + 13), class: `bar-value ${v >= 0 ? 'pos' : 'neg'}` },
+        `${v > 0 ? '+' : ''}${v.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}%`,
+      ),
+    );
+    if (e.days !== null) {
+      root.append(
+        svg('text', { x: String(W - VALUE - 6), y: String(y + 13), class: 'bar-days' },
+          `${String(e.days)}g`),
+      );
+    }
+  });
+  if (hasNeg) {
+    root.append(svg('line', {
+      x1: String(zeroX), y1: '0', x2: String(zeroX), y2: String(H), class: 'bar-zero',
+    }));
+  }
+  return root;
+}
+
+function chartPanel(title: string, meta: string, entries: RankEntry[]): HTMLElement {
+  return el('section', { class: 'panel' }, [
+    el('div', { class: 'panel-heading' }, [
+      el('h2', {}, [title]),
+      el('span', { class: 'header-meta' }, [meta]),
+    ]),
+    el('div', { class: 'panel-body' }, [barChart(entries)]),
+  ]);
+}
+
+// ─── Dashboard ──────────────────────────────────────────────────────────────
+
+async function dashboardView(): Promise<Node[]> {
+  const d = (await api('/api/dashboard')) as Dashboard;
+  const m = d.metrics;
+  const run = m.lastRun;
+
+  const grid = (nodes: Node[]): HTMLElement => el('div', { class: 'chart-grid' }, nodes);
+
+  const nodes: Node[] = [
+    el('div', { class: 'metric-grid' }, [
+      metric('Takip edilen', String(m.watchlist), 'fon'),
+      metric('Açık pozisyon', String(m.openPositions), 'portföyümde'),
+      metric('Son veri', m.dataDate ?? '—', 'getiri günü'),
+      metric(
+        'Son toplama',
+        run?.finishedAt?.slice(11) ?? '—',
+        run ? `#${String(run.id)} · ${run.status}` : 'henüz koşmadı',
+      ),
+    ]),
+    grid([
+      chartPanel('En çok kazandıran (1 hafta)', 'takip listem', d.watchlistRanks['1w']?.top ?? []),
+      chartPanel('En çok kazandıran (1 ay)', 'takip listem', d.watchlistRanks['1m']?.top ?? []),
+      chartPanel(
+        'En çok kaybettiren (1 hafta)', 'takip listem',
+        d.watchlistRanks['1w']?.bottom ?? [],
+      ),
+      chartPanel(
+        'En çok kaybettiren (1 ay)', 'takip listem',
+        d.watchlistRanks['1m']?.bottom ?? [],
+      ),
+    ]),
+  ];
+  return nodes;
+}
+
 // ─── Giriş ──────────────────────────────────────────────────────────────────
 
 function loginScreen(message?: string): void {
@@ -178,7 +324,7 @@ function loginScreen(message?: string): void {
           body: JSON.stringify({ username: username.value, password: password.value }),
         })) as Me;
         if (me.mustChangePassword) passwordScreen();
-        else void appShell(me, 'portfolio');
+        else void appShell(me, 'dashboard');
       } catch (err) {
         loginScreen(err instanceof Error ? err.message : 'Giriş başarısız.');
       }
@@ -460,6 +606,7 @@ async function usersView(reload: () => void): Promise<Node[]> {
 // ─── İskelet ────────────────────────────────────────────────────────────────
 
 const VIEWS: { id: ViewId; label: string; icon: string; adminOnly: boolean; crumb: string }[] = [
+  { id: 'dashboard', label: 'Panel', icon: '▦', adminOnly: false, crumb: 'Genel' },
   { id: 'portfolio', label: 'Portföyüm', icon: '◈', adminOnly: false, crumb: 'Genel' },
   { id: 'watchlist', label: 'Takip listesi', icon: '☰', adminOnly: true, crumb: 'Yönetim' },
   { id: 'users', label: 'Kullanıcılar', icon: '⚇', adminOnly: true, crumb: 'Yönetim' },
@@ -510,7 +657,8 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
 
   let bodyNodes: Node[];
   try {
-    if (current.id === 'portfolio') bodyNodes = await portfolioView(reload);
+    if (current.id === 'dashboard') bodyNodes = await dashboardView();
+    else if (current.id === 'portfolio') bodyNodes = await portfolioView(reload);
     else if (current.id === 'watchlist') bodyNodes = await watchlistView();
     else bodyNodes = await usersView(reload);
   } catch (err) {
@@ -535,7 +683,7 @@ async function start(): Promise<void> {
   try {
     const me = (await api('/api/me')) as Me;
     if (me.mustChangePassword) passwordScreen();
-    else await appShell(me, 'portfolio');
+    else await appShell(me, 'dashboard');
   } catch {
     loginScreen();
   }

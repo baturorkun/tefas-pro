@@ -39,6 +39,7 @@ import {
   deleteTransaction,
   findSessionUser,
   findUserByUsername,
+  dashboard,
   listTransactions,
   listUsers,
   revokeSession,
@@ -263,6 +264,11 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         const body = asRecord(await readJson(req));
         await updateUser(pool, user.id, { password: reqString(body, 'password') });
         sendJson(res, 200, { ok: true }, { 'Set-Cookie': clearCookie(COOKIE_NAME) });
+        return;
+      }
+
+      if (path === '/api/dashboard' && method === 'GET') {
+        sendJson(res, 200, await dashboard(pool, user.id));
         return;
       }
 
