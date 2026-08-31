@@ -13,25 +13,44 @@
       }
     ]
   },
-  "status": "running",
+  "status": "passed",
   "createdAt": "2026-08-31T12:37:30.590Z",
-  "updatedAt": "2026-08-31T12:37:30.840Z",
+  "updatedAt": "2026-08-31T12:52:48.018Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-08-31T12:37:30.840Z"
+      "status": "passed",
+      "startedAt": "2026-08-31T12:37:30.840Z",
+      "finishedAt": "2026-08-31T12:52:48.017Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "collector/install.sh",
+    "db/migrations/014_user_watchlist.sql",
+    "db/migrations/015_fund_views.sql",
+    "db/watchlist.txt",
+    "package.json",
+    "requirements/RQ-0008-multitenant-model-global-takip-listesi-ve-kullanici-bazli-portfoy.md",
+    "src/collector.ts",
+    "src/db/seed.ts",
+    "src/db/user.ts",
+    "src/main.ts",
+    "src/server/http.ts",
+    "src/server/index.ts",
+    "src/server/repository.ts",
+    "src/styles.css",
+    "tests/auth.test.ts",
+    "tests/collector.test.ts",
+    "tests/http.test.ts"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
   }
 }
