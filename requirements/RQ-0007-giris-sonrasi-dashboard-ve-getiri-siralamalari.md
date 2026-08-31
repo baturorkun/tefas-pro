@@ -17,28 +17,27 @@ repositoryProvider: github
 # RQ-0007 - Giriş sonrası dashboard ve getiri sıralamaları
 
 Giriş yapıldığında ilk gelen ekran portföy değil dashboard olur. Dashboard'da
-en kârlı ve en çok kaybettiren fonlar 1 haftalık ve 1 aylık pencerelerde
-grafikle gösterilir.
+takip listesindeki fonların en çok kazandıran ve en çok kaybettirenleri, 1
+haftalık ve 1 aylık pencerelerde grafikle gösterilir.
 
-Referans marketvisuals.net/tefas_fonlar.html'deki düzen. Oradaki "En çok
-yükselen" başlığı burada **"En kârlı fonlar"** olur; "yükselen" kelimesi o
-sayfada fiyat için, "artan" ise yatırımcı sayısı için kullanılıyor ve dışarıdan
-bakınca ayrımı görünmüyor.
+Dört liste vardır ve hepsi **yalnız takip listesindeki fonları** kapsar:
 
-## İki ayrı soru, iki ayrı sıralama
-
-Bunlar farklı sorulardır ve dashboard ikisini de ayrı ayrı, açıkça etiketleyerek
-göstermelidir:
-
-| Sıralama | Soru | Kaynak |
+| | 1 hafta | 1 ay |
 |---|---|---|
-| **Takip listem** | Elimdeki fonların hangisi kazandırdı? | Saklanan günlük seri, dış istek yok |
-| **Tüm evren** | Piyasada en çok kazandıran hangisi? | Günlük snapshot, pencere başına 1 istek |
+| En çok kazandıran | ✓ | ✓ |
+| En çok kaybettiren | ✓ | ✓ |
 
-Ölçüldü: takip listesinin en iyisi 1 haftada %7,41 (DOH) iken tüm evrenin en
-iyisi %33,56 (DIH). İkisini tek listede karıştırmak yanıltıcı olurdu.
+Takip listesi dışındaki fonlar dashboard'a girmez. Veritabanı RQ-0003'te takip
+listesiyle sınırlandırılmıştı; o kural burada da geçerlidir ve piyasa geneli
+sıralaması için veri toplanmaz.
 
-## Takip listesi sıralaması nasıl hesaplanır
+## Adlandırma
+
+Referans alınan marketvisuals.net'te "En çok yükselen" fiyat için, "En çok
+artan" yatırımcı sayısı için kullanılıyor ve ayrım dışarıdan görünmüyor. Burada
+kazanç açıkça söylenir: **"En çok kazandıran"** ve **"En çok kaybettiren"**.
+
+## Sıralama nasıl hesaplanır
 
 Saklanan `daily_return_pct` serisinden bileşik getiri olarak, veritabanında:
 
@@ -47,29 +46,22 @@ exp(sum(ln(1 + daily_return_pct/100))) - 1
 ```
 
 Yöntem RQ-0003'te doğrulanmıştı: aylık bileşik, API'nin kendi aylık penceresiyle
-dört ondalıkta aynı çıkıyor. Dış istek gerekmez, dashboard veritabanından çizilir.
+dört ondalıkta aynı çıkıyor. Dış istek gerekmez; dashboard veritabanından çizilir
+ve sayfa açılışında hiçbir dış servise bağlanılmaz.
 
-Pencerede kaç iş günü bulunduğu birlikte gösterilmelidir; yeni eklenmiş bir fon
-eksik günle hesaplanıp yanıltıcı biçimde üste çıkmamalıdır.
+Pencerede kaç iş günü bulunduğu birlikte gösterilir; yeni eklenmiş bir fon eksik
+günle hesaplanıp yanıltıcı biçimde üste çıkmamalıdır.
 
-## Tüm evren sıralaması nasıl beslenir
-
-`GET /funds/yield/?start=&end=` bir pencere için tüm evreni **tek istekte**
-döndürür: 2026-08-24→31 aralığında 2395 fon, 2083'ünde değer.
-
-RQ-0003 veritabanını takip listesiyle sınırlamıştı. Bu kural korunur: evrenin
-tamamı saklanmaz, yalnız **her pencere için en iyi ve en kötü N fon** günlük
-snapshot olarak yazılır. Dashboard'ın ihtiyacı bu; gerisi saklanırsa tablo
-amaçsız büyür.
-
-Gecelik collector koşusuna pencere başına 1 istek eklenir (1 hafta + 1 ay = 2).
+**"En çok kaybettiren" yalnız gerçekten eksideki fonları listeler.** Alttan N
+almak yanlış olurdu: takip listesi küçük ve çoğu fon artıdayken panel pozitif
+değerlerle dolar ve başlığını yalanlar. Ekside fon yoksa liste kısa kalır.
 
 ## Grafik
 
-Yatay bar grafik, satır içi SVG ile çizilir. Grafik kütüphanesi eklenmez:
-iki bar grafik bir bağımlılığı hak etmiyor, proje çerçevesiz vanilla TypeScript
-ve renkler zaten CSS custom property olarak tanımlı — kütüphane kendi paletini
-getirirse tasarım ikiye bölünür.
+Yatay bar grafik, satır içi SVG. Grafik kütüphanesi eklenmez: dört bar grafik
+bir bağımlılığı hak etmiyor, proje çerçevesiz vanilla TypeScript ve renkler
+zaten CSS custom property olarak tanımlı — kütüphane kendi paletini getirirse
+tasarım ikiye bölünür.
 
 - Pozitif değer aksan rengiyle, negatif değer tehlike rengiyle çizilir.
 - Bar uzunlukları o gruptaki en büyük mutlak değere göre ölçeklenir.
@@ -78,55 +70,46 @@ getirirse tasarım ikiye bölünür.
 
 ## Ekran düzeni
 
-1. Üstte özet metrikler: takip edilen fon, açık pozisyon, son veri günü,
-   son collector koşusu.
-2. **En kârlı fonlar (1 hafta)** ve **(1 ay)** — takip listem.
-3. **En çok kaybettiren fonlar (1 hafta)** ve **(1 ay)** — takip listem.
-   Çıkış sinyali aranan bir üründe kaybedenler kazananlar kadar önemlidir.
-4. Tüm evren sıralamaları, ayrı başlık altında ve kaynağı belirtilerek.
+1. Üstte özet metrikler: takip edilen fon, açık pozisyon, son veri günü, son
+   collector koşusu.
+2. Dört grafik: kazandıran ve kaybettiren, 1 hafta ve 1 ay.
 
-Sidebar'a "Panel" girişi eklenir ve giriş sonrası varsayılan görünüm olur.
-Admin olmayan kullanıcı da dashboard'u görür; tüm evren bölümü herkese açıktır.
+Sidebar'a "Panel" girişi eklenir ve giriş sonrası varsayılan görünüm olur. Admin
+olmayan kullanıcı da dashboard'u görür.
 
 ## Kapsam
 
-- `fact_universe_yield_rank` benzeri bir tablo: pencere, tarih, yön (top/bottom),
-  sıra, fon kodu, getiri.
-- Collector'a pencere başına bir `/funds/yield/` çağrısı ve top/bottom N yazımı.
 - `analytics` view'ı: takip listesi için 1 hafta ve 1 ay bileşik getiri, iş günü
   sayısıyla.
-- `GET /api/dashboard` ucu: metrikler, takip listesi sıralamaları, evren
-  sıralamaları.
+- `GET /api/dashboard` ucu: metrikler ve dört sıralama.
 - Satır içi SVG yatay bar grafik bileşeni.
 - Dashboard görünümü ve sidebar girişi; giriş sonrası varsayılan.
 
 ## Acceptance Criteria
 
 - [ ] Giriş yapıldığında ilk gelen görünüm dashboard'dur.
-- [ ] Dashboard takip listesi için 1 haftalık ve 1 aylık en kârlı fonları
-      azalan sırada gösterir.
-- [ ] En çok kaybettiren fonlar da aynı iki pencerede gösterilir.
+- [ ] Dört liste gösterilir: kazandıran ve kaybettiren, 1 hafta ve 1 ay.
+- [ ] Listeler yalnız takip listesindeki fonları içerir; başka fon görünmez.
 - [ ] Sıralamalar saklanan günlük seriden hesaplanır; sayfa açılışında dış
       servise istek atılmaz.
 - [ ] Bir fonun penceresinde kaç iş günü bulunduğu görünür.
-- [ ] Tüm evren sıralaması ayrı başlık altındadır ve takip listesi sıralamasıyla
-      karıştırılamaz.
-- [ ] Evren snapshot'ı yalnız top/bottom N fonu saklar; evrenin tamamı
-      veritabanına yazılmaz.
-- [ ] Collector koşusu evren snapshot'ını günceller; aynı gün ikinci koşu
-      değişmemiş satırı yeniden yazmaz.
+- [ ] "En çok kaybettiren" yalnız getirisi negatif olan fonları listeler.
 - [ ] Grafikler satır içi SVG ile çizilir; yeni bir çalışma zamanı bağımlılığı
       eklenmez.
 - [ ] Pozitif ve negatif değerler farklı renkle ve doğru yönde çizilir.
 - [ ] Veri yoksa boş durum gösterilir, hatalı veya boş grafik çizilmez.
 - [ ] `type = user` olan kullanıcı dashboard'u görür; admin bölümleri görünmez.
+- [ ] Takip listesi dışında hiçbir fon veritabanına yazılmaz.
 - [ ] Yapılandırılmış quality gate'ler (typecheck, test, build) geçer.
 
 ## Kapsam Dışı
 
-- Nakit akışı ve yatırımcı sayısı sıralamaları; bu requirement getiriye odaklanır.
+- Piyasa geneli (takip listesi dışı) sıralamalar.
+- **Pozisyon bazlı getiri**: "aldığımdan beri ne kazandım". Farklı bir sorudur
+  ve ayrı bir requirement'a aittir; ölçüldü: PBR fonu son 1 ayda -%7,56 iken
+  kullanıcının alımından satışına +%47,43 getirmiş.
 - Kâr/zarar hesabı, stopaj ve ücret düşülmüş net getiri.
+- Nakit akışı ve yatırımcı sayısı sıralamaları.
 - Kategori bazlı sıralama.
 - Sinyal üretimi, eşik ve uyarı.
-- Grafiklerin dışa aktarılması veya paylaşılması.
 - Zaman serisi (çizgi) grafikleri; bu requirement yatay bar ile sınırlıdır.

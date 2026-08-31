@@ -78,9 +78,6 @@ export interface FundInfo {
 /** `/funds/yield/` — tüm evren için dönemsel getiri, çağrı anı itibarıyla. */
 export interface YieldRow {
   code: string;
-  title: string;
-  /** Yalnız `start`/`end` verildiğinde gelir; parametresiz çağrıda alan yoktur. */
-  yieldCustom: number | null;
   yield1m: number | null;
   yield3m: number | null;
   yield6m: number | null;
@@ -229,10 +226,6 @@ export function parseYield(raw: unknown): YieldRow[] {
     const row = asRecord(r, 'yield');
     return {
       code: reqString(row, 'code', 'yield'),
-      title: optString(row, 'title') ?? '',
-      // Parametresiz çağrıda bu alan hiç gelmez; numField eksik alanı şema
-      // kayması sayıp patlardı, o yüzden varlığı ayrıca kontrol edilir.
-      yieldCustom: 'yield_custom' in row ? numField(row, 'yield_custom', 'yield') : null,
       yield1m: numField(row, 'yield_1m', 'yield'),
       yield3m: numField(row, 'yield_3m', 'yield'),
       yield6m: numField(row, 'yield_6m', 'yield'),
@@ -340,13 +333,8 @@ export class FintablesClient {
     return parseInfo(await this.fetchJson(`/funds/${fundCode}/info/`));
   }
 
-  /**
-   * Dönemsel getiri. `start`/`end` verilirse her satıra o pencerenin getirisi
-   * `yieldCustom` olarak eklenir — tüm evren için tek istek.
-   */
-  async yields(window?: { start: string; end: string }): Promise<YieldRow[]> {
-    const q = window ? `?start=${window.start}&end=${window.end}` : '';
-    return parseYield(await this.fetchJson(`/funds/yield/${q}`));
+  async yields(): Promise<YieldRow[]> {
+    return parseYield(await this.fetchJson('/funds/yield/'));
   }
 
   /** Pencere sonundaki büyüklük ve pay adedi — tüm evren, tek istek. */

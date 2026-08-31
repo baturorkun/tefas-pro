@@ -299,8 +299,6 @@ export interface DashboardData {
     lastRun: { id: number; status: string; finishedAt: string | null } | null;
   };
   watchlistRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
-  universeRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
-  universeDate: string | null;
 }
 
 const RANK_LIMIT = 10;
@@ -311,7 +309,7 @@ const RANK_LIMIT = 10;
  * okunur.
  */
 export async function dashboard(pool: pg.Pool, userId: number): Promise<DashboardData> {
-  const [counts, lastRun, wl, uni, uniDate] = await Promise.all([
+  const [counts, lastRun, wl] = await Promise.all([
     pool.query<{ watchlist: string; open_positions: string; data_date: string | null }>(
       `SELECT (SELECT count(*) FROM watchlist) AS watchlist,
               (SELECT count(*) FROM portfolio_transaction
@@ -331,18 +329,6 @@ export async function dashboard(pool: pg.Pool, userId: number): Promise<Dashboar
     }>(
       `SELECT fund_code, title, return_1w::text, days_1w::text, return_1m::text, days_1m::text
        FROM analytics.watchlist_returns`,
-    ),
-    pool.query<{
-      window_key: string; direction: string; fund_code: string;
-      title: string | null; return_pct: string;
-    }>(
-      `SELECT window_key, direction, fund_code, title, return_pct::text
-       FROM fact_universe_yield_rank
-       WHERE as_of_date = (SELECT max(as_of_date) FROM fact_universe_yield_rank)
-       ORDER BY window_key, direction, rank`,
-    ),
-    pool.query<{ d: string | null }>(
-      `SELECT to_char(max(as_of_date), 'YYYY-MM-DD') AS d FROM fact_universe_yield_rank`,
     ),
   ]);
 
@@ -367,15 +353,6 @@ export async function dashboard(pool: pg.Pool, userId: number): Promise<Dashboar
     };
   };
 
-  const universe: Record<string, { top: RankEntry[]; bottom: RankEntry[] }> = {};
-  for (const r of uni.rows) {
-    const slot = (universe[r.window_key] ??= { top: [], bottom: [] });
-    const list = r.direction === 'top' ? slot.top : slot.bottom;
-    if (list.length < RANK_LIMIT) {
-      list.push({ fundCode: r.fund_code, title: r.title, returnPct: r.return_pct, days: null });
-    }
-  }
-
   const c = counts.rows[0]!;
   const run = lastRun.rows[0];
   return {
@@ -386,7 +363,5 @@ export async function dashboard(pool: pg.Pool, userId: number): Promise<Dashboar
       lastRun: run ? { id: run.id, status: run.status, finishedAt: run.finished_at } : null,
     },
     watchlistRanks: { '1w': byWindow('1w'), '1m': byWindow('1m') },
-    universeRanks: universe,
-    universeDate: uniDate.rows[0]?.d ?? null,
   };
 }

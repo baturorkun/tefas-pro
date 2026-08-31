@@ -60,8 +60,6 @@ interface Dashboard {
     lastRun: { id: number; status: string; finishedAt: string | null } | null;
   };
   watchlistRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
-  universeRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
-  universeDate: string | null;
 }
 
 type ViewId = 'dashboard' | 'portfolio' | 'watchlist' | 'users';
@@ -287,33 +285,17 @@ async function dashboardView(): Promise<Node[]> {
         run ? `#${String(run.id)} · ${run.status}` : 'henüz koşmadı',
       ),
     ]),
-    el('h2', { class: 'section-title' }, ['Takip listem']),
     grid([
-      chartPanel('En kârlı fonlar (1 hafta)', 'takip listem', d.watchlistRanks['1w']?.top ?? []),
-      chartPanel('En kârlı fonlar (1 ay)', 'takip listem', d.watchlistRanks['1m']?.top ?? []),
+      chartPanel('En çok kazandıran (1 hafta)', 'takip listem', d.watchlistRanks['1w']?.top ?? []),
+      chartPanel('En çok kazandıran (1 ay)', 'takip listem', d.watchlistRanks['1m']?.top ?? []),
       chartPanel(
-        'En çok kaybettiren fonlar (1 hafta)', 'takip listem',
+        'En çok kaybettiren (1 hafta)', 'takip listem',
         d.watchlistRanks['1w']?.bottom ?? [],
       ),
       chartPanel(
-        'En çok kaybettiren fonlar (1 ay)', 'takip listem',
+        'En çok kaybettiren (1 ay)', 'takip listem',
         d.watchlistRanks['1m']?.bottom ?? [],
       ),
-    ]),
-    el('h2', { class: 'section-title' }, [
-      'Tüm evren',
-      el('span', { class: 'section-sub' }, [
-        d.universeDate === null ? 'veri yok' : `${d.universeDate} itibarıyla, ~2400 fon`,
-      ]),
-    ]),
-    grid([
-      chartPanel('En kârlı fonlar (1 hafta)', 'tüm evren', d.universeRanks['1w']?.top ?? []),
-      chartPanel('En kârlı fonlar (1 ay)', 'tüm evren', d.universeRanks['1m']?.top ?? []),
-      chartPanel(
-        'En çok kaybettiren fonlar (1 hafta)', 'tüm evren',
-        d.universeRanks['1w']?.bottom ?? [],
-      ),
-      chartPanel('En çok kaybettiren fonlar (1 ay)', 'tüm evren', d.universeRanks['1m']?.bottom ?? []),
     ]),
   ];
   return nodes;
