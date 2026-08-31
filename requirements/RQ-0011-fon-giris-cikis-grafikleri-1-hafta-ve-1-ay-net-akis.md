@@ -1,6 +1,6 @@
 ---
 id: RQ-0011
-status: draft
+status: ready
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -51,10 +51,20 @@ HRZ parasının üçte birini kaybetmiş ama −0,12 mr₺ olduğu için ham lis
 PRY ham listede üçüncü, oysa 112 mr₺'lik fonun %7'si çıkmış — sıkıntı değil,
 sadece büyük fon.
 
-Ölçüt: **net akış / pencere başındaki büyüklük**. Payda pencere başı olmalı,
-bugünkü değil: PBR bugünkü büyüklüğe bölününce −%477 çıkıyor, çünkü payda
-zaten erimiş olan tutar. Pencere başına bölününce −%90,4 — okunabilir ve
-doğru: "ayın başındaki parasının %90'ı çıkmış".
+Ölçüt: **net akış / pencere başı ve sonu büyüklüklerin büyüğü**.
+
+Payda seçimi üç denemeyle oturdu:
+
+| Payda | PBR (çıkış) | THF (giriş) | Sorun |
+|---|---:|---:|---|
+| Güncel büyüklük | −%477 | — | payda zaten erimiş tutar |
+| Pencere başı | −%90,4 | **+%5073** | küçükten büyüyen fon listeyi ele geçirir |
+| **Büyüğü** | **−%90,4** | **+%80,2** | — |
+
+Çıkış tarafında pencere başı doğru çalışıyor çünkü oran doğal olarak −%100'de
+sınırlı. Giriş tarafında sınır yok: THF ay başında 1,08 mr₺ iken 59,35 mr₺'ye
+çıkmış. Büyüğe bölmek her iki yönü de ±%100 civarında sınırlar ve simetriktir.
+Okunuşu: "fonun büyük halinin yüzde kaçı hareket etti".
 
 TL tutarı kaybolmaz, barın yanında yazılı durur. Sıralamayı oran belirler,
 büyüklüğü tutar anlatır.
@@ -73,7 +83,7 @@ pozisyonlar. Yeni kontrol eklenmez.
 ## Kapsam
 
 - `analytics.fund_flow` view'ı: fon başına 1 hafta ve 1 ay net akış (TL),
-  pencere başı büyüklük, oran, gün sayısı.
+  pencere büyüklüğü, oran, gün sayısı.
 - `dashboard()` akış sıralamalarını döndürür; mevcut toggle parametresi bu
   bölümü de süzer.
 - Bar grafik oranı çizer, TL tutarını değer sütununda gösterir.
@@ -84,7 +94,9 @@ pozisyonlar. Yeni kontrol eklenmez.
 - [ ] Dört panel: en çok giriş / en çok çıkış, 1 hafta ve 1 ay.
 - [ ] Sıralama net akışın pencere başı büyüklüğe oranına göredir; ham TL
       tutarına göre değil.
-- [ ] Payda pencere başındaki büyüklüktür, güncel büyüklük değil.
+- [ ] Payda pencere başı ve sonu büyüklüklerin büyüğüdür; ne güncel büyüklük
+      ne de yalnız pencere başı — ilki çıkışta, ikincisi girişte oranı patlatır.
+- [ ] Giriş sıralaması küçükten büyüyen fonlar tarafından ele geçirilmez.
 - [ ] TL tutarı her barda okunur biçimde görünür (mr₺ / mn₺ kısaltmasıyla).
 - [ ] Her barda pencerede kaç gün veri olduğu görünür.
 - [ ] Pencere başı büyüklüğü bilinmeyen fon listeye girmez; oranı sıfır gibi
