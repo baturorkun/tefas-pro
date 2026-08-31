@@ -13,25 +13,30 @@
       }
     ]
   },
-  "status": "running",
+  "status": "passed",
   "createdAt": "2026-08-31T20:16:57.591Z",
-  "updatedAt": "2026-08-31T20:17:23.118Z",
+  "updatedAt": "2026-08-31T20:19:23.323Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-08-31T20:17:23.118Z"
+      "status": "passed",
+      "startedAt": "2026-08-31T20:17:23.118Z",
+      "finishedAt": "2026-08-31T20:19:23.323Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "db/migrations/020_fund_investor.sql",
+    "src/main.ts",
+    "src/server/repository.ts"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
   }
 }
