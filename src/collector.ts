@@ -158,7 +158,37 @@ export interface DailyRow {
  * COALESCE'in sonucu: bir alan dolduktan sonra NULL'a döndürülemez. Bu ingest
  * için doğru davranış, çünkü kaynaklar veri ekler, silmez.
  */
-export async function upsertDaily(pool: pg.Pool, rows: DailyRow[], runId: number): Promise<number> {
+/**
+ * Bugünden ileri tarihli satırları ayıklar.
+ *
+ * Kaynak, yarın gecerli olacak fiyati bu aksam yayimliyor. Yazilirsa
+ * veritabaninda yarim bir gun en son gun olarak duruyor: 2026-08-31 aksami
+ * 2026-09-01 icin 36 fonun 23'unun getirisi vardi, akis ve yatirimci sayisi
+ * hic yoktu. View'lar "son veri gunu"nu max(trade_date) ile buldugu icin
+ * pencereler o yarim gune kayiyordu.
+ *
+ * `today` cagirandan gelir; Europe/Istanbul takvim gunu olmali. Veritabani
+ * Etc/UTC calisiyor, current_date gece yarisi ile 03:00 arasinda bir gun
+ * geride kalir ve o saatte kosan collector mesru veriyi reddederdi.
+ */
+export function dropFutureRows(rows: DailyRow[], today: string): DailyRow[] {
+  return rows.filter((r) => r.trade_date <= today);
+}
+
+/** Koşu boyunca süzülen ileri tarihli satır sayısı; sessizce atılmasın diye. */
+let skippedFuture = 0;
+
+export async function upsertDaily(
+  pool: pg.Pool,
+  rows: DailyRow[],
+  runId: number,
+  today?: string,
+): Promise<number> {
+  // Süzme burada, tek çoklu-satır ekleme noktasında: fiyat, getiri, akış ve
+  // büyüklük kaynaklarının hepsi buradan geçiyor.
+  const kept = today === undefined ? rows : dropFutureRows(rows, today);
+  skippedFuture += rows.length - kept.length;
+  rows = kept;
   if (rows.length === 0) return 0;
   const res = await pool.query(
     `INSERT INTO fact_fund_daily (fund_code, trade_date, nav_per_share, daily_return_pct,
@@ -268,7 +298,7 @@ async function ingestFund(
     [code, info.taxPct, info.managementFeePct, info.buyValorDays, info.sellValorDays, info.risk],
   );
 
-  let n = await upsertDaily(pool, rows, runId);
+  let n = await upsertDaily(pool, rows, runId, today);
 
   if (info.allocation.length > 0) {
     const res = await pool.query(
@@ -305,6 +335,7 @@ async function ingestSizeWindow(
   window: { start: string; end: string },
   runId: number,
   markCalendar: boolean,
+  today: string,
 ): Promise<number> {
   const sizes = await client.windowSize(window.start, window.end);
   await throttle();
@@ -326,7 +357,7 @@ async function ingestSizeWindow(
     ...(s.endShareCount !== null ? { shares_active: s.endShareCount } : {}),
     ...(byCode.get(s.code) != null ? { investor_count: byCode.get(s.code) as number } : {}),
   }));
-  const n = await upsertDaily(pool, rows, runId);
+  const n = await upsertDaily(pool, rows, runId, today);
   if (markCalendar) {
     await pool.query(
       `INSERT INTO dim_calendar (trade_date, is_business_day) VALUES ($1, true)
@@ -472,7 +503,7 @@ async function main(): Promise<void> {
     console.log(`Büyüklük pencereleri: ${sizeWindows.length}`);
     for (const w of sizeWindows) {
       try {
-        upserted += await ingestSizeWindow(pool, client, w, runId, w.end > monthsBack(today, 1));
+        upserted += await ingestSizeWindow(pool, client, w, runId, w.end > monthsBack(today, 1), today);
       } catch (err) {
         failed += 1;
         console.error(`  ✗ pencere ${w.start}→${w.end}: ${String(err).split('\n')[0]}`);
@@ -483,7 +514,10 @@ async function main(): Promise<void> {
       `UPDATE ingest_run SET status = $2, finished_at = now(), rows_upserted = $3 WHERE id = $1`,
       [runId, failed === 0 ? 'passed' : 'partial', upserted],
     );
-    console.log(`\nBitti: ${ok} fon, ${failed} hata, ${upserted} satır yazıldı (run #${runId}).`);
+    console.log(
+      `\nBitti: ${ok} fon, ${failed} hata, ${upserted} satır yazıldı (run #${runId}).` +
+        (skippedFuture > 0 ? `\n${skippedFuture} ileri tarihli satır atlandı (bugün ${today}).` : ''),
+    );
     if (ok === 0) process.exitCode = 1;
   } catch (err) {
     await pool.query(
