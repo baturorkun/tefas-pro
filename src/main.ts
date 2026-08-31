@@ -55,6 +55,18 @@ interface RankEntry {
   days: number | null;
   /** Açık pozisyonum var mı. Dolu / içi boş bar ayrımı buna bakar. */
   owned: boolean;
+  /** Yalnız pozisyon sıralamasında dolu: o fondaki kâr/zarar, TL. */
+  gain?: string | null;
+}
+
+interface PositionSummary {
+  cost: string;
+  value: string;
+  gain: string;
+  gainPct: string;
+  realizedGain: string;
+  winners: number;
+  losers: number;
 }
 
 interface Dashboard {
@@ -66,6 +78,11 @@ interface Dashboard {
     lastRun: { id: number; status: string; finishedAt: string | null } | null;
   };
   watchlistRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
+  positions: {
+    summary: PositionSummary | null;
+    top: RankEntry[];
+    bottom: RankEntry[];
+  };
 }
 
 type ViewId = 'dashboard' | 'portfolio' | 'watchlist' | 'users';
@@ -230,7 +247,11 @@ function barChart(entries: RankEntry[], emptyText = 'Veri yok.'): SVGSVGElement 
     const x = v >= 0 ? zeroX : zeroX - len;
 
     root.append(
-      svg('title', {}, `${e.fundCode} — ${e.title ?? ''} · ${e.owned ? 'portföyümde' : 'takip listemde'}`),
+      svg('title', {}, [
+        `${e.fundCode} — ${e.title ?? ''}`,
+        e.owned ? 'portföyümde' : 'takip listemde',
+        ...(e.gain == null ? [] : [`${money(e.gain)} kâr/zarar`]),
+      ].join(' · ')),
       svg('text', { x: '0', y: String(y + 13), class: 'bar-code' }, e.fundCode),
       svg('rect', {
         x: String(x),
@@ -338,6 +359,40 @@ function watchlistToggle(checked: boolean, onChange: (v: boolean) => void): HTML
   ]);
 }
 
+/**
+ * Pozisyon bölümü: fonun değil, kullanıcının kendi getirisi.
+ *
+ * Pencere bar başına farklı — herkes kendi alış tarihinden ölçülüyor. Bu
+ * yüzden gün sayısı burada piyasa grafiklerindekinden de kritik: 114 gündür
+ * tutulan fon, 5 gündür tutulanın yanında haksız bir avantajla başa geçer.
+ */
+function positionSection(
+  p: Dashboard['positions'],
+  onlyOwned: boolean,
+): Node[] {
+  const s = p.summary;
+  const kapsam = onlyOwned ? 'yalnız portföyüm' : 'takip listem dahil, almış gibi';
+  return [
+    el('h2', { class: 'section-title' }, ['Pozisyonlarım']),
+    ...(s === null
+      ? []
+      : [
+          el('div', { class: 'metric-grid' }, [
+            metric('Maliyet', money(s.cost), 'açık pozisyonlar'),
+            metric('Bugünkü değer', money(s.value), `${s.gainPct}% getiri`),
+            metric('Açık kâr', money(s.gain), `${String(s.winners)} kârda · ${String(s.losers)} zararda`),
+            metric('Gerçekleşmiş kâr', money(s.realizedGain), 'kapanmış pozisyonlar'),
+          ]),
+        ]),
+    el('div', { class: 'chart-grid' }, [
+      chartPanel('En çok kazandıran pozisyonlarım', kapsam, p.top,
+        'Henüz ölçülebilir pozisyon yok.'),
+      chartPanel('En çok kaybettiren pozisyonlarım', kapsam, p.bottom,
+        'Zararda pozisyonum yok.'),
+    ]),
+  ];
+}
+
 async function dashboardView(reload: () => void): Promise<Node[]> {
   // Toggle kapalıyken sıralama sunucuda baştan daraltılır, grafikte bar
   // gizlenmez: gizleseydik top-10'da üç bar kalır, başlık yalan olurdu.
@@ -364,6 +419,8 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
       writeOnlyOwned(!dahil);
       reload();
     }),
+    ...positionSection(d.positions, onlyOwned),
+    el('h2', { class: 'section-title' }, ['Piyasa']),
     grid([
       chartPanel('En çok kazandıran (1 hafta)', kapsam, d.watchlistRanks['1w']?.top ?? []),
       chartPanel('En çok kazandıran (1 ay)', kapsam, d.watchlistRanks['1m']?.top ?? []),
