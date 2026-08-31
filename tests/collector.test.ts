@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  dropFutureRows,
   addDays,
   dailyWindows,
   isWeekend,
@@ -126,5 +127,31 @@ describe('mergeDailySources', () => {
   });
   it('hiç veri yoksa boş döner', () => {
     expect(mergeDailySources('X', null, [], [])).toEqual([]);
+  });
+});
+
+describe('dropFutureRows', () => {
+  const row = (d: string): { fund_code: string; trade_date: string } =>
+    ({ fund_code: 'THF', trade_date: d });
+
+  // Kaynak yarının fiyatını bu akşam yayımlıyor. Yazılırsa yarım bir gün en
+  // son gün oluyor ve view'ların pencere çıpası oraya kayıyor.
+  it('bugünden ileri tarihli satırı atar', () => {
+    const rows = [row('2026-08-30'), row('2026-08-31'), row('2026-09-01')];
+    expect(dropFutureRows(rows as never, '2026-08-31').map((r) => r.trade_date)).toEqual([
+      '2026-08-30',
+      '2026-08-31',
+    ]);
+  });
+  it('bugünü tutar; kural yalnız ileriyi keser', () => {
+    expect(dropFutureRows([row('2026-08-31')] as never, '2026-08-31')).toHaveLength(1);
+  });
+  it('hepsi ileriyse boş döner', () => {
+    expect(dropFutureRows([row('2026-09-01'), row('2026-09-02')] as never, '2026-08-31')).toEqual([]);
+  });
+  // Tarihler ISO ve sabit genişlikte; sözlük sırası takvim sırasıyla aynı.
+  it('ay ve yıl sınırını doğru geçer', () => {
+    expect(dropFutureRows([row('2027-01-01')] as never, '2026-12-31')).toEqual([]);
+    expect(dropFutureRows([row('2026-12-31')] as never, '2027-01-01')).toHaveLength(1);
   });
 });
