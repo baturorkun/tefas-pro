@@ -115,12 +115,15 @@ require_network() {
   fi
 }
 
-# Takip listesi bos mu? Boysa dogrulama kosusu kacinilmaz olarak duser ve
+# Toplanacak fon var mi? Yoksa dogrulama kosusu kacinilmaz olarak duser ve
 # ingest_run tablosunda kalici bir "failed" satiri birakirdi. Kurulumun kendisi
 # basarilidir; eksik olan yapilandirmadir.
-watchlist_count() {
+#
+# Kaynak analytics.tracked_fund: tum kullanicilarin takip listeleri ile
+# portfoylerinin birlesimi. Collector'in okudugu kumeyle ayni sorgu.
+tracked_count() {
   podman exec tefas-pro-postgres psql -U tefas -d tefas -tAc \
-    'SELECT count(*) FROM watchlist' 2>/dev/null | tr -d '[:space:]'
+    'SELECT count(*) FROM analytics.tracked_fund' 2>/dev/null | tr -d '[:space:]'
 }
 
 # Kurulum dogrulamasi: image ayaga kalkiyor ve veritabanina baglanabiliyor mu.
@@ -135,10 +138,10 @@ verify_image() {
 }
 
 seed_hint() {
-  log "Takip listesi boş — doğrulama koşusu atlandı."
-  log "Listeyi beslemek için:"
+  log "Takip edilen fon yok — doğrulama koşusu atlandı."
+  log "Bir kullanıcının listesini beslemek için:"
   log "  podman run --rm --network ${COLLECTOR_NETWORK} --env-file ${1} \\"
-  log "    --entrypoint node ${IMAGE} dist/db/seed.js"
+  log "    --entrypoint node ${IMAGE} dist/db/seed.js <kullanıcı>"
 }
 
 run_once() {
@@ -160,7 +163,7 @@ cmd_local() {
   build_image
   require_network
   verify_image
-  if [ "$(watchlist_count)" = "0" ]; then
+  if [ "$(tracked_count)" = "0" ]; then
     seed_hint "${ENV_FILE}"
   else
     run_once
@@ -256,12 +259,12 @@ cmd_remote() {
     log "--no-timer: systemd unit kurulmadı."
   fi
 
-  remote_count="$(remote_ssh "podman exec tefas-pro-postgres psql -U tefas -d tefas -tAc 'SELECT count(*) FROM watchlist' 2>/dev/null | tr -d '[:space:]'" || echo 0)"
+  remote_count="$(remote_ssh "podman exec tefas-pro-postgres psql -U tefas -d tefas -tAc 'SELECT count(*) FROM analytics.tracked_fund' 2>/dev/null | tr -d '[:space:]'" || echo 0)"
   if [ "${remote_count:-0}" = "0" ]; then
-    log "Takip listesi boş — doğrulama koşusu atlandı."
-    log "Listeyi beslemek için:"
+    log "Takip edilen fon yok — doğrulama koşusu atlandı."
+    log "Bir kullanıcının listesini beslemek için:"
     log "  ssh ${REMOTE_TARGET} podman run --rm --network ${COLLECTOR_NETWORK} \\"
-    log "    --env-file ${REMOTE_DIR}/.env --entrypoint node ${IMAGE} dist/db/seed.js"
+    log "    --env-file ${REMOTE_DIR}/.env --entrypoint node ${IMAGE} dist/db/seed.js <kullanıcı>"
   else
     log "Uzak doğrulama koşusu."
     remote_ssh "podman run --rm --network '${COLLECTOR_NETWORK}' --env-file '${REMOTE_DIR}/.env' '${IMAGE}' ${COLLECTOR_ARGS}"

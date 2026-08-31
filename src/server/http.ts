@@ -46,7 +46,9 @@ export function matchPath(pattern: string, path: string): string | null {
   if (p.length !== a.length) return null;
   let captured: string | null = null;
   for (let i = 0; i < p.length; i += 1) {
-    if (p[i] === ':id') {
+    // `:` ile başlayan her segment yakalanır. Yalnız `:id` tanınsaydı
+    // `/api/watchlist/:code` sessizce eşleşmez, istek 404 dönerdi.
+    if (p[i]?.startsWith(':') === true) {
       captured = a[i] ?? '';
       continue;
     }

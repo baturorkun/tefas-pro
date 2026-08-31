@@ -28,8 +28,11 @@ interface Transaction {
 
 interface WatchlistRow {
   fundCode: string;
-  status: string;
   title: string | null;
+  /** Sunucuda kullanıcının kendi işlemlerinden türetilir. */
+  status: 'owned' | 'sold' | 'watch';
+  addedAt: string;
+  note: string | null;
   navDate: string | null;
   navPerShare: string | null;
   dailyReturnPct: string | null;
@@ -55,6 +58,7 @@ interface RankEntry {
 interface Dashboard {
   metrics: {
     watchlist: number;
+    trackedFunds: number;
     openPositions: number;
     dataDate: string | null;
     lastRun: { id: number; status: string; finishedAt: string | null } | null;
@@ -276,7 +280,7 @@ async function dashboardView(): Promise<Node[]> {
 
   const nodes: Node[] = [
     el('div', { class: 'metric-grid' }, [
-      metric('Takip edilen', String(m.watchlist), 'fon'),
+      metric('Takip listem', String(m.watchlist), `${String(m.trackedFunds)} fon toplanıyor`),
       metric('Açık pozisyon', String(m.openPositions), 'portföyümde'),
       metric('Son veri', m.dataDate ?? '—', 'getiri günü'),
       metric(
@@ -286,14 +290,14 @@ async function dashboardView(): Promise<Node[]> {
       ),
     ]),
     grid([
-      chartPanel('En çok kazandıran (1 hafta)', 'takip listem', d.watchlistRanks['1w']?.top ?? []),
-      chartPanel('En çok kazandıran (1 ay)', 'takip listem', d.watchlistRanks['1m']?.top ?? []),
+      chartPanel('En çok kazandıran (1 hafta)', 'takip edilen fonlar', d.watchlistRanks['1w']?.top ?? []),
+      chartPanel('En çok kazandıran (1 ay)', 'takip edilen fonlar', d.watchlistRanks['1m']?.top ?? []),
       chartPanel(
-        'En çok kaybettiren (1 hafta)', 'takip listem',
+        'En çok kaybettiren (1 hafta)', 'takip edilen fonlar',
         d.watchlistRanks['1w']?.bottom ?? [],
       ),
       chartPanel(
-        'En çok kaybettiren (1 ay)', 'takip listem',
+        'En çok kaybettiren (1 ay)', 'takip edilen fonlar',
         d.watchlistRanks['1m']?.bottom ?? [],
       ),
     ]),
@@ -467,19 +471,57 @@ async function portfolioView(reload: () => void): Promise<Node[]> {
 
 // ─── Takip listesi görünümü ─────────────────────────────────────────────────
 
-async function watchlistView(): Promise<Node[]> {
-  const rows = (await api('/api/admin/watchlist')) as WatchlistRow[];
+/** Kod dışında alan yok: not isteğe bağlı, gerisi collector'dan gelir. */
+function watchlistForm(onDone: () => void): HTMLElement {
+  const fundCode = el('input', { required: 'true', placeholder: 'THF', maxlength: '16' });
+  const note = el('input', { placeholder: 'neden izliyorum (isteğe bağlı)', maxlength: '200' });
+  const status = el('span', { class: 'status' });
+  const form = el('form', { class: 'row-form' }, [
+    field('Fon kodu', fundCode),
+    field('Not', note),
+    el('div', { class: 'field' }, [
+      el('button', { type: 'submit', class: 'btn-primary btn-block' }, ['Listeye ekle']),
+    ]),
+    status,
+  ]);
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    void (async () => {
+      try {
+        status.textContent = 'ekleniyor…';
+        await api('/api/watchlist', {
+          method: 'POST',
+          body: JSON.stringify({ fundCode: fundCode.value, note: note.value }),
+        });
+        onDone();
+      } catch (err) {
+        status.textContent = err instanceof Error ? err.message : 'Eklenemedi.';
+      }
+    })();
+  });
+  return form;
+}
+
+const STATUS_LABEL: Record<WatchlistRow['status'], string> = {
+  owned: 'sahibim',
+  sold: 'çıktım',
+  watch: 'izliyorum',
+};
+
+async function watchlistView(reload: () => void): Promise<Node[]> {
+  const rows = (await api('/api/watchlist')) as WatchlistRow[];
   const owned = rows.filter((r) => r.status === 'owned').length;
   const dates = rows.map((r) => r.navDate).filter((d): d is string => d !== null).sort();
   const gainers = rows.filter((r) => Number(r.dailyReturnPct ?? 0) > 0).length;
 
-  const body = rows.map((r) =>
-    el('tr', {}, [
+  const body = rows.map((r) => {
+    const delBtn = el('button', { class: 'btn-danger' }, ['çıkar']);
+    const tr = el('tr', {}, [
       el('td', {}, [
         el('span', { class: 'fund-code' }, [r.fundCode]),
         el('span', { class: 'fund-title' }, [r.title ?? '']),
       ]),
-      el('td', {}, [badge(r.status === 'owned' ? 'sahip' : 'izleniyor', r.status)]),
+      el('td', {}, [badge(STATUS_LABEL[r.status], r.status)]),
       el('td', { class: 'num' }, [r.navDate ?? '—']),
       el('td', { class: 'num' }, [
         r.navPerShare === null ? '—' : Number(r.navPerShare).toLocaleString('tr-TR', {
@@ -490,23 +532,32 @@ async function watchlistView(): Promise<Node[]> {
       el('td', { class: 'num' }, [money(r.netFlow)]),
       el('td', { class: 'num' }, [r.taxPct === null ? '—' : `%${Number(r.taxPct).toFixed(1)}`]),
       el('td', { class: 'num' }, [r.sellValorDays === null ? '—' : `T+${String(r.sellValorDays)}`]),
-    ]),
-  );
+      el('td', { class: 'actions' }, [delBtn]),
+    ]);
+    delBtn.addEventListener('click', () => {
+      void (async () => {
+        await api(`/api/watchlist/${r.fundCode}`, { method: 'DELETE' });
+        reload();
+      })();
+    });
+    return tr;
+  });
 
   return [
     el('div', { class: 'metric-grid' }, [
-      metric('Takip edilen', String(rows.length), 'fon'),
-      metric('Sahip olunan', String(owned), `${String(rows.length - owned)} yalnız izleniyor`),
+      metric('Takip listem', String(rows.length), 'fon'),
+      metric('Sahip olduğum', String(owned), `${String(rows.length - owned)} yalnız izliyorum`),
       metric('Günü artıda', String(gainers), `${String(rows.length - gainers)} eksi veya yatay`),
       metric('Son veri', dates.at(-1) ?? '—', 'NAV tarihi'),
     ]),
     panel(
-      'Takip listesi',
+      'Takip listem',
       `${String(rows.length)} fon`,
       table(
-        ['Fon', 'Durum', 'NAV tarihi', 'NAV', 'Günlük', 'Net akış', 'Stopaj', 'Satış valörü'],
+        ['Fon', 'Durum', 'NAV tarihi', 'NAV', 'Günlük', 'Net akış', 'Stopaj', 'Satış valörü', ''],
         body,
       ),
+      watchlistForm(reload),
     ),
   ];
 }
@@ -608,7 +659,7 @@ async function usersView(reload: () => void): Promise<Node[]> {
 const VIEWS: { id: ViewId; label: string; icon: string; adminOnly: boolean; crumb: string }[] = [
   { id: 'dashboard', label: 'Panel', icon: '▦', adminOnly: false, crumb: 'Genel' },
   { id: 'portfolio', label: 'Portföyüm', icon: '◈', adminOnly: false, crumb: 'Genel' },
-  { id: 'watchlist', label: 'Takip listesi', icon: '☰', adminOnly: true, crumb: 'Yönetim' },
+  { id: 'watchlist', label: 'Takip listem', icon: '☰', adminOnly: false, crumb: 'Genel' },
   { id: 'users', label: 'Kullanıcılar', icon: '⚇', adminOnly: true, crumb: 'Yönetim' },
 ];
 
@@ -659,7 +710,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
   try {
     if (current.id === 'dashboard') bodyNodes = await dashboardView();
     else if (current.id === 'portfolio') bodyNodes = await portfolioView(reload);
-    else if (current.id === 'watchlist') bodyNodes = await watchlistView();
+    else if (current.id === 'watchlist') bodyNodes = await watchlistView(reload);
     else bodyNodes = await usersView(reload);
   } catch (err) {
     bodyNodes = [errorBox(err instanceof Error ? err.message : 'Yüklenemedi.')];

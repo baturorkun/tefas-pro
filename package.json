@@ -9,6 +9,7 @@
     "test": "vitest run && bash tests/db-install.test.sh && bash tests/deployment-target.test.sh",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
+    "db:user": "tsx src/db/user.ts",
     "collect": "tsx src/collector.ts",
     "serve": "tsx src/server/index.ts"
   },

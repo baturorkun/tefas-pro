@@ -45,7 +45,10 @@ import {
   revokeSession,
   updateTransaction,
   updateUser,
-  watchlistOverview,
+  listWatchlist,
+  addToWatchlist,
+  trackFundForUser,
+  removeFromWatchlist,
   type AppUser,
   type TransactionInput,
 } from './repository.js';
@@ -111,24 +114,20 @@ export async function ensureAdminUser(pool: pg.Pool): Promise<void> {
 }
 
 /**
- * Portföye girilen fon takip listesinde yoksa eklenir; böylece bir sonraki
- * collector koşusu o fonun verisini de toplamaya başlar. Kod fintables
- * evreninde yoksa istek reddedilir.
+ * Fon kodu dim_fund'da yoksa fintables evreninden çekilip yazılır; evrende de
+ * yoksa istek reddedilir. Hem portföy hem takip listesi girişleri buradan
+ * geçer, ikisi de dim_fund'a foreign key ile bağlı.
+ *
+ * Takip listesine yazmaz: liste kullanıcıya ait, bu fonksiyonun kullanıcısı
+ * yok. Çağıran taraf gerekiyorsa trackFundForUser ile ekler.
  */
-async function ensureFundTracked(
+async function ensureFundKnown(
   pool: pg.Pool,
   client: FintablesClient,
   fundCode: string,
 ): Promise<void> {
   const known = await pool.query('SELECT 1 FROM dim_fund WHERE fund_code = $1', [fundCode]);
-  if ((known.rowCount ?? 0) > 0) {
-    await pool.query(
-      `INSERT INTO watchlist (fund_code, status) VALUES ($1, 'owned')
-       ON CONFLICT (fund_code) DO NOTHING`,
-      [fundCode],
-    );
-    return;
-  }
+  if ((known.rowCount ?? 0) > 0) return;
   const universe = await client.fundUniverse();
   const fund = universe.find((f) => f.code === fundCode);
   if (!fund) throw new Error(`Fon kodu bulunamadı: ${fundCode}`);
@@ -137,11 +136,6 @@ async function ensureFundTracked(
      VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (fund_code) DO NOTHING`,
     [fund.code, fund.title, fund.fundType, fund.umbrellaType, fund.managementCompanyId, fund.isByf],
-  );
-  await pool.query(
-    `INSERT INTO watchlist (fund_code, status) VALUES ($1, 'owned')
-     ON CONFLICT (fund_code) DO NOTHING`,
-    [fundCode],
   );
 }
 
@@ -272,6 +266,32 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         return;
       }
 
+      // ─── Takip listesi ───
+      // Admin altında değil: her kullanıcı kendi listesini yönetir.
+      if (path === '/api/watchlist' && method === 'GET') {
+        sendJson(res, 200, await listWatchlist(pool, user.id));
+        return;
+      }
+
+      if (path === '/api/watchlist' && method === 'POST') {
+        const body = asRecord(await readJson(req));
+        const fundCode = reqString(body, 'fundCode').toUpperCase();
+        const note = body['note'] === undefined || body['note'] === null
+          ? null
+          : String(body['note']).trim() || null;
+        await ensureFundKnown(pool, client, fundCode);
+        await addToWatchlist(pool, user.id, fundCode, note);
+        sendJson(res, 201, { fundCode });
+        return;
+      }
+
+      const wlCode = matchPath('/api/watchlist/:code', path);
+      if (wlCode !== null && method === 'DELETE') {
+        const done = await removeFromWatchlist(pool, user.id, wlCode.toUpperCase());
+        sendJson(res, done ? 200 : 404, done ? { ok: true } : { error: 'Takip listesinde yok.' });
+        return;
+      }
+
       if (path === '/api/transactions' && method === 'GET') {
         sendJson(res, 200, await listTransactions(pool, user.id));
         return;
@@ -279,7 +299,8 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
 
       if (path === '/api/transactions' && method === 'POST') {
         const input = readTransactionInput(asRecord(await readJson(req)));
-        await ensureFundTracked(pool, client, input.fundCode);
+        await ensureFundKnown(pool, client, input.fundCode);
+        await trackFundForUser(pool, user.id, input.fundCode);
         sendJson(res, 201, await createTransaction(pool, user.id, input));
         return;
       }
@@ -293,7 +314,8 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         }
         if (method === 'PUT') {
           const input = readTransactionInput(asRecord(await readJson(req)));
-          await ensureFundTracked(pool, client, input.fundCode);
+          await ensureFundKnown(pool, client, input.fundCode);
+          await trackFundForUser(pool, user.id, input.fundCode);
           const updated = await updateTransaction(pool, user.id, id, input);
           if (!updated) {
             sendJson(res, 404, { error: 'İşlem bulunamadı.' });
@@ -313,10 +335,6 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
       if (path.startsWith('/api/admin/')) {
         if (user.type !== 'admin') {
           sendJson(res, 403, { error: 'Bu işlem için admin yetkisi gerekir.' });
-          return;
-        }
-        if (path === '/api/admin/watchlist' && method === 'GET') {
-          sendJson(res, 200, await watchlistOverview(pool));
           return;
         }
         if (path === '/api/admin/users' && method === 'GET') {
