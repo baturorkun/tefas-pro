@@ -43,11 +43,27 @@ NAV geçmişine gerek yok — birim sadeleşir. Bu şart, çünkü `fact_fund_da
 30.643 satırın yalnız 36'sında `nav_per_share` dolu; tarihsel NAV hiç
 toplanmamış. Günlük getiri ise 30.179 satırda var.
 
-Doğrulandı: PBR'nin 2026-04-14 alışı 2026-08-18 satışına kadar **+%47,43**.
-Elle yapılan bağımsız ölçümle birebir aynı. 94 işlemin 94'ü hesaplanabiliyor,
-veri boşluğu yok.
+TL tutarları da türetilebilir: **alış NAV'ı = bugünkü NAV / çarpan**. Alış
+fiyatı hiçbir yerde saklı değil — `portfolio_transaction` yalnız adet ve tarih
+taşıyor — ama geri hesaplanıyor.
 
-TL tutarları da türetilebilir: alış NAV'ı = bugünkü NAV / çarpan.
+### Türetme üç bağımsız yolla doğrulandı
+
+1. **Bilinen bir sonuçla eşleşme.** PBR'nin 2026-04-14 alışı 2026-08-18
+   satışına kadar **+%47,43**. Elle yapılan bağımsız ölçümle birebir aynı.
+
+2. **Yuvarlak tutar testi.** Türetilen maliyetlerin 94'ten **79'u**, yuvarlak
+   bin liralık tutarlara bir adetlik fark içinde oturuyor (DFI 49.997 ₺,
+   IVY 29.999 ₺, CPT 20.000 ₺). İnsan "20 bin lira al" diye alım yapar; tam
+   adet kısıtı yüzünden birkaç lira sapar. Türetme yanlış olsaydı bu örüntü
+   çıkmazdı. Oturmayan 15 işlemin altısı PNU ve tutarları 403.444 ₺, 262.272 ₺
+   gibi — bir fondan çıkıp diğerine geçmenin izi, yuvarlak olmaması beklenir.
+
+3. **Zincir bütünlüğü.** Hiçbir fonun getiri serisinde eksik iş günü yok. Bu
+   şart: bir gün eksik olsaydı bileşik çarpan ve dolayısıyla türetilen alış
+   fiyatı sessizce yanlış çıkardı.
+
+94 işlemin 94'ü hesaplanabiliyor, veri boşluğu yok.
 
 ## Ağırlıklandırma para bazlı olmalı
 
