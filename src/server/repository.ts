@@ -381,6 +381,8 @@ export interface RankEntry {
   gain?: string | null;
   /** Yalnız akış sıralamasında dolu: pencere net akışı, TL. */
   flow?: string | null;
+  /** Yalnız yatırımcı sıralamasında dolu: pencere değişimi, kişi. */
+  people?: string | null;
 }
 
 export interface PositionSummary {
@@ -410,6 +412,8 @@ export interface DashboardData {
   };
   /** Para akışı: `returnPct` oranı (%), `flow` TL tutarını taşır. */
   flowRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
+  /** Yatırımcı sayısı: `returnPct` oranı (%), `people` kişi değişimini taşır. */
+  investorRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
 }
 
 const RANK_LIMIT = 10;
@@ -423,7 +427,7 @@ export async function dashboard(
   userId: number,
   onlyOwned = false,
 ): Promise<DashboardData> {
-  const [counts, lastRun, wl, pos, posSum, flow] = await Promise.all([
+  const [counts, lastRun, wl, pos, posSum, flow, inv] = await Promise.all([
     pool.query<{
       watchlist: string; tracked_funds: string; open_positions: string; data_date: string | null;
     }>(
@@ -516,6 +520,26 @@ export async function dashboard(
                        AND p.sell_date IS NULL)`,
       [userId, onlyOwned],
     ),
+    // Yatırımcı sayısı. fund_flow ile aynı kalıp: sıralama oranla, büyüklük
+    // ham sayıyla anlatılır.
+    pool.query<{
+      fund_code: string; title: string | null; owned: boolean;
+      change_1w: string | null; days_1w: string; pct_1w: string | null;
+      change_1m: string | null; days_1m: string; pct_1m: string | null;
+    }>(
+      `SELECT r.fund_code, r.title,
+              r.change_1w::text, r.days_1w::text, r.change_pct_1w::text AS pct_1w,
+              r.change_1m::text, r.days_1m::text, r.change_pct_1m::text AS pct_1m,
+              EXISTS (SELECT 1 FROM portfolio_transaction p
+                      WHERE p.user_id = $1 AND p.fund_code = r.fund_code
+                        AND p.sell_date IS NULL) AS owned
+       FROM analytics.fund_investor r
+       WHERE NOT $2::boolean
+          OR EXISTS (SELECT 1 FROM portfolio_transaction p
+                     WHERE p.user_id = $1 AND p.fund_code = r.fund_code
+                       AND p.sell_date IS NULL)`,
+      [userId, onlyOwned],
+    ),
   ]);
 
   const byWindow = (win: '1w' | '1m'): { top: RankEntry[]; bottom: RankEntry[] } => {
@@ -573,6 +597,25 @@ export async function dashboard(
     return { top: giris.slice(0, RANK_LIMIT), bottom: cikis.slice(-RANK_LIMIT).reverse() };
   };
 
+  const byInvestor = (win: '1w' | '1m'): { top: RankEntry[]; bottom: RankEntry[] } => {
+    const rows = inv.rows
+      .map((r) => ({
+        fundCode: r.fund_code,
+        title: r.title,
+        owned: r.owned,
+        returnPct: win === '1w' ? r.pct_1w : r.pct_1m,
+        people: win === '1w' ? r.change_1w : r.change_1m,
+        days: Number(win === '1w' ? r.days_1w : r.days_1m),
+      }))
+      .filter((r) => r.returnPct !== null)
+      .map((r): RankEntry => ({ ...r, returnPct: r.returnPct as string }))
+      .sort((a, b) => Number(b.returnPct) - Number(a.returnPct));
+    return {
+      top: rows.filter((r) => Number(r.returnPct) > 0).slice(0, RANK_LIMIT),
+      bottom: rows.filter((r) => Number(r.returnPct) < 0).slice(-RANK_LIMIT).reverse(),
+    };
+  };
+
   const c = counts.rows[0]!;
   const run = lastRun.rows[0];
   return {
@@ -601,5 +644,6 @@ export async function dashboard(
       bottom: positionLosers.slice(-RANK_LIMIT).reverse(),
     },
     flowRanks: { '1w': byFlow('1w'), '1m': byFlow('1m') },
+    investorRanks: { '1w': byInvestor('1w'), '1m': byInvestor('1m') },
   };
 }

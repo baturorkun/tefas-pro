@@ -59,6 +59,8 @@ interface RankEntry {
   gain?: string | null;
   /** Yalnız akış sıralamasında dolu: pencere net akışı, TL. */
   flow?: string | null;
+  /** Yalnız yatırımcı sıralamasında dolu: pencere değişimi, kişi. */
+  people?: string | null;
 }
 
 interface PositionSummary {
@@ -87,6 +89,8 @@ interface Dashboard {
   };
   /** Para akışı: `returnPct` oranı (%), `flow` TL tutarını taşır. */
   flowRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
+  /** Yatırımcı sayısı: `returnPct` oranı (%), `people` kişi değişimini taşır. */
+  investorRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
 }
 
 type ViewId = 'dashboard' | 'portfolio' | 'watchlist' | 'users';
@@ -142,6 +146,14 @@ function money(raw: string | null): string {
   if (abs >= 1e6) return fmt(n / 1e6, 'mn ₺');
   if (abs >= 1e3) return fmt(n / 1e3, 'b ₺');
   return fmt(n, '₺');
+}
+
+/** Yatırımcı sayısı değişimi: 105316 → +105.316 kişi */
+function people(raw: string | null): string {
+  if (raw === null || raw === '') return '—';
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return '—';
+  return `${n > 0 ? '+' : ''}${n.toLocaleString('tr-TR')} kişi`;
 }
 
 function signed(raw: string | null, suffix = '%'): HTMLElement {
@@ -225,16 +237,18 @@ function svg<K extends keyof SVGElementTagNameMap>(
 interface ChartOpts {
   emptyText?: string;
   /**
-   * Akış grafiğinde sağ sütun hem oranı hem TL tutarını taşır: sıralamayı
-   * oran belirler, büyüklüğü tutar anlatır. İkisi de görünmezse bar ya
-   * anlamsız (yalnız TL) ya da soyut (yalnız oran) kalır.
+   * Akış ve yatırımcı grafiklerinde sağ sütun hem oranı hem ham büyüklüğü
+   * taşır: sıralamayı oran belirler, büyüklüğü tutar/kişi anlatır. İkisi de
+   * görünmezse bar ya anlamsız (yalnız ham sayı) ya da soyut (yalnız oran)
+   * kalır.
    */
   withFlow?: boolean;
+  withPeople?: boolean;
 }
 
 function barChart(
   entries: RankEntry[],
-  { emptyText = 'Veri yok.', withFlow = false }: ChartOpts = {},
+  { emptyText = 'Veri yok.', withFlow = false, withPeople = false }: ChartOpts = {},
 ): SVGSVGElement | HTMLElement {
   if (entries.length === 0) return el('div', { class: 'empty-state' }, [emptyText]);
 
@@ -242,7 +256,7 @@ function barChart(
   const ROW = 26;
   const LABEL = 52;   // fon kodu sütunu
   const DAYS = 28;    // iş günü sütunu — bar buraya taşmamalı
-  const VALUE = withFlow ? 132 : 62;   // değer sütunu
+  const VALUE = withFlow || withPeople ? 132 : 62;   // değer sütunu
   const H = entries.length * ROW + 6;
   const plotW = W - LABEL - DAYS - VALUE;
   const max = Math.max(...entries.map((e) => Math.abs(Number(e.returnPct))), 0.0001);
@@ -284,7 +298,8 @@ function barChart(
         'text',
         { x: String(W), y: String(y + 13), class: `bar-value ${v >= 0 ? 'pos' : 'neg'}` },
         `${v > 0 ? '+' : ''}${v.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}%` +
-          (withFlow ? ` · ${money(e.flow ?? null)}` : ''),
+          (withFlow ? ` · ${money(e.flow ?? null)}` : '') +
+          (withPeople ? ` · ${people(e.people ?? null)}` : ''),
       ),
     );
     if (e.days !== null) {
@@ -425,6 +440,20 @@ function flowPanel(title: string, meta: string, rows: RankEntry[], yon: string):
   });
 }
 
+/**
+ * Yatırımcı paneli. Akış paneliyle aynı ölçüt — değişim / pencere büyüklüğü —
+ * ama farklı soruyu cevaplar: para nereye gitti değil, kim gitti.
+ *
+ * İkisi birlikte okunur: PBR'de para −%90,4 çıkarken insan −%53,4 azalmış,
+ * yani önce büyük yatırımcılar çıkmış.
+ */
+function investorPanel(title: string, meta: string, rows: RankEntry[], yon: string): HTMLElement {
+  return chartPanel(title, meta, rows, {
+    withPeople: true,
+    emptyText: `Bu pencerede ${yon} olan fon yok.`,
+  });
+}
+
 async function dashboardView(reload: () => void): Promise<Node[]> {
   // Toggle kapalıyken sıralama sunucuda baştan daraltılır, grafikte bar
   // gizlenmez: gizleseydik top-10'da üç bar kalır, başlık yalan olurdu.
@@ -469,6 +498,13 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
       flowPanel('En çok giriş olan (1 ay)', kapsam, d.flowRanks['1m']?.top ?? [], 'giriş'),
       flowPanel('En çok çıkış olan (1 hafta)', kapsam, d.flowRanks['1w']?.bottom ?? [], 'çıkış'),
       flowPanel('En çok çıkış olan (1 ay)', kapsam, d.flowRanks['1m']?.bottom ?? [], 'çıkış'),
+    ]),
+    el('h2', { class: 'section-title' }, ['Yatırımcı sayısı']),
+    grid([
+      investorPanel('En çok artan (1 hafta)', kapsam, d.investorRanks['1w']?.top ?? [], 'artış'),
+      investorPanel('En çok artan (1 ay)', kapsam, d.investorRanks['1m']?.top ?? [], 'artış'),
+      investorPanel('En çok azalan (1 hafta)', kapsam, d.investorRanks['1w']?.bottom ?? [], 'azalış'),
+      investorPanel('En çok azalan (1 ay)', kapsam, d.investorRanks['1m']?.bottom ?? [], 'azalış'),
     ]),
   ];
 }
