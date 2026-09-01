@@ -296,6 +296,11 @@ td.actions { text-align: right; }
 .bar-pos.bar-watch { stroke: var(--accent); }
 .bar-neg.bar-watch { stroke: var(--danger); }
 
+/* Taşınmış fiyat işareti: ölçülmüş fiyattan ayırt edilebilsin */
+.carried    { color: var(--muted-dim); margin-left: 4px; cursor: help; }
+.total-row td { border-top: 1px solid var(--line); font-weight: 600;
+                color: var(--text-strong); }
+
 /* Bölüm başlığı: panel ile aynı hizada, grafik ızgarasının üstünde */
 .section-title { font-size: 13px; font-weight: 600; letter-spacing: .06em;
                  text-transform: uppercase; color: var(--muted-dim);

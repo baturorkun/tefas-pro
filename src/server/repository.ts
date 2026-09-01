@@ -367,6 +367,55 @@ export async function removeFromWatchlist(
   return (r.rowCount ?? 0) > 0;
 }
 
+// ─── Portföy özeti ──────────────────────────────────────────────────────────
+
+export interface PortfolioRow {
+  fundCode: string;
+  title: string | null;
+  dailyReturnPct: string | null;
+  return1m: string | null;
+  return3m: string | null;
+  days: number;
+  units: string;
+  cost: string;
+  value: string;
+  gain: string;
+  returnPct: string;
+  /** NAV'ın kaydedildiği gün. Veri gününden eskiyse fiyat taşınmıştır. */
+  navDate: string | null;
+  asOfDate: string | null;
+}
+
+/**
+ * Fon başına açık pozisyon özeti — "neredeyim" sorusunun cevabı.
+ *
+ * İşlem listesinden ayrı: orası "ne yaptım"ı anlatıyor ve düzenlenebilir.
+ * Bu görünüm türetilmiş, düzenlenecek satırı yok.
+ *
+ * Kapanmış pozisyonlar burada yok; artık pozisyon değiller.
+ */
+export async function portfolioSummary(pool: pg.Pool, userId: number): Promise<PortfolioRow[]> {
+  const r = await pool.query(
+    `SELECT p.fund_code AS "fundCode", p.title,
+            round(l.daily_return_pct, 4)::text AS "dailyReturnPct",
+            r.return_1m::text AS "return1m",
+            r.return_3m::text AS "return3m",
+            p.days,
+            p.units::text,
+            p.cost::text, p.value::text, p.gain::text,
+            p.return_pct::text AS "returnPct",
+            to_char(l.nav_date, 'YYYY-MM-DD')   AS "navDate",
+            to_char(l.as_of_date, 'YYYY-MM-DD') AS "asOfDate"
+     FROM analytics.position_return p
+     LEFT JOIN analytics.fund_latest l USING (fund_code)
+     LEFT JOIN analytics.fund_returns r USING (fund_code)
+     WHERE p.user_id = $1 AND p.is_open AND NOT p.simulated
+     ORDER BY p.value DESC NULLS LAST`,
+    [userId],
+  );
+  return r.rows as PortfolioRow[];
+}
+
 // ─── Dashboard ──────────────────────────────────────────────────────────────
 
 export interface RankEntry {

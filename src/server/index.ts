@@ -46,6 +46,7 @@ import {
   updateTransaction,
   updateUser,
   listWatchlist,
+  portfolioSummary,
   addToWatchlist,
   trackFundForUser,
   removeFromWatchlist,
@@ -295,6 +296,11 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
       if (wlCode !== null && method === 'DELETE') {
         const done = await removeFromWatchlist(pool, user.id, wlCode.toUpperCase());
         sendJson(res, done ? 200 : 404, done ? { ok: true } : { error: 'Takip listesinde yok.' });
+        return;
+      }
+
+      if (path === '/api/portfolio' && method === 'GET') {
+        sendJson(res, 200, await portfolioSummary(pool, user.id));
         return;
       }
 
