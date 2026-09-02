@@ -139,7 +139,7 @@ interface PerformanceSeries {
   totalPct: string | null;
 }
 
-type ViewId = 'dashboard' | 'portfolio' | 'closed' | 'transactions' | 'watchlist' | 'users';
+type ViewId = 'dashboard' | 'portfolio' | 'closed' | 'market' | 'transactions' | 'watchlist' | 'users';
 
 const root = document.getElementById('app');
 
@@ -280,6 +280,7 @@ const ICON_PATHS: Record<string, string[]> = {
   chart: ['M4 19h16', 'm5 15 4-5 3 3 6-8'],
   flag: ['M5 21V4h9l-1 3h6v8h-7l-1-3H5'],
   closed: ['M20 6 9 17l-5-5'],
+  market: ['M3 3v18h18', 'm7 14 3-4 3 3 5-7', 'M18 6h3v3'],
 };
 
 function icon(name: keyof typeof ICON_PATHS | string, size = 18): SVGSVGElement {
@@ -902,7 +903,29 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
     }),
     ...positionSection(d.positions, onlyOwned),
     await performancePanel(),
-    el('h2', { class: 'section-title' }, ['Piyasa']),
+  ];
+}
+
+/**
+ * Piyasa: takip edilen fonların getiri, para akışı ve yatırımcı sayısı
+ * sıralamaları.
+ *
+ * Panelden ayrıldı; panel "portföyüm ne durumda", bu ekran "piyasada ne
+ * oluyor" sorusunu cevaplar. Veri aynı `/api/dashboard` yanıtından gelir,
+ * sunucuda yeni uç yok.
+ */
+async function marketView(reload: () => void): Promise<Node[]> {
+  const onlyOwned = readOnlyOwned();
+  const d = (await api(`/api/dashboard${onlyOwned ? '?onlyOwned=1' : ''}`)) as Dashboard;
+  const kapsam = onlyOwned ? 'yalnız portföyüm' : 'takip edilen fonlar';
+  const grid = (nodes: Node[]): HTMLElement => el('div', { class: 'chart-grid' }, nodes);
+
+  return [
+    watchlistToggle(!onlyOwned, (dahil) => {
+      writeOnlyOwned(!dahil);
+      reload();
+    }),
+    el('h2', { class: 'section-title' }, ['Getiri']),
     grid([
       chartPanel('En çok kazandıran (1 hafta)', kapsam, d.watchlistRanks['1w']?.top ?? []),
       chartPanel('En çok kazandıran (1 ay)', kapsam, d.watchlistRanks['1m']?.top ?? []),
@@ -913,14 +936,14 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
         d.watchlistRanks['1m']?.bottom ?? [],
         { emptyText: 'Ayı ekside kapatan fon yok.' }),
     ]),
-    el('h2', { class: 'section-title' }, ['Para akışı']),
+    el('h2', { class: 'section-title' }, ['Para Akışı']),
     grid([
       flowPanel('En çok giriş olan (1 hafta)', kapsam, d.flowRanks['1w']?.top ?? [], 'giriş'),
       flowPanel('En çok giriş olan (1 ay)', kapsam, d.flowRanks['1m']?.top ?? [], 'giriş'),
       flowPanel('En çok çıkış olan (1 hafta)', kapsam, d.flowRanks['1w']?.bottom ?? [], 'çıkış'),
       flowPanel('En çok çıkış olan (1 ay)', kapsam, d.flowRanks['1m']?.bottom ?? [], 'çıkış'),
     ]),
-    el('h2', { class: 'section-title' }, ['Yatırımcı sayısı']),
+    el('h2', { class: 'section-title' }, ['Yatırımcı Sayısı']),
     grid([
       investorPanel('En çok artan (1 hafta)', kapsam, d.investorRanks['1w']?.top ?? [], 'artış'),
       investorPanel('En çok artan (1 ay)', kapsam, d.investorRanks['1m']?.top ?? [], 'artış'),
@@ -1534,6 +1557,7 @@ const VIEWS: { id: ViewId; label: string; adminOnly: boolean; crumb: string }[] 
   { id: 'dashboard', label: 'Panel', adminOnly: false, crumb: 'Genel' },
   { id: 'portfolio', label: 'Portföyüm', adminOnly: false, crumb: 'Genel' },
   { id: 'closed', label: 'Kapananlar', adminOnly: false, crumb: 'Genel' },
+  { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },
   { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
   { id: 'watchlist', label: 'Takip Listem', adminOnly: false, crumb: 'Genel' },
   { id: 'users', label: 'Kullanıcılar', adminOnly: true, crumb: 'Yönetim' },
@@ -1612,6 +1636,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     if (current.id === 'dashboard') bodyNodes = await dashboardView(reload);
     else if (current.id === 'portfolio') bodyNodes = await portfolioView();
     else if (current.id === 'closed') bodyNodes = await closedView();
+    else if (current.id === 'market') bodyNodes = await marketView(reload);
     else if (current.id === 'transactions') bodyNodes = await transactionsView(reload);
     else if (current.id === 'watchlist') bodyNodes = await watchlistView(reload);
     else bodyNodes = await usersView(reload);

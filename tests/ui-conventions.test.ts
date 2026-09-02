@@ -83,6 +83,32 @@ describe('yerleşim', () => {
   });
 });
 
+describe('ekran ayrımı', () => {
+  it('piyasa sıralamaları panelde değil kendi ekranında', () => {
+    // Panel "portföyüm ne durumda", piyasa ekranı "piyasada ne oluyor"
+    // sorusunu cevaplar; ikisi tek ekranda birleşince panel gereksiz uzuyordu.
+    expect(main).toContain('async function marketView');
+    const dash = main.slice(main.indexOf('async function dashboardView'),
+                            main.indexOf('async function marketView'));
+    expect(dash).not.toContain('flowPanel(');
+    expect(dash).not.toContain('investorPanel(');
+  });
+
+  it('piyasa ekranı mevcut ucu kullanır, yeni uç açılmaz', () => {
+    const market = main.slice(main.indexOf('async function marketView'));
+    expect(market).toContain("api(`/api/dashboard");
+    expect(main).not.toContain("api('/api/market')");
+  });
+
+  it('takip listesi anahtarı her iki ekranda da bulunur', () => {
+    const dash = main.slice(main.indexOf('async function dashboardView'),
+                            main.indexOf('async function marketView'));
+    const market = main.slice(main.indexOf('async function marketView'));
+    expect(dash).toContain('watchlistToggle(');
+    expect(market.slice(0, market.indexOf('// ─── Giriş'))).toContain('watchlistToggle(');
+  });
+});
+
 describe('kabuk', () => {
   it('sürüm istemcide üretilmez, sunucudan alınır', () => {
     expect(main).toContain("api('/api/runtime')");
