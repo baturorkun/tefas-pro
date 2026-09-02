@@ -15,6 +15,21 @@ COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN pnpm build
 
+# Geliştirme aşaması: kaynak host'tan bağlanır, burada yalnız bağımlılıklar
+# ve izleyici bulunur. Üretim aşamasıyla aynı Node tabanını kullanır ki
+# geliştirme ile dağıtım arasında sürüm farkı olmasın.
+#
+# node_modules host'tan bağlanmaz: macOS/arm64 için derlenmiş paketler (esbuild
+# gibi) Linux'ta çalışmaz. Bağımlılıklar bu katmandan gelir.
+FROM build AS dev
+WORKDIR /app
+ENV HOST=0.0.0.0
+ENV PORT=8282
+EXPOSE 8282
+# İki izleyici birlikte: biri tarayıcıya giden dist/main.js'i üretir, diğeri
+# sunucuyu yeniden başlatır. Birincisi olmazsa arayüz değişikliği görünmez.
+CMD ["sh", "-c", "pnpm exec tsc --project tsconfig.build.json --watch --preserveWatchOutput & pnpm exec tsx watch src/server/index.ts"]
+
 FROM docker.io/library/node:22-bookworm-slim
 
 WORKDIR /app

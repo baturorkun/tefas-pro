@@ -8,6 +8,12 @@ fail() {
   exit 1
 }
 
+# Geliştirme kısayolları: uzun compose komutu ezberlenmesin diye eklendi.
+for s in '"dev"' '"dev:logs"' '"dev:stop"' '"dev:rebuild"' '"serve:watch"'; do
+  grep -Fq "${s}:" "${PROJECT_ROOT}/package.json" || fail "package.json must expose ${s} script"
+done
+printf 'PASS: geliştirme ortamı pnpm kısayollarıyla yönetiliyor\n'
+
 help_output="$("${PROJECT_ROOT}/db/install.sh" --help)"
 [[ "${help_output}" == *"db/install.sh local"* ]] || fail "help must document local mode"
 [[ "${help_output}" == *"db/install.sh remote <user@host>"* ]] || fail "help must document remote mode"
@@ -27,7 +33,13 @@ if command -v podman-compose >/dev/null 2>&1; then
   [[ "${compose_output}" != *"local-development-only"* ]] || fail "rendered Compose config must not expose the password in argv"
   grep -Fq './.secrets/postgres-password:/run/secrets/postgres-password:ro,Z' "${PROJECT_ROOT}/db/compose.yaml" || fail "PostgreSQL secret mount must come from the protected secret directory"
   grep -Fq './.secrets/pgpass:/run/secrets/pgweb-pgpass:ro,Z,U' "${PROJECT_ROOT}/db/compose.yaml" || fail "pgweb secret mount must come from the protected secret directory with SELinux and UID options"
-  printf 'PASS: rendered Compose config enforces images, isolation, persistence, and secret handling\n'
+  # Geliştirme servisi: kod değişikliğinin container'a yansıması bu üç ayara
+  # bağlı; biri bozulursa servis çalışır görünür ama yenilenmez.
+  [[ "${compose_output}" == *"CHOKIDAR_USEPOLLING"* ]] || fail "dev service must poll for file changes"
+  [[ "${compose_output}" != *"node_modules:/app/node_modules"* ]] || fail "dev service must not mount host node_modules"
+  [[ "${compose_output}" == *"/run/secrets/postgres-password"* ]] || fail "dev service must read its password from a protected file"
+
+printf 'PASS: rendered Compose config enforces images, isolation, persistence, and secret handling\n'
 fi
 
 test_root="$(mktemp -d)"

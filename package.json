@@ -6,12 +6,17 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc --project tsconfig.build.json",
+    "dev": "podman compose --env-file db/.env -f db/compose.yaml up -d",
+    "dev:logs": "podman logs -f tefas-pro-app",
+    "dev:stop": "podman compose -f db/compose.yaml down",
+    "dev:rebuild": "podman compose --env-file db/.env -f db/compose.yaml up -d --build app",
     "test": "vitest run && bash tests/db-install.test.sh && bash tests/db-sync.test.sh && bash tests/position-open.test.sh && bash tests/closed-position.test.sh && bash tests/deployment-target.test.sh",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:user": "tsx src/db/user.ts",
     "collect": "tsx src/collector.ts",
-    "serve": "pnpm build && tsx src/server/index.ts"
+    "serve": "pnpm build && tsx src/server/index.ts",
+    "serve:watch": "trap 'kill 0' EXIT INT TERM; tsc --project tsconfig.build.json --watch --preserveWatchOutput & tsx watch src/server/index.ts"
   },
   "dependencies": {
     "impit": "^0.14.4",

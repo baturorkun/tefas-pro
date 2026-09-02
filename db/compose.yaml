@@ -43,5 +43,46 @@ services:
     depends_on:
       - postgres
 
+  # Geliştirme sunucusu. Yalnız yerelde kullanılır; dağıtım hâlâ
+  # server/Containerfile'ın üretim aşamasıyla kurulan imajı çalıştırır.
+  #
+  # Kaynak host'tan bağlanır ve container içinde izlenir: pnpm serve iki tek
+  # seferlik adımdan oluştuğu için kod değiştiğinde ne dist/main.js yenileniyor
+  # ne de sunucu yeni kodu görüyordu.
+  app:
+    build:
+      context: ..
+      dockerfile: server/Containerfile
+      target: dev
+    container_name: tefas-pro-app
+    restart: unless-stopped
+    environment:
+      # Parola adrese gömülmez; pgweb gibi korumalı bir dosyadan okunur.
+      # Gömülseydi `podman compose config` çıktısında açıkta görünürdü.
+      DATABASE_URL: postgresql://${TEFAS_POSTGRES_USER:-tefas}@postgres:5432/${TEFAS_POSTGRES_DB:-tefas}
+      DATABASE_PASSWORD_FILE: /run/secrets/postgres-password
+      SESSION_TTL: "43200"
+      SECURE_COOKIE: "false"
+      # applehv sanal makinesi üzerinden gelen bind mount'larda inotify
+      # olayları güvenilir iletilmiyor: dosya kaydedilir, izleyici fark etmez.
+      CHOKIDAR_USEPOLLING: "1"
+      CHOKIDAR_INTERVAL: "500"
+      TSC_WATCHFILE: PriorityPollingInterval
+    ports:
+      - "127.0.0.1:${TEFAS_APP_PORT:-8282}:8282"
+    volumes:
+      # Yalnız kaynak bağlanır. node_modules bağlanmaz: host'taki paketler
+      # macOS/arm64 için derlenmiş, Linux container'da çalışmazlar.
+      - ../src:/app/src:Z
+      - ../public:/app/public:Z
+      - ../tests:/app/tests:Z
+      - ../db/migrations:/app/db/migrations:Z
+      - ../tsconfig.json:/app/tsconfig.json:ro,Z
+      - ../tsconfig.build.json:/app/tsconfig.build.json:ro,Z
+      - ./.secrets/postgres-password:/run/secrets/postgres-password:ro,Z
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   tefas_pgdata:
