@@ -14,6 +14,7 @@ import type pg from 'pg';
 
 import { FintablesClient } from '../sources/fintables.js';
 import { makePool } from '../db/pool.js';
+import { currentVersion } from '../version.js';
 import {
   clearCookie,
   generatePassword,
@@ -236,6 +237,12 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
             }),
           },
         );
+        return;
+      }
+
+      if (path === '/api/runtime' && method === 'GET') {
+        // Sürüm sunucuda türetilir: istemci commit ve derleme zamanını bilemez.
+        sendJson(res, 200, { version: currentVersion() });
         return;
       }
 

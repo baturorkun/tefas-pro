@@ -1,6 +1,6 @@
 # Collector oneshot image.
 #
-# Depodaki kök Dockerfile web uygulaması içindir (nginx, statik dosya servisi).
+# Sunucu imajı server/Containerfile ile kurulur; bu dosya yalnız collector'ı paketler.
 # Collector'ın çalışma zamanı ihtiyacı farklıdır: Node, pg ve impit.
 #
 # Debian tabanlı, alpine değil: impit native bir modüldür ve prebuilt binary'si

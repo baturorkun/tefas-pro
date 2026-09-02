@@ -54,3 +54,12 @@ tasma="$(q "SELECT count(*) FROM analytics.position_leg
                                                    WHERE daily_return_pct IS NOT NULL)")"
 [ "${tasma}" = "0" ] || fail "değerleme son veri gününü aşmamalı"
 printf 'PASS: değerleme son veri gününü aşmıyor\n'
+
+# Panel "açık pozisyon" kutusu fon sayısı göstermeli; işlem kaydı sayısı ayrı
+# bir bilgi ve ikisi karıştığında 58 kayıt 58 fon sanılıyordu.
+fon="$(q "SELECT count(*) FROM analytics.position_return
+          WHERE user_id = ${uid} AND is_open AND NOT simulated")"
+kayit="$(q "SELECT count(*) FROM portfolio_transaction
+            WHERE user_id = ${uid} AND (sell_date IS NULL OR sell_date > current_date)")"
+[ "${fon}" -le "${kayit}" ] || fail "fon sayısı kayıt sayısını aşamaz (${fon} > ${kayit})"
+printf 'PASS: fon sayısı ile açık kayıt sayısı ayrı ölçülüyor\n'

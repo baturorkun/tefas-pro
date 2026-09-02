@@ -94,6 +94,9 @@ interface Dashboard {
     watchlist: number;
     trackedFunds: number;
     openPositions: number;
+    /** Eski bir sunucu sürümü bu alanları göndermeyebilir. */
+    openLots?: number;
+    watchlistSold?: number;
     dataDate: string | null;
     lastRun: { id: number; status: string; finishedAt: string | null } | null;
   };
@@ -195,37 +198,173 @@ function signed(raw: string | null, suffix = '%'): HTMLElement {
   ]);
 }
 
+/**
+ * Uygulama işareti. Metin kısaltması ("TP") yerine çizim: yükselen bir çizgi
+ * ve onu taşıyan sütunlar — fon değeri ve portföy. Tek renk değil, kenar
+ * cubuğunda ve giriş ekranında aynı görünsün diye viewBox sabit ve ölçek
+ * çağıran tarafından verilir.
+ */
+function logoMark(size: number): SVGSVGElement {
+  const root = svg('svg', {
+    viewBox: '0 0 48 48', width: String(size), height: String(size),
+    class: 'logo-mark', role: 'img', 'aria-label': 'TEFAS-Pro',
+  });
+  const defs = svg('defs', {});
+  const grad = svg('linearGradient', {
+    id: 'tp-line', x1: '10', y1: '34', x2: '38', y2: '12',
+    gradientUnits: 'userSpaceOnUse',
+  });
+  grad.append(
+    svg('stop', { 'stop-color': '#45d6bc' }),
+    svg('stop', { offset: '1', 'stop-color': '#7fe6cf' }),
+  );
+  defs.append(grad);
+  root.append(
+    defs,
+    svg('rect', { x: '2', y: '2', width: '44', height: '44', rx: '12', class: 'logo-plate' }),
+    // Sütunlar: soldan sağa yükselen üç pozisyon.
+    svg('rect', { x: '12', y: '27', width: '5', height: '10', rx: '1.5', class: 'logo-bar' }),
+    svg('rect', { x: '21', y: '22', width: '5', height: '15', rx: '1.5', class: 'logo-bar' }),
+    svg('rect', { x: '30', y: '16', width: '5', height: '21', rx: '1.5', class: 'logo-bar' }),
+    // Sütunların tepesinden geçen getiri çizgisi.
+    svg('polyline', {
+      points: '11,31 23,25 32,19 39,13', fill: 'none', stroke: 'url(#tp-line)',
+      'stroke-width': '2.6', 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+    }),
+    svg('circle', { cx: '39', cy: '13', r: '3.1', class: 'logo-dot' }),
+  );
+  return root;
+}
+
 function brand(): HTMLElement {
   return el('div', { class: 'brand' }, [
-    el('div', { class: 'brand-mark' }, ['TP']),
-    el('div', {}, [
-      el('span', { class: 'brand-name' }, [
-        'tefas-pro',
-        el('span', { class: 'brand-sub' }, ['fon takip paneli']),
-      ]),
+    logoMark(38),
+    el('div', { class: 'brand-text' }, [
+      el('span', { class: 'brand-name' }, ['TEFAS-Pro']),
+      el('span', { class: 'brand-sub' }, ['Fon Takip Paneli']),
     ]),
   ]);
+}
+
+/**
+ * Satır içi ikon seti. Kütüphane eklenmez; her ikon 24 birimlik bir çizim
+ * alanında, tek çizgi kalınlığıyla.
+ */
+const ICON_PATHS: Record<string, string[]> = {
+  dashboard: ['M4 13h7V4H4zM13 20h7v-9h-7zM4 20h7v-5H4zM13 9h7V4h-7z'],
+  portfolio: ['M3 7h18v13H3z', 'M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2', 'M3 12h18'],
+  transactions: ['M4 8h13l-3-3', 'M20 16H7l3 3'],
+  watchlist: ['M12 5c-5 0-8 4.5-8 7s3 7 8 7 8-4.5 8-7-3-7-8-7z', 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'],
+  users: ['M16 19v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4V19', 'M9.5 9.5a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5z', 'M21 19v-1.5a4 4 0 0 0-3-3.87'],
+  edit: ['M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z', 'M14.5 6.5 17.5 9.5'],
+  delete: ['M4 7h16', 'M9 7V5h6v2', 'M6 7l1 13h10l1-13', 'M10 11v6M14 11v6'],
+  add: ['M12 5v14M5 12h14'],
+  logout: ['M15 17l5-5-5-5', 'M20 12H9', 'M12 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6'],
+  close: ['M6 6l12 12M18 6 6 18'],
+  fund: ['M4 19h16', 'M7 19V9M12 19V5M17 19v-7'],
+  money: ['M12 3v18', 'M16 7.5A3.5 3.5 0 0 0 12.5 5h-1a3 3 0 0 0 0 6h1a3 3 0 0 1 0 6h-1A3.5 3.5 0 0 1 8 16.5'],
+  chart: ['M4 19h16', 'm5 15 4-5 3 3 6-8'],
+  flag: ['M5 21V4h9l-1 3h6v8h-7l-1-3H5'],
+};
+
+function icon(name: keyof typeof ICON_PATHS | string, size = 18): SVGSVGElement {
+  const root = svg('svg', {
+    viewBox: '0 0 24 24', width: String(size), height: String(size),
+    class: 'icon', 'aria-hidden': 'true', focusable: 'false',
+  });
+  for (const d of ICON_PATHS[name] ?? []) root.append(svg('path', { d }));
+  return root;
+}
+
+/**
+ * Satır eylemi: yalnız ikon taşıyan düğme.
+ *
+ * Metnin kendisi tıklanabilir olmaz; eylem her zaman düğme görünümündedir.
+ * İkon 18px çizilir ve dokunulabilir bir kutu içinde durur — referans
+ * uygulamadaki ikonlar 10-12px olduğu için ne oldukları anlaşılmıyordu.
+ */
+function iconButton(name: string, label: string, kind = ''): HTMLButtonElement {
+  const b = el('button', {
+    class: `icon-btn${kind === '' ? '' : ` icon-btn-${kind}`}`,
+    title: label, 'aria-label': label, type: 'button',
+  }, [icon(name)]);
+  return b as HTMLButtonElement;
+}
+
+/**
+ * Ortada açılan pencere. Form da onay da bunun içinde durur: form listenin
+ * üstüne, altına veya satırın yerine gömülmez.
+ *
+ * Escape ve zemine tıklama kapatır; kapatmak kaydetmez.
+ */
+function openModal(title: string, subtitle: string | null, body: Node, footer: Node[]): () => void {
+  const closeBtn = iconButton('close', 'Kapat');
+  const card = el('div', { class: 'modal-card modal-form' }, [
+    el('div', { class: 'modal-head' }, [
+      el('div', {}, [
+        el('h3', { class: 'modal-title' }, [title]),
+        ...(subtitle === null ? [] : [el('p', { class: 'modal-sub' }, [subtitle])]),
+      ]),
+      closeBtn,
+    ]),
+    el('div', { class: 'modal-body' }, [body]),
+    el('div', { class: 'modal-actions' }, footer),
+  ]);
+  const overlay = el('div', { class: 'modal-overlay' }, [card]);
+  const close = (): void => {
+    document.removeEventListener('keydown', onKey);
+    overlay.remove();
+  };
+  const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') close(); };
+  closeBtn.addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', onKey);
+  document.body.append(overlay);
+  return close;
 }
 
 function field(labelText: string, input: HTMLElement): HTMLElement {
   return el('div', { class: 'field' }, [el('label', {}, [labelText]), input]);
 }
 
-function metric(label: string, value: string, foot?: string): HTMLElement {
+/**
+ * Metrik kartı. Sol üstte ikon kutusu: kartlar yan yana dizildiğinde hangisinin
+ * ne olduğu başlığı okumadan ayırt edilebilsin.
+ */
+function metric(
+  label: string,
+  value: string,
+  foot?: string,
+  iconName = 'chart',
+  /** Sayının yanında duran birim: "25 fon" gibi. */
+  unit?: string,
+): HTMLElement {
   return el('div', { class: 'metric-card' }, [
-    el('div', { class: 'metric-label' }, [label]),
-    el('div', { class: 'metric-value' }, [value]),
-    ...(foot === undefined ? [] : [el('div', { class: 'metric-foot' }, [foot])]),
+    el('span', { class: `metric-symbol metric-symbol-${iconName}` }, [icon(iconName, 18)]),
+    el('div', { class: 'metric-text' }, [
+      el('div', { class: 'metric-label' }, [label]),
+      el('div', { class: 'metric-value' }, [
+        value,
+        ...(unit === undefined ? [] : [el('span', { class: 'metric-unit' }, [unit])]),
+      ]),
+      ...(foot === undefined ? [] : [el('div', { class: 'metric-foot' }, [foot])]),
+    ]),
   ]);
 }
 
-function panel(title: string, meta: string, body: Node, toolbar?: Node): HTMLElement {
+/**
+ * Panel. `action` verilirse başlık şeridinin sağında durur — liste eylemleri
+ * gövdeye girip tabloyu bölmemeli.
+ */
+function panel(title: string, meta: string, body: Node, action?: Node): HTMLElement {
   return el('section', { class: 'panel' }, [
     el('div', { class: 'panel-heading' }, [
-      el('h2', {}, [title]),
-      el('span', { class: 'header-meta' }, [meta]),
+      el('div', { class: 'panel-heading-text' }, [
+        el('h2', {}, [title]),
+        el('span', { class: 'header-meta' }, [meta]),
+      ]),
+      ...(action ? [action] : []),
     ]),
-    ...(toolbar ? [toolbar] : []),
     body,
   ]);
 }
@@ -286,7 +425,7 @@ function confirmDelete(opts: {
 }
 
 function table(headers: string[], rows: HTMLElement[]): HTMLElement {
-  if (rows.length === 0) return el('div', { class: 'empty-state' }, ['Kayıt yok.']);
+  if (rows.length === 0) return el('div', { class: 'empty-state' }, ['Kayıt Yok.']);
   return el('div', { class: 'table-wrap' }, [
     el('table', {}, [
       el('thead', {}, [el('tr', {}, headers.map((h) => el('th', {}, [h])))]),
@@ -557,7 +696,7 @@ async function performancePanel(): Promise<HTMLElement> {
   try {
     series = (await api('/api/portfolio/performance')) as PerformanceSeries;
   } catch {
-    return panel('Portföy performansı', 'son 30 iş günü',
+    return panel('Portföy Performansı', 'Son 30 İş Günü',
       el('div', { class: 'panel-body' }, [
         el('div', { class: 'empty-state' }, ['Performans serisi alınamadı.']),
       ]));
@@ -565,7 +704,7 @@ async function performancePanel(): Promise<HTMLElement> {
 
   // İki günden kısa seri çizilmez: tek noktadan çizgi de bar da çıkmaz.
   if (series.points.length < 2) {
-    return panel('Portföy performansı', 'son 30 iş günü',
+    return panel('Portföy Performansı', 'Son 30 İş Günü',
       el('div', { class: 'panel-body' }, [
         el('div', { class: 'empty-state' }, [
           'Grafik için en az iki işlem günü gerekiyor. Pozisyon açıldıkça seri dolacak.',
@@ -575,13 +714,13 @@ async function performancePanel(): Promise<HTMLElement> {
 
   const first = series.points[0];
   const last = series.points[series.points.length - 1];
-  const meta = first && last ? `${first.date} → ${last.date}` : 'son 30 iş günü';
+  const meta = first && last ? `${first.date} → ${last.date}` : 'Son 30 İş Günü';
   const body = el('div', { class: 'panel-body perf-body' }, [performanceChart(series.points)]);
   const toolbar = el('div', { class: 'chart-toolbar perf-toolbar' }, [
-    el('span', { class: 'perf-total-label' }, ['Dönem getirisi']),
+    el('span', { class: 'perf-total-label' }, ['Dönem Getirisi']),
     signed(series.totalPct),
   ]);
-  return panel('Portföy performansı', meta, body, toolbar);
+  return panel('Portföy Performansı', meta, body, toolbar);
 }
 
 const ONLY_OWNED_KEY = 'tefas.dashboard.onlyOwned';
@@ -712,13 +851,34 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
 
   return [
     el('div', { class: 'metric-grid' }, [
-      metric('Takip listem', String(m.watchlist), `${String(m.trackedFunds)} fon toplanıyor`),
-      metric('Açık pozisyon', String(m.openPositions), 'portföyümde'),
-      metric('Son veri', m.dataDate ?? '—', 'getiri günü'),
+      // Alt satır listenin kendi durumunu anlatır; toplanan fon sayısı
+      // collector'ın kapsamı olduğu için "Son Toplama" kutusuna taşındı.
       metric(
-        'Son toplama',
+        'Takip Listem',
+        String(m.watchlist),
+        typeof m.watchlistSold === 'number'
+          ? `${String(m.watchlist - m.watchlistSold)} İzliyorum · ${String(m.watchlistSold)} Çıktım`
+          : undefined,
+        'watchlist',
+        'fon',
+      ),
+      // Büyük sayı fon, altında o fonları oluşturan alım kaydı: ikisi farklı
+      // ve "54" tek başına fon sayısı sanılıyordu. Alan gelmezse alt satır
+      // "undefined" yazmak yerine sade bir açıklamaya düşer — eski bir sunucu
+      // sürümü çalışıyorken arayüz bozuk görünmemeli.
+      metric(
+        'Açık Pozisyon',
+        String(m.openPositions),
+        typeof m.openLots === 'number' ? `${String(m.openLots)} Alım Kaydı` : undefined,
+        'portfolio',
+        'fon',
+      ),
+      metric('Son Veri', m.dataDate ?? '—', 'Getiri Günü', 'fund'),
+      metric(
+        'Son Toplama',
         run?.finishedAt?.slice(11) ?? '—',
-        run ? `#${String(run.id)} · ${run.status}` : 'henüz koşmadı',
+        run ? `${String(m.trackedFunds)} Fon · #${String(run.id)}` : 'Henüz Koşmadı',
+        'transactions',
       ),
     ]),
     watchlistToggle(!onlyOwned, (dahil) => {
@@ -812,7 +972,14 @@ function passwordScreen(message?: string): void {
 
 // ─── Portföy görünümü ───────────────────────────────────────────────────────
 
-function transactionForm(existing: Transaction | null, onDone: () => void): HTMLElement {
+/**
+ * İşlem formu. Gövdeyi ve kaydet düğmesini ayrı döndürür: pencerede gövde
+ * ortada, eylemler altta sabit bir şeritte durur.
+ */
+function transactionForm(existing: Transaction | null, onDone: () => void): {
+  body: HTMLElement;
+  submit: HTMLButtonElement;
+} {
   const f = {
     fundCode: el('input', { required: 'true', placeholder: 'THF', maxlength: '16' }),
     units: el('input', { type: 'number', step: 'any', min: '0', required: 'true', placeholder: '1000' }),
@@ -828,19 +995,19 @@ function transactionForm(existing: Transaction | null, onDone: () => void): HTML
     f.sellDate.value = existing.sellDate ?? '';
   }
   const status = el('span', { class: 'status' });
-  const form = el('form', { class: 'row-form' }, [
-    field('Fon kodu', f.fundCode),
+  const submit = el('button', { type: 'submit', class: 'btn-primary' }, [
+    existing ? 'Güncelle' : 'İşlem Ekle',
+  ]) as HTMLButtonElement;
+  const form = el('form', { class: 'modal-form-grid', id: 'tx-form' }, [
+    field('Fon Kodu', f.fundCode),
     field('Adet', f.units),
-    field('Alış tarihi', f.tradeDate),
+    field('Alış Tarihi', f.tradeDate),
     field('Banka', f.platform),
-    field('Satış tarihi', f.sellDate),
-    el('div', { class: 'field' }, [
-      el('button', { type: 'submit', class: 'btn-primary btn-block' }, [
-        existing ? 'Güncelle' : 'İşlem ekle',
-      ]),
-    ]),
+    field('Satış Tarihi', f.sellDate),
     status,
   ]);
+  // Düğme şeritte, form gövdenin içinde: gönderimi form kimliğiyle bağlarız.
+  submit.setAttribute('form', 'tx-form');
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     void (async () => {
@@ -852,7 +1019,7 @@ function transactionForm(existing: Transaction | null, onDone: () => void): HTML
         sellDate: f.sellDate.value || null,
       };
       try {
-        status.textContent = 'kaydediliyor…';
+        status.textContent = 'Kaydediliyor…';
         await api(
           existing ? `/api/transactions/${String(existing.id)}` : '/api/transactions',
           { method: existing ? 'PUT' : 'POST', body: JSON.stringify(payload) },
@@ -863,7 +1030,21 @@ function transactionForm(existing: Transaction | null, onDone: () => void): HTML
       }
     })();
   });
-  return form;
+  return { body: form, submit };
+}
+
+/** İşlem formunu pencerede açar; kaydedince pencere kapanır ve liste yenilenir. */
+function openTransactionModal(existing: Transaction | null, reload: () => void): void {
+  let close = (): void => {};
+  const { body, submit } = transactionForm(existing, () => { close(); reload(); });
+  const cancel = el('button', { class: 'btn-ghost', type: 'button' }, ['Vazgeç']);
+  close = openModal(
+    existing === null ? 'İşlem Ekle' : 'İşlemi Düzenle',
+    existing === null ? 'Yeni alış kaydı' : `${existing.fundCode} · ${existing.tradeDate}`,
+    body,
+    [cancel, submit],
+  );
+  cancel.addEventListener('click', () => { close(); });
 }
 
 async function transactionsView(reload: () => void): Promise<Node[]> {
@@ -873,9 +1054,12 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
   const platforms = new Set(open.map((t) => t.platform));
   const last = rows.map((t) => t.tradeDate).sort().at(-1);
 
+  const addBtn = el('button', { class: 'btn-primary' }, [icon('add'), 'İşlem Ekle']);
+  addBtn.addEventListener('click', () => { openTransactionModal(null, reload); });
+
   const body = rows.map((t) => {
-    const editBtn = el('button', { class: 'btn-ghost' }, ['düzenle']);
-    const delBtn = el('button', { class: 'btn-danger' }, ['sil']);
+    const editBtn = iconButton('edit', 'Düzenle');
+    const delBtn = iconButton('delete', 'Sil', 'danger');
     const tr = el('tr', {}, [
       el('td', {}, [
         el('span', { class: 'fund-code' }, [t.fundCode]),
@@ -885,7 +1069,7 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
       el('td', { class: 'num' }, [t.tradeDate]),
       el('td', {}, [t.platform]),
       el('td', { class: 'num' }, [t.sellDate ?? '—']),
-      el('td', {}, [t.sellDate === null ? badge('açık', 'open') : badge('kapandı', 'closed')]),
+      el('td', {}, [t.sellDate === null ? badge('Açık', 'open') : badge('Kapandı', 'closed')]),
       el('td', { class: 'actions' }, [editBtn, delBtn]),
     ]);
     delBtn.addEventListener('click', () => {
@@ -914,26 +1098,25 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
       })();
     });
     editBtn.addEventListener('click', () => {
-      tr.replaceWith(el('tr', {}, [el('td', { colspan: '7' }, [transactionForm(t, reload)])]));
+      openTransactionModal(t, reload);
     });
     return tr;
   });
 
   return [
     el('div', { class: 'metric-grid' }, [
-      metric('Açık pozisyon', String(open.length), `${String(rows.length)} işlem kaydı`),
-      metric('Fon', String(funds.size), 'açık pozisyondaki farklı fon'),
-      metric('Platform', String(platforms.size), 'banka / aracı'),
-      metric('Son işlem', last ?? '—', 'alış tarihi'),
+      metric('Açık Pozisyon', String(open.length), `${String(rows.length)} İşlem Kaydı`, 'portfolio'),
+      metric('Fon', String(funds.size), 'Açık Pozisyondaki Farklı Fon', 'fund'),
+      metric('Platform', String(platforms.size), 'Banka / Aracı', 'money'),
+      metric('Son İşlem', last ?? '—', 'Alış Tarihi', 'transactions'),
     ]),
     panel(
       'Fon Hareketleri',
       `${String(rows.length)} kayıt · ${String(open.length)} açık`,
-      table(
-        ['Fon', 'Adet', 'Alış', 'Banka', 'Satış', 'Durum', ''],
-        body,
-      ),
-      transactionForm(null, reload),
+      el('div', { class: 'panel-body' }, [
+        table(['Fon', 'Adet', 'Alış', 'Banka', 'Satış', 'Durum', ''], body),
+      ]),
+      addBtn,
     ),
   ];
 }
@@ -997,17 +1180,17 @@ async function portfolioView(): Promise<Node[]> {
 
   return [
     el('div', { class: 'metric-grid' }, [
-      metric('Maliyet', money(String(cost)), `${String(rows.length)} fon`),
-      metric('Bugünkü değer', money(String(value)), rows[0]?.asOfDate ?? '—'),
-      metric('Kâr / zarar', money(String(gain)),
+      metric('Maliyet', money(String(cost)), `${String(rows.length)} Fon`, 'money'),
+      metric('Bugünkü Değer', money(String(value)), rows[0]?.asOfDate ?? '—', 'chart'),
+      metric('Kâr / Zarar', money(String(gain)),
         cost === 0 ? '—' : `%${(((value / cost) - 1) * 100).toFixed(2)}`),
-      metric('Kârda', String(winners), `${String(rows.length - winners)} zararda`),
+      metric('Kârda', String(winners), `${String(rows.length - winners)} Zararda`, 'flag'),
     ]),
     panel(
       'Portföyüm',
-      'açık pozisyonlar, fon başına',
+      'Açık Pozisyonlar, Fon Başına',
       table(
-        ['Fon', 'Gün %', '1 ay %', '3 ay %', 'Süre', 'Adet', 'Maliyet ₺', 'Değer ₺', 'K/Z', 'K/Z %'],
+        ['Fon', 'Gün %', '1 Ay %', '3 Ay %', 'Süre', 'Adet', 'Maliyet ₺', 'Değer ₺', 'K/Z', 'K/Z %'],
         [...body, foot],
       ),
     ),
@@ -1017,23 +1200,22 @@ async function portfolioView(): Promise<Node[]> {
 // ─── Takip listesi görünümü ─────────────────────────────────────────────────
 
 /** Kod dışında alan yok: not isteğe bağlı, gerisi collector'dan gelir. */
-function watchlistForm(onDone: () => void): HTMLElement {
+function watchlistForm(onDone: () => void): { body: HTMLElement; submit: HTMLButtonElement } {
   const fundCode = el('input', { required: 'true', placeholder: 'THF', maxlength: '16' });
-  const note = el('input', { placeholder: 'neden izliyorum (isteğe bağlı)', maxlength: '200' });
+  const note = el('input', { placeholder: 'Neden izliyorum (isteğe bağlı)', maxlength: '200' });
   const status = el('span', { class: 'status' });
-  const form = el('form', { class: 'row-form' }, [
-    field('Fon kodu', fundCode),
+  const submit = el('button', { type: 'submit', class: 'btn-primary' }, ['Listeye Ekle']) as HTMLButtonElement;
+  const form = el('form', { class: 'modal-form-grid', id: 'watch-form' }, [
+    field('Fon Kodu', fundCode),
     field('Not', note),
-    el('div', { class: 'field' }, [
-      el('button', { type: 'submit', class: 'btn-primary btn-block' }, ['Listeye ekle']),
-    ]),
     status,
   ]);
+  submit.setAttribute('form', 'watch-form');
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     void (async () => {
       try {
-        status.textContent = 'ekleniyor…';
+        status.textContent = 'Ekleniyor…';
         await api('/api/watchlist', {
           method: 'POST',
           body: JSON.stringify({ fundCode: fundCode.value, note: note.value }),
@@ -1044,22 +1226,32 @@ function watchlistForm(onDone: () => void): HTMLElement {
       }
     })();
   });
-  return form;
+  return { body: form, submit };
+}
+
+function openWatchlistModal(reload: () => void): void {
+  let close = (): void => {};
+  const { body, submit } = watchlistForm(() => { close(); reload(); });
+  const cancel = el('button', { class: 'btn-ghost', type: 'button' }, ['Vazgeç']);
+  close = openModal('Takip Listesine Ekle', 'İzlemek istediğin fon', body, [cancel, submit]);
+  cancel.addEventListener('click', () => { close(); });
 }
 
 const STATUS_LABEL: Record<WatchlistRow['status'], string> = {
-  sold: 'çıktım',
-  watch: 'izliyorum',
+  sold: 'Çıktım',
+  watch: 'İzliyorum',
 };
 
 async function watchlistView(reload: () => void): Promise<Node[]> {
+  const watchAddBtn = el('button', { class: 'btn-primary' }, [icon('add'), 'Fon Ekle']);
+  watchAddBtn.addEventListener('click', () => { openWatchlistModal(reload); });
   const rows = (await api('/api/watchlist')) as WatchlistRow[];
   const sold = rows.filter((r) => r.status === 'sold').length;
   const dates = rows.map((r) => r.navDate).filter((d): d is string => d !== null).sort();
   const gainers = rows.filter((r) => Number(r.dailyReturnPct ?? 0) > 0).length;
 
   const body = rows.map((r) => {
-    const delBtn = el('button', { class: 'btn-danger' }, ['çıkar']);
+    const delBtn = iconButton('delete', 'Takip Listesinden Çıkar', 'danger');
     const tr = el('tr', {}, [
       el('td', {}, [
         el('span', { class: 'fund-code' }, [r.fundCode]),
@@ -1097,124 +1289,196 @@ async function watchlistView(reload: () => void): Promise<Node[]> {
 
   return [
     el('div', { class: 'metric-grid' }, [
-      metric('Takip listem', String(rows.length), 'portföyümde olmayan fon'),
-      metric('Çıktığım', String(sold), `${String(rows.length - sold)} hiç almadığım`),
-      metric('Günü artıda', String(gainers), `${String(rows.length - gainers)} eksi veya yatay`),
-      metric('Son veri', dates.at(-1) ?? '—', 'NAV tarihi'),
+      metric(
+        'Takip Listem',
+        String(rows.length),
+        `${String(rows.length - sold)} İzliyorum · ${String(sold)} Çıktım`,
+        'watchlist',
+        'fon',
+      ),
+      metric('Çıktığım', String(sold), 'Alıp Sattığım Fon', 'flag'),
+      metric('Günü Artıda', String(gainers), `${String(rows.length - gainers)} Eksi veya Yatay`, 'chart'),
+      metric('Son Veri', dates.at(-1) ?? '—', 'NAV Tarihi', 'fund'),
     ]),
     panel(
-      'Takip listem',
+      'Takip Listem',
       `${String(rows.length)} fon · portföyüme aldığım fon burada görünmez`,
-      table(
-        ['Fon', 'Durum', 'NAV tarihi', 'NAV', 'Günlük', 'Net akış', 'Stopaj', 'Satış valörü', ''],
-        body,
-      ),
-      watchlistForm(reload),
+      el('div', { class: 'panel-body' }, [
+        table(
+          ['Fon', 'Durum', 'NAV Tarihi', 'NAV', 'Günlük', 'Net Akış', 'Stopaj', 'Satış Valörü', ''],
+          body,
+        ),
+      ]),
+      watchAddBtn,
     ),
   ];
 }
 
 // ─── Kullanıcılar görünümü ──────────────────────────────────────────────────
 
+/**
+ * Kullanıcı formu. Ekleme ve düzenleme aynı formu kullanır; düzenlemede
+ * kullanıcı adı değişmez ve parola boş bırakılırsa dokunulmaz.
+ *
+ * Aktiflik burada, formun içinde: listede ayrı bir kutucuk olarak durduğunda
+ * hem "Durum" sütunu hem kutucuk aynı şeyi iki kez gösteriyordu ve tek tıkla
+ * yanlışlıkla değiştirilebiliyordu.
+ */
+function userForm(existing: UserRow | null, onDone: () => void): {
+  body: HTMLElement;
+  submit: HTMLButtonElement;
+} {
+  const uname = el('input', { required: 'true', placeholder: 'kullanici', maxlength: '32' });
+  const upass = el('input', {
+    type: 'password',
+    placeholder: existing === null ? 'En az 8 karakter' : 'Değiştirmek için doldurun',
+    ...(existing === null ? { required: 'true' } : {}),
+  });
+  const utype = el('select', {}, [
+    el('option', { value: 'user' }, ['Kullanıcı']),
+    el('option', { value: 'admin' }, ['Yönetici']),
+  ]);
+  const uactive = el('input', { type: 'checkbox' });
+  uactive.checked = existing?.isActive ?? true;
+  if (existing !== null) {
+    uname.value = existing.username;
+    uname.disabled = true;
+    utype.value = existing.type;
+  }
+
+  const status = el('span', { class: 'status' });
+  const submit = el('button', { type: 'submit', class: 'btn-primary' }, [
+    existing === null ? 'Kullanıcı Ekle' : 'Güncelle',
+  ]) as HTMLButtonElement;
+  const form = el('form', { class: 'modal-form-grid', id: 'user-form' }, [
+    field('Kullanıcı Adı', uname),
+    field('Parola', upass),
+    field('Tip', utype),
+    el('label', { class: 'switch-field' }, [
+      uactive,
+      el('span', {}, ['Hesap Aktif']),
+    ]),
+    status,
+  ]);
+  submit.setAttribute('form', 'user-form');
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    void (async () => {
+      try {
+        status.textContent = 'Kaydediliyor…';
+        if (existing === null) {
+          await api('/api/admin/users', {
+            method: 'POST',
+            body: JSON.stringify({
+              username: uname.value, password: upass.value, type: utype.value,
+            }),
+          });
+        } else {
+          const patch: Record<string, unknown> = {
+            type: utype.value, isActive: uactive.checked,
+          };
+          // Boş parola "değiştirme" demektir; sunucuya boş dize göndermeyiz.
+          if (upass.value !== '') patch['password'] = upass.value;
+          await api(`/api/admin/users/${String(existing.id)}`, {
+            method: 'PATCH', body: JSON.stringify(patch),
+          });
+        }
+        onDone();
+      } catch (err) {
+        status.textContent = err instanceof Error ? err.message : 'Kaydedilemedi.';
+      }
+    })();
+  });
+  return { body: form, submit };
+}
+
+function openUserModal(existing: UserRow | null, reload: () => void): void {
+  let close = (): void => {};
+  const { body, submit } = userForm(existing, () => { close(); reload(); });
+  const cancel = el('button', { class: 'btn-ghost', type: 'button' }, ['Vazgeç']);
+  close = openModal(
+    existing === null ? 'Kullanıcı Ekle' : 'Kullanıcıyı Düzenle',
+    existing === null ? 'Yeni hesap' : `${existing.username} · #${String(existing.id)}`,
+    body,
+    [cancel, submit],
+  );
+  cancel.addEventListener('click', () => { close(); });
+}
+
 async function usersView(reload: () => void): Promise<Node[]> {
   const rows = (await api('/api/admin/users')) as UserRow[];
   const admins = rows.filter((u) => u.type === 'admin').length;
   const active = rows.filter((u) => u.isActive).length;
 
-  const uname = el('input', { required: 'true', placeholder: 'kullanıcı adı' });
-  const upass = el('input', { type: 'password', required: 'true', placeholder: 'en az 8 karakter' });
-  const utype = el('select', {}, [
-    el('option', { value: 'user' }, ['user']),
-    el('option', { value: 'admin' }, ['admin']),
-  ]);
-  const status = el('span', { class: 'status' });
-  const createForm = el('form', { class: 'row-form' }, [
-    field('Kullanıcı adı', uname),
-    field('Parola', upass),
-    field('Tip', utype),
-    el('div', { class: 'field' }, [
-      el('button', { type: 'submit', class: 'btn-primary btn-block' }, ['Kullanıcı oluştur']),
-    ]),
-    status,
-  ]);
-  createForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    void (async () => {
-      try {
-        await api('/api/admin/users', {
-          method: 'POST',
-          body: JSON.stringify({
-            username: uname.value, password: upass.value, type: utype.value,
-          }),
-        });
-        reload();
-      } catch (err) {
-        status.textContent = err instanceof Error ? err.message : 'Oluşturulamadı.';
-      }
-    })();
-  });
+  const addBtn = el('button', { class: 'btn-primary' }, [icon('add'), 'Kullanıcı Ekle']);
+  addBtn.addEventListener('click', () => { openUserModal(null, reload); });
 
   const body = rows.map((u) => {
-    const typeSel = el('select', {}, [
-      el('option', { value: 'user' }, ['user']),
-      el('option', { value: 'admin' }, ['admin']),
-    ]);
-    typeSel.value = u.type;
-    const activeBox = el('input', { type: 'checkbox' });
-    activeBox.checked = u.isActive;
-    const rowStatus = el('span', { class: 'status' });
-    const save = el('button', { class: 'btn-secondary' }, ['kaydet']);
-    save.addEventListener('click', () => {
-      void (async () => {
-        try {
-          await api(`/api/admin/users/${String(u.id)}`, {
-            method: 'PATCH',
-            body: JSON.stringify({ type: typeSel.value, isActive: activeBox.checked }),
-          });
-          reload();
-        } catch (err) {
-          rowStatus.textContent = err instanceof Error ? err.message : 'Kaydedilemedi.';
-        }
-      })();
-    });
+    const editBtn = iconButton('edit', 'Düzenle');
+    editBtn.addEventListener('click', () => { openUserModal(u, reload); });
     return el('tr', {}, [
       el('td', {}, [
         el('span', { class: 'fund-code' }, [u.username]),
         el('span', { class: 'fund-title' }, [`#${String(u.id)}`]),
       ]),
-      el('td', {}, [badge(u.type, u.type)]),
-      el('td', {}, [u.isActive ? badge('aktif', 'open') : badge('pasif', 'passive')]),
-      el('td', {}, [typeSel]),
-      el('td', {}, [activeBox]),
-      el('td', { class: 'actions' }, [save, rowStatus]),
+      el('td', {}, [badge(u.type === 'admin' ? 'Yönetici' : 'Kullanıcı', u.type)]),
+      el('td', {}, [u.isActive ? badge('Aktif', 'open') : badge('Pasif', 'passive')]),
+      el('td', { class: 'actions' }, [editBtn]),
     ]);
   });
 
   return [
     el('div', { class: 'metric-grid' }, [
-      metric('Kullanıcı', String(rows.length), 'toplam'),
-      metric('Admin', String(admins), 'yönetici yetkisi'),
-      metric('Aktif', String(active), `${String(rows.length - active)} pasif`),
-      metric('Standart', String(rows.length - admins), 'user tipi'),
+      metric('Kullanıcı', String(rows.length), 'Toplam Hesap', 'users'),
+      metric('Yönetici', String(admins), 'Yönetici Yetkisi', 'flag'),
+      metric('Aktif', String(active), `${String(rows.length - active)} Pasif`, 'chart'),
+      metric('Standart', String(rows.length - admins), 'Kullanıcı Tipi', 'portfolio'),
     ]),
     panel(
       'Kullanıcılar',
-      `${String(rows.length)} kayıt`,
-      table(['Kullanıcı', 'Tip', 'Durum', 'Yeni tip', 'Aktif', ''], body),
-      createForm,
+      `${String(rows.length)} kayıt · ${String(active)} aktif`,
+      el('div', { class: 'panel-body' }, [
+        table(['Kullanıcı', 'Tip', 'Durum', ''], body),
+      ]),
+      addBtn,
     ),
   ];
 }
 
+
 // ─── İskelet ────────────────────────────────────────────────────────────────
 
-const VIEWS: { id: ViewId; label: string; icon: string; adminOnly: boolean; crumb: string }[] = [
-  { id: 'dashboard', label: 'Panel', icon: '▦', adminOnly: false, crumb: 'Genel' },
-  { id: 'portfolio', label: 'Portföyüm', icon: '◈', adminOnly: false, crumb: 'Genel' },
-  { id: 'transactions', label: 'Fon Hareketleri', icon: '⇄', adminOnly: false, crumb: 'Genel' },
-  { id: 'watchlist', label: 'Takip listem', icon: '☰', adminOnly: false, crumb: 'Genel' },
-  { id: 'users', label: 'Kullanıcılar', icon: '⚇', adminOnly: true, crumb: 'Yönetim' },
+const VIEWS: { id: ViewId; label: string; adminOnly: boolean; crumb: string }[] = [
+  { id: 'dashboard', label: 'Panel', adminOnly: false, crumb: 'Genel' },
+  { id: 'portfolio', label: 'Portföyüm', adminOnly: false, crumb: 'Genel' },
+  { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
+  { id: 'watchlist', label: 'Takip Listem', adminOnly: false, crumb: 'Genel' },
+  { id: 'users', label: 'Kullanıcılar', adminOnly: true, crumb: 'Yönetim' },
 ];
+
+/**
+ * Sürüm rozeti. Değer sunucudan gelir; istemci commit ve derleme zamanını
+ * bilemez, kendi başına uydurmamalı. Alınamazsa rozet sessizce boş kalır —
+ * sürüm gösterilememesi ekranı bozmamalı.
+ */
+function versionBadge(): HTMLElement {
+  const value = el('strong', { class: 'version-value' }, ['—']);
+  const box = el('div', { class: 'version-badge' }, [
+    el('span', { class: 'version-label' }, ['TEFAS-Pro']),
+    value,
+  ]);
+  void (async () => {
+    try {
+      const rt = (await api('/api/runtime')) as { version?: string };
+      // Sürüm gelmezse rozet boş bir kutu olarak kalmasın.
+      value.textContent = rt.version ?? '—';
+    } catch {
+      value.textContent = '—';
+    }
+  })();
+  return box;
+}
 
 async function appShell(me: Me, view: ViewId): Promise<void> {
   const reload = (): void => {
@@ -1228,7 +1492,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     {},
     visible.map((v) => {
       const b = el('button', v.id === current.id ? { class: 'active' } : {}, [
-        el('span', { class: 'icon' }, [v.icon]),
+        icon(v.id),
         v.label,
       ]);
       b.addEventListener('click', () => void appShell(me, v.id));
@@ -1236,7 +1500,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     }),
   );
 
-  const logout = el('button', { class: 'btn-ghost btn-block' }, ['Çıkış yap']);
+  const logout = el('button', { class: 'sidebar-logout', type: 'button' }, [icon('logout'), 'Çıkış Yap']);
   logout.addEventListener('click', () => {
     void (async () => {
       await api('/api/logout', { method: 'POST' });
@@ -1247,12 +1511,14 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
   const sidebar = el('aside', { class: 'sidebar' }, [
     brand(),
     nav,
+    // Kullanıcı bilgisi ve çıkış birlikte en altta; kullanıcı çıkışın hemen
+    // üstünde durur, ikisi nav'dan çizgiyle ayrılır.
     el('div', { class: 'sidebar-foot' }, [
       el('div', { class: 'sidebar-user' }, [
         el('div', { class: 'avatar' }, [me.username.slice(0, 2).toUpperCase()]),
         el('div', {}, [
           el('div', { class: 'sidebar-user-name' }, [me.username]),
-          el('div', { class: 'sidebar-user-role' }, [me.type]),
+          el('div', { class: 'sidebar-user-role' }, [me.type === 'admin' ? 'Yönetici' : 'Kullanıcı']),
         ]),
       ]),
       logout,
@@ -1276,7 +1542,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
         el('div', { class: 'breadcrumb' }, [`${current.crumb} / ${current.label}`]),
         el('h1', {}, [current.label]),
       ]),
-      el('span', { class: 'header-meta' }, [new Date().toLocaleDateString('tr-TR')]),
+      versionBadge(),
     ]),
     el('div', { class: 'content-body' }, bodyNodes),
   ]);
