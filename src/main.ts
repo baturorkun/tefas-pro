@@ -112,6 +112,20 @@ interface Dashboard {
   investorRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
 }
 
+interface ClosedPositionRow {
+  fundCode: string;
+  title: string | null;
+  platform: string;
+  buyDate: string;
+  sellDate: string;
+  heldDays: number;
+  units: string;
+  buyValue: string;
+  sellValue: string;
+  realizedGain: string;
+  realizedPct: string;
+}
+
 interface PerformancePoint {
   date: string;
   /** Sermaye hareketinden arındırılmış değer — grafiğin çizgisi. */
@@ -125,7 +139,7 @@ interface PerformanceSeries {
   totalPct: string | null;
 }
 
-type ViewId = 'dashboard' | 'portfolio' | 'transactions' | 'watchlist' | 'users';
+type ViewId = 'dashboard' | 'portfolio' | 'closed' | 'transactions' | 'watchlist' | 'users';
 
 const root = document.getElementById('app');
 
@@ -265,6 +279,7 @@ const ICON_PATHS: Record<string, string[]> = {
   money: ['M12 3v18', 'M16 7.5A3.5 3.5 0 0 0 12.5 5h-1a3 3 0 0 0 0 6h1a3 3 0 0 1 0 6h-1A3.5 3.5 0 0 1 8 16.5'],
   chart: ['M4 19h16', 'm5 15 4-5 3 3 6-8'],
   flag: ['M5 21V4h9l-1 3h6v8h-7l-1-3H5'],
+  closed: ['M20 6 9 17l-5-5'],
 };
 
 function icon(name: keyof typeof ICON_PATHS | string, size = 18): SVGSVGElement {
@@ -1047,6 +1062,72 @@ function openTransactionModal(existing: Transaction | null, reload: () => void):
   cancel.addEventListener('click', () => { close(); });
 }
 
+/**
+ * Kapanan pozisyonlar: satılmış her işlemin gerçekleşen sonucu.
+ *
+ * Kırılım işlem başınadır, fon başına değil — aynı fondan farklı tarihlerde
+ * alınıp ayrı satılan pozisyonların sonuçları farklıdır ve hangi alımın ne
+ * kazandırdığı görünmelidir.
+ */
+async function closedView(): Promise<Node[]> {
+  const rows = (await api('/api/closed')) as ClosedPositionRow[];
+  const sum = (f: (r: ClosedPositionRow) => number): number => rows.reduce((a, r) => a + f(r), 0);
+  const buy = sum((r) => Number(r.buyValue));
+  const sell = sum((r) => Number(r.sellValue));
+  const gain = sell - buy;
+  const winners = rows.filter((r) => Number(r.realizedGain) > 0).length;
+
+  const num = (v: string, digits = 0): string =>
+    Number(v).toLocaleString('tr-TR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+
+  const body = rows.map((r) => el('tr', {}, [
+    el('td', {}, [
+      el('span', { class: 'fund-code' }, [r.fundCode]),
+      el('span', { class: 'fund-title' }, [r.title ?? '']),
+    ]),
+    el('td', {}, [r.platform]),
+    el('td', { class: 'num' }, [r.buyDate]),
+    el('td', { class: 'num' }, [r.sellDate]),
+    el('td', { class: 'num' }, [`${String(r.heldDays)}g`]),
+    el('td', { class: 'num' }, [num(r.units)]),
+    el('td', { class: 'num' }, [num(r.buyValue)]),
+    el('td', { class: 'num' }, [num(r.sellValue)]),
+    el('td', {}, [signed(r.realizedGain, ' ₺')]),
+    el('td', {}, [signed(r.realizedPct)]),
+  ]));
+
+  const foot = el('tr', { class: 'total-row' }, [
+    el('td', {}, [`TOPLAM (${String(rows.length)})`]),
+    el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []),
+    el('td', { class: 'num' }, [num(String(buy))]),
+    el('td', { class: 'num' }, [num(String(sell))]),
+    el('td', {}, [signed(String(gain), ' ₺')]),
+    el('td', {}, [signed(buy === 0 ? null : String((sell / buy - 1) * 100))]),
+  ]);
+
+  return [
+    el('div', { class: 'metric-grid' }, [
+      metric('Gerçekleşen K/Z', money(String(gain)),
+        buy === 0 ? '—' : `%${((sell / buy - 1) * 100).toFixed(2)}`, 'money'),
+      metric('Kapanan İşlem', String(rows.length), 'Satılmış Kayıt', 'closed', 'işlem'),
+      metric('Kazançla Kapanan', String(winners), `${String(rows.length - winners)} Zararla`, 'flag'),
+      metric('Toplam Satış', money(String(sell)), 'Elde Edilen Tutar', 'chart'),
+    ]),
+    panel(
+      'Kapanan Pozisyonlar',
+      `${String(rows.length)} işlem · en son satılan üstte`,
+      el('div', { class: 'panel-body' }, [
+        rows.length === 0
+          ? el('div', { class: 'empty-state' }, ['Henüz kapanmış pozisyon yok.'])
+          : table(
+              ['Fon', 'Banka', 'Alış', 'Satış', 'Süre', 'Adet', 'Alış ₺', 'Satış ₺', 'K/Z', 'K/Z %'],
+              [...body, foot],
+            ),
+      ]),
+    ),
+  ];
+}
+
 async function transactionsView(reload: () => void): Promise<Node[]> {
   const rows = (await api('/api/transactions')) as Transaction[];
   const open = rows.filter((t) => t.sellDate === null);
@@ -1452,6 +1533,7 @@ async function usersView(reload: () => void): Promise<Node[]> {
 const VIEWS: { id: ViewId; label: string; adminOnly: boolean; crumb: string }[] = [
   { id: 'dashboard', label: 'Panel', adminOnly: false, crumb: 'Genel' },
   { id: 'portfolio', label: 'Portföyüm', adminOnly: false, crumb: 'Genel' },
+  { id: 'closed', label: 'Kapananlar', adminOnly: false, crumb: 'Genel' },
   { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
   { id: 'watchlist', label: 'Takip Listem', adminOnly: false, crumb: 'Genel' },
   { id: 'users', label: 'Kullanıcılar', adminOnly: true, crumb: 'Yönetim' },
@@ -1529,6 +1611,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
   try {
     if (current.id === 'dashboard') bodyNodes = await dashboardView(reload);
     else if (current.id === 'portfolio') bodyNodes = await portfolioView();
+    else if (current.id === 'closed') bodyNodes = await closedView();
     else if (current.id === 'transactions') bodyNodes = await transactionsView(reload);
     else if (current.id === 'watchlist') bodyNodes = await watchlistView(reload);
     else bodyNodes = await usersView(reload);

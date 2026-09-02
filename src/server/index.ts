@@ -54,6 +54,7 @@ import {
   type AppUser,
   type TransactionInput,
   portfolioPerformance,
+  closedPositions,
 } from './repository.js';
 
 const COOKIE_NAME = 'tefas_session';
@@ -320,6 +321,11 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
           return;
         }
         sendJson(res, 200, await portfolioPerformance(pool, user.id, days));
+        return;
+      }
+
+      if (path === '/api/closed' && method === 'GET') {
+        sendJson(res, 200, await closedPositions(pool, user.id));
         return;
       }
 
