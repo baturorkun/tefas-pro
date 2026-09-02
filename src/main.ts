@@ -381,14 +381,18 @@ function chartPanel(
  * kazandırdı" sorusunu cevaplar.
  */
 function performanceChart(points: PerformancePoint[]): SVGSVGElement {
-  const W = 720;
-  const H_TOP = 200;
-  const H_BOT = 100;
-  const GAP = 26;
-  const PAD_L = 62;   // y ekseni etiketleri
-  const PAD_R = 10;
-  const PAD_T = 8;
-  const PAD_B = 34;   // eğik tarih etiketleri
+  // viewBox genişliği panelin gerçek genişliğine yakın seçilir. Bu panel tam
+  // genişlikte duruyor; barChart gibi 520 verilseydi SVG üç kat ölçeklenir ve
+  // 11px yazı ekranda 30px görünürdü. chart-grid içindeki grafikler iki sütuna
+  // bölündüğü için orada 520 doğru sayı.
+  const W = 1400;
+  const H_TOP = 321;
+  const H_BOT = 161;  // üst panelin yarısı — referans grafikteki 2:1 oranı
+  const GAP = 34;
+  const PAD_L = 64;   // y ekseni etiketleri
+  const PAD_R = 24;   // çizgi ve dolgu sağ kenara dayanmasın
+  const PAD_T = 12;
+  const PAD_B = 46;   // eğik tarih etiketleri
   const H = PAD_T + H_TOP + GAP + H_BOT + PAD_B;
   const plotW = W - PAD_L - PAD_R;
 
@@ -431,7 +435,7 @@ function performanceChart(points: PerformancePoint[]): SVGSVGElement {
         x1: String(PAD_L), y1: String(gy), x2: String(W - PAD_R), y2: String(gy),
         class: 'perf-grid',
       }),
-      svg('text', { x: String(PAD_L - 8), y: String(gy + 4), class: 'perf-axis-y' }, fmtMoney(v)),
+      svg('text', { x: String(PAD_L - 10), y: String(gy), class: 'perf-axis-y' }, fmtMoney(v)),
     );
   }
 
@@ -451,13 +455,13 @@ function performanceChart(points: PerformancePoint[]): SVGSVGElement {
       x1: String(PAD_L), y1: String(zeroY), x2: String(W - PAD_R), y2: String(zeroY),
       class: 'perf-zero',
     }),
-    svg('text', { x: String(PAD_L - 8), y: String(barTop + 4), class: 'perf-axis-y' },
+    svg('text', { x: String(PAD_L - 10), y: String(barTop), class: 'perf-axis-y' },
       `+${pMax.toFixed(1)}%`),
-    svg('text', { x: String(PAD_L - 8), y: String(barTop + H_BOT + 4), class: 'perf-axis-y' },
+    svg('text', { x: String(PAD_L - 10), y: String(barTop + H_BOT), class: 'perf-axis-y' },
       `-${pMax.toFixed(1)}%`),
   );
 
-  const barW = Math.max(2, Math.min(14, (plotW / Math.max(points.length, 1)) * 0.7));
+  const barW = Math.max(3, Math.min(22, (plotW / Math.max(points.length, 1)) * 0.7));
   points.forEach((p, i) => {
     if (p.dailyPct === null) return;
     const v = Number(p.dailyPct);
@@ -481,7 +485,7 @@ function performanceChart(points: PerformancePoint[]): SVGSVGElement {
   points.forEach((p, i) => {
     if (i % step !== 0 && i !== points.length - 1) return;
     const tx = x(i);
-    const ty = barTop + H_BOT + 16;
+    const ty = barTop + H_BOT + 20;
     root.append(
       svg('text', {
         x: String(tx), y: String(ty), class: 'perf-axis-x',
@@ -499,22 +503,26 @@ async function performancePanel(): Promise<HTMLElement> {
     series = (await api('/api/portfolio/performance')) as PerformanceSeries;
   } catch {
     return panel('Portföy performansı', 'son 30 iş günü',
-      el('p', { class: 'empty' }, ['Performans serisi alınamadı.']));
+      el('div', { class: 'panel-body' }, [
+        el('div', { class: 'empty-state' }, ['Performans serisi alınamadı.']),
+      ]));
   }
 
   // İki günden kısa seri çizilmez: tek noktadan çizgi de bar da çıkmaz.
   if (series.points.length < 2) {
     return panel('Portföy performansı', 'son 30 iş günü',
-      el('p', { class: 'empty' }, [
-        'Grafik için en az iki işlem günü gerekiyor. Pozisyon açıldıkça seri dolacak.',
+      el('div', { class: 'panel-body' }, [
+        el('div', { class: 'empty-state' }, [
+          'Grafik için en az iki işlem günü gerekiyor. Pozisyon açıldıkça seri dolacak.',
+        ]),
       ]));
   }
 
   const first = series.points[0];
   const last = series.points[series.points.length - 1];
   const meta = first && last ? `${first.date} → ${last.date}` : 'son 30 iş günü';
-  const body = el('div', { class: 'perf-body' }, [performanceChart(series.points)]);
-  const toolbar = el('div', { class: 'chart-toolbar' }, [
+  const body = el('div', { class: 'panel-body perf-body' }, [performanceChart(series.points)]);
+  const toolbar = el('div', { class: 'chart-toolbar perf-toolbar' }, [
     el('span', { class: 'perf-total-label' }, ['Dönem getirisi']),
     signed(series.totalPct),
   ]);

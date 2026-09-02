@@ -312,6 +312,7 @@ td.actions { text-align: right; }
    Referans grafik açık tema içindi (#1f4e79 / #1a7a1a / #c00000); koyu zeminde
    okunmadığı için panelin kendi paleti kullanılır, bar-pos/bar-neg düzeni korunur. */
 .perf-chart      { width: 100%; height: auto; display: block; }
+.perf-chart text { font-family: var(--font); dominant-baseline: middle; }
 .perf-line       { fill: none; stroke: var(--accent); stroke-width: 1.8;
                    stroke-linejoin: round; stroke-linecap: round; }
 .perf-area       { fill: var(--accent); opacity: .10; }
@@ -319,9 +320,12 @@ td.actions { text-align: right; }
 .perf-zero       { stroke: var(--line); stroke-width: 1; }
 .perf-bar-pos    { fill: var(--accent); opacity: .85; }
 .perf-bar-neg    { fill: var(--danger); opacity: .75; }
-.perf-axis-y     { fill: var(--muted-dim); font-size: 10px; text-anchor: end; }
-.perf-axis-x     { fill: var(--muted-dim); font-size: 10px; text-anchor: end; }
-.perf-body       { padding: 4px 2px 0; }
+.perf-axis-y     { fill: var(--muted-dim); font-size: 11px; font-family: var(--mono); text-anchor: end; }
+.perf-axis-x     { fill: var(--muted-dim); font-size: 11px; text-anchor: end; }
+.perf-body       { padding-top: 0; }
+/* Toolbar panel gövdesinin dışında duruyor; yatay boşluğu kendisi vermeli,
+   yoksa dönem getirisi panelin sağ kenarına yapışır. */
+.perf-toolbar    { padding: 0 1.1rem; margin-top: -2px; }
 .perf-total-label{ color: var(--muted); font-size: 12px; }
 
 .chart-toolbar { display: flex; align-items: center; justify-content: space-between;
