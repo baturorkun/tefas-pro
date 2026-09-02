@@ -230,6 +230,61 @@ function panel(title: string, meta: string, body: Node, toolbar?: Node): HTMLEle
   ]);
 }
 
+/**
+ * Geri alınamaz bir işlem için onay penceresi.
+ *
+ * Tarayıcının `confirm`'ü yerine kendi penceremiz: silinecek kaydı satır satır
+ * gösterebilmek ve sonucun ne olacağını ayrı bir uyarı olarak vurgulayabilmek
+ * için. Metin tek satıra sıkıştığında kullanıcı ne sildiğini okumadan onaylıyor.
+ *
+ * Söz, kullanıcı bir düğmeye basana kadar beklemez; Escape ve zemine tıklama
+ * da vazgeçme sayılır — kapatmanın en kolay yolu her zaman iptal olmalı.
+ */
+function confirmDelete(opts: {
+  title: string;
+  /** Silinecek kaydı tanımlayan satırlar: "HBU", "34.200 lot" gibi. */
+  detail: string[];
+  /** Sonucu anlatan uyarı; boş bırakılırsa gösterilmez. */
+  warning?: string;
+  /** Silmek yerine yapılabilecek şey. */
+  hint?: string;
+  confirmLabel: string;
+}): Promise<boolean> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (value: boolean): void => {
+      if (done) return;
+      done = true;
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      resolve(value);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') finish(false);
+    };
+
+    const cancelBtn = el('button', { class: 'btn-ghost' }, ['Vazgeç']);
+    const okBtn = el('button', { class: 'btn-danger' }, [opts.confirmLabel]);
+    const card = el('div', { class: 'modal-card' }, [
+      el('h3', { class: 'modal-title' }, [opts.title]),
+      el('div', { class: 'modal-detail' }, opts.detail.map((d) => el('div', {}, [d]))),
+      ...(opts.warning === undefined ? [] : [el('p', { class: 'modal-warning' }, [opts.warning])]),
+      ...(opts.hint === undefined ? [] : [el('p', { class: 'modal-hint' }, [opts.hint])]),
+      el('div', { class: 'modal-actions' }, [cancelBtn, okBtn]),
+    ]);
+    const overlay = el('div', { class: 'modal-overlay' }, [card]);
+
+    cancelBtn.addEventListener('click', () => { finish(false); });
+    okBtn.addEventListener('click', () => { finish(true); });
+    // Zemine tıklama vazgeçmedir; kartın içine tıklama pencereyi kapatmamalı.
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(false); });
+    document.addEventListener('keydown', onKey);
+
+    document.body.append(overlay);
+    cancelBtn.focus();
+  });
+}
+
 function table(headers: string[], rows: HTMLElement[]): HTMLElement {
   if (rows.length === 0) return el('div', { class: 'empty-state' }, ['Kayıt yok.']);
   return el('div', { class: 'table-wrap' }, [
@@ -835,6 +890,25 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
     ]);
     delBtn.addEventListener('click', () => {
       void (async () => {
+        const acik = t.sellDate === null;
+        const ok = await confirmDelete({
+          title: 'Fon hareketi silinsin mi?',
+          detail: [
+            `${t.fundCode}${t.fundTitle === null ? '' : ` — ${t.fundTitle}`}`,
+            `${Number(t.units).toLocaleString('tr-TR')} lot · ${t.tradeDate} · ${t.platform}`,
+            ...(acik ? [] : [`Satış: ${t.sellDate ?? ''}`]),
+          ],
+          // Açık pozisyonun silinmesi yalnız bir satırı değil, portföy değerini
+          // ve performans grafiğinin geçmişini de değiştirir.
+          warning: acik
+            ? 'Bu kayıt açık bir pozisyon. Silmek portföy değerini ve performans geçmişini değiştirir. İşlem geri alınamaz.'
+            : 'Bu işlem geri alınamaz.',
+          hint: acik
+            ? 'Fonu sattıysanız silmek yerine bu kayda satış tarihi girebilirsiniz; geçmiş korunur.'
+            : undefined,
+          confirmLabel: 'Sil',
+        });
+        if (!ok) return;
         await api(`/api/transactions/${String(t.id)}`, { method: 'DELETE' });
         reload();
       })();
@@ -1006,6 +1080,14 @@ async function watchlistView(reload: () => void): Promise<Node[]> {
     ]);
     delBtn.addEventListener('click', () => {
       void (async () => {
+        const ok = await confirmDelete({
+          title: 'Takip listesinden çıkarılsın mı?',
+          detail: [`${r.fundCode}${r.title === null ? '' : ` — ${r.title}`}`],
+          // İşlem kaydı silmekten hafif: fon verisi ve geçmiş pozisyonlar durur.
+          warning: 'Fon takip listenizden çıkar. İşlem geçmişiniz ve pozisyonlarınız etkilenmez.',
+          confirmLabel: 'Çıkar',
+        });
+        if (!ok) return;
         await api(`/api/watchlist/${r.fundCode}`, { method: 'DELETE' });
         reload();
       })();
