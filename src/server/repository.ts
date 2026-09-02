@@ -823,3 +823,47 @@ export async function portfolioPerformance(
     })),
   );
 }
+
+// ── Kapanmış pozisyonlar ─────────────────────────────────────────────────────
+
+export interface ClosedPositionRow {
+  fundCode: string;
+  title: string | null;
+  platform: string;
+  buyDate: string;
+  sellDate: string;
+  heldDays: number;
+  units: string;
+  buyValue: string;
+  sellValue: string;
+  realizedGain: string;
+  realizedPct: string;
+}
+
+/**
+ * Kapanmış pozisyonlar, en son satılan üstte.
+ *
+ * Satır kırılımı işlem başınadır: aynı fondan farklı tarihlerde alınıp ayrı
+ * satılan pozisyonlar ayrı sonuç üretir ve hangi alımın ne kazandırdığı
+ * görünmelidir.
+ */
+export async function closedPositions(
+  pool: pg.Pool,
+  userId: number,
+): Promise<ClosedPositionRow[]> {
+  const r = await pool.query(
+    `SELECT fund_code AS "fundCode", title, platform,
+            to_char(buy_date,  'YYYY-MM-DD') AS "buyDate",
+            to_char(sell_date, 'YYYY-MM-DD') AS "sellDate",
+            held_days AS "heldDays",
+            units::text, buy_value::text AS "buyValue",
+            sell_value::text AS "sellValue",
+            realized_gain::text AS "realizedGain",
+            realized_pct::text AS "realizedPct"
+     FROM analytics.closed_position
+     WHERE user_id = $1
+     ORDER BY sell_date DESC, realized_gain DESC`,
+    [userId],
+  );
+  return r.rows as ClosedPositionRow[];
+}
