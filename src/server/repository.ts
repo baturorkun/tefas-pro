@@ -696,3 +696,109 @@ export async function dashboard(
     investorRanks: { '1w': byInvestor('1w'), '1m': byInvestor('1m') },
   };
 }
+
+// ── Portföy performans serisi ────────────────────────────────────────────────
+
+export interface PerformancePoint {
+  /** İş günü, YYYY-MM-DD. */
+  date: string;
+  /** Sermaye hareketinden arındırılmış portföy değeri — grafiğin çizgisi. */
+  value: string;
+  /** O günün organik getirisi (%) — grafiğin barı. İlk günde null. */
+  dailyPct: string | null;
+}
+
+export interface PerformanceSeries {
+  points: PerformancePoint[];
+  /** Pencere boyunca toplam organik getiri (%). */
+  totalPct: string | null;
+}
+
+const PERFORMANCE_DEFAULT_DAYS = 30;
+const PERFORMANCE_MAX_DAYS = 365;
+
+/** `analytics.portfolio_daily` satırı: ham değer ve arındırılmış günlük kazanç. */
+export interface PortfolioDailyRow {
+  date: string;
+  value: string;
+  dailyGain: string | null;
+  prevValue: string | null;
+}
+
+/**
+ * Ham günlük satırlardan grafiğin serisini kurar.
+ *
+ * Çizgi pencerenin ilk günkü değerinden başlar ve her gün yalnız organik kazanç
+ * eklenir; sermaye girişi/çıkışı seriye girmez. Ham değer çizilseydi para
+ * yatırılan gün çizgi dikey fırlardı — ölçülen veride 3 Ağustos ham hesapta
+ * %8,59 kazanç gibi duruyor, oysa organik getirisi %0,33; aradaki fark o gün
+ * yatırılan 262.272 TL.
+ *
+ * Hesap SQL yerine burada: pencere fonksiyonuyla yazıldığında doğrulanması
+ * çalışan bir veritabanı gerektiriyordu, saf fonksiyon olarak test edilebilir.
+ */
+export function buildPerformanceSeries(rows: PortfolioDailyRow[]): PerformanceSeries {
+  if (rows.length === 0) return { points: [], totalPct: null };
+
+  const first = rows[0];
+  if (!first) return { points: [], totalPct: null };
+
+  let adjusted = Number(first.value);
+  const points: PerformancePoint[] = rows.map((row, i) => {
+    // Pencerenin ilk günü referans noktasıdır: kendi kazancı pencereden önceki
+    // güne aittir, seriye eklenmez ve barı çizilmez.
+    if (i > 0) adjusted += Number(row.dailyGain ?? 0);
+    const prev = Number(row.prevValue ?? 0);
+    const gain = Number(row.dailyGain ?? 0);
+    return {
+      date: row.date,
+      value: adjusted.toFixed(2),
+      dailyPct: i === 0 || prev === 0 ? null : ((gain / prev) * 100).toFixed(4),
+    };
+  });
+
+  const start = Number(points[0]?.value ?? 0);
+  const end = Number(points[points.length - 1]?.value ?? 0);
+  return {
+    points,
+    totalPct: start === 0 ? null : (((end - start) / start) * 100).toFixed(4),
+  };
+}
+
+/**
+ * Portföyün son `days` iş günündeki performansı.
+ *
+ * Fiyat geçmişi ölçülmüş halde yok: kaynak fon başına yalnız güncel fiyatı
+ * veriyor. `analytics.portfolio_daily` fiyatı getiri serisinden zincirleyerek
+ * türetir; bkz. db/migrations/023_portfolio_daily.sql.
+ */
+export async function portfolioPerformance(
+  pool: pg.Pool,
+  userId: number,
+  days: number = PERFORMANCE_DEFAULT_DAYS,
+): Promise<PerformanceSeries> {
+  const limit = Math.min(Math.max(Math.trunc(days) || PERFORMANCE_DEFAULT_DAYS, 2), PERFORMANCE_MAX_DAYS);
+  const r = await pool.query<{
+    d: string; value: string; daily_gain: string | null; prev_value: string | null;
+  }>(
+    `SELECT to_char(trade_date, 'YYYY-MM-DD') AS d, value, daily_gain, prev_value
+     FROM (
+       SELECT trade_date, value, daily_gain, prev_value
+       FROM analytics.portfolio_daily
+       WHERE user_id = $1
+       ORDER BY trade_date DESC
+       LIMIT $2
+     ) son
+     ORDER BY trade_date`,
+    [userId, limit],
+  );
+
+  return buildPerformanceSeries(
+    r.rows.map((row) => ({
+      date: row.d,
+      value: row.value,
+      dailyGain: row.daily_gain,
+      prevValue: row.prev_value,
+    })),
+  );
+}
