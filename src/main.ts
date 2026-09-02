@@ -109,6 +109,19 @@ interface Dashboard {
   investorRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
 }
 
+interface PerformancePoint {
+  date: string;
+  /** Sermaye hareketinden arındırılmış değer — grafiğin çizgisi. */
+  value: string;
+  /** Organik günlük getiri (%). Pencerenin ilk gününde null. */
+  dailyPct: string | null;
+}
+
+interface PerformanceSeries {
+  points: PerformancePoint[];
+  totalPct: string | null;
+}
+
 type ViewId = 'dashboard' | 'portfolio' | 'transactions' | 'watchlist' | 'users';
 
 const root = document.getElementById('app');
@@ -355,6 +368,159 @@ function chartPanel(
 
 // ─── Dashboard ──────────────────────────────────────────────────────────────
 
+/**
+ * Portföy performans grafiği: ortak tarih ekseninde iki panel.
+ *
+ * Üstte değer çizgisi ve altında alan dolgusu, altta günlük getiri barları.
+ * Panel yüksekliği 2:1 — referans grafikteki oran; üst panel şeklin taşıyıcısı,
+ * alt panel onu okuyan ikinci bir bakış.
+ *
+ * Çizgi ham portföy değeri değildir. Sunucu seriyi sermaye hareketinden
+ * arındırılmış gönderir: para yatırılan gün ham değer sıçrar ve o günün gerçek
+ * performansı görünmez olur. Grafik "ne kadar param var" değil, "param ne
+ * kazandırdı" sorusunu cevaplar.
+ */
+function performanceChart(points: PerformancePoint[]): SVGSVGElement {
+  const W = 720;
+  const H_TOP = 200;
+  const H_BOT = 100;
+  const GAP = 26;
+  const PAD_L = 62;   // y ekseni etiketleri
+  const PAD_R = 10;
+  const PAD_T = 8;
+  const PAD_B = 34;   // eğik tarih etiketleri
+  const H = PAD_T + H_TOP + GAP + H_BOT + PAD_B;
+  const plotW = W - PAD_L - PAD_R;
+
+  const root = svg('svg', {
+    viewBox: `0 0 ${String(W)} ${String(H)}`,
+    class: 'perf-chart',
+    role: 'img',
+    preserveAspectRatio: 'xMidYMid meet',
+  });
+
+  const values = points.map((p) => Number(p.value));
+  const pcts = points.map((p) => (p.dailyPct === null ? 0 : Number(p.dailyPct)));
+
+  // Değer ekseni: seriyi kutuya oturtur, tabanı sıfıra çekmez. Portföy değeri
+  // sıfırdan çok uzakta; sıfırdan başlatmak bütün hareketi düz çizgiye çevirir.
+  const vMin = Math.min(...values);
+  const vMax = Math.max(...values);
+  const vPad = (vMax - vMin) * 0.08 || Math.abs(vMax) * 0.01 || 1;
+  const yTop = vMax + vPad;
+  const yBot = vMin - vPad;
+  const x = (i: number): number =>
+    points.length === 1 ? PAD_L + plotW / 2 : PAD_L + (i * plotW) / (points.length - 1);
+  const yV = (v: number): number => PAD_T + ((yTop - v) / (yTop - yBot)) * H_TOP;
+
+  // Bar ekseni sıfırda ortalanır: artı ve eksi günler aynı ölçekte okunmalı.
+  const pMax = Math.max(...pcts.map(Math.abs), 0.01);
+  const barTop = PAD_T + H_TOP + GAP;
+  const zeroY = barTop + H_BOT / 2;
+  const yP = (v: number): number => zeroY - (v / pMax) * (H_BOT / 2);
+
+  const fmtMoney = (v: number): string =>
+    `${Math.round(v / 1000).toLocaleString('tr-TR')}K`;
+
+  // ── Üst panel: yatay kılavuz çizgileri ve değer etiketleri
+  for (let i = 0; i <= 3; i += 1) {
+    const v = yBot + ((yTop - yBot) * i) / 3;
+    const gy = yV(v);
+    root.append(
+      svg('line', {
+        x1: String(PAD_L), y1: String(gy), x2: String(W - PAD_R), y2: String(gy),
+        class: 'perf-grid',
+      }),
+      svg('text', { x: String(PAD_L - 8), y: String(gy + 4), class: 'perf-axis-y' }, fmtMoney(v)),
+    );
+  }
+
+  // Alan dolgusu ve çizgi.
+  const line = points.map((p, i) => `${String(x(i))},${String(yV(Number(p.value)))}`).join(' ');
+  root.append(
+    svg('polygon', {
+      points: `${String(x(0))},${String(PAD_T + H_TOP)} ${line} ${String(x(points.length - 1))},${String(PAD_T + H_TOP)}`,
+      class: 'perf-area',
+    }),
+    svg('polyline', { points: line, class: 'perf-line' }),
+  );
+
+  // ── Alt panel: sıfır çizgisi ve günlük barlar
+  root.append(
+    svg('line', {
+      x1: String(PAD_L), y1: String(zeroY), x2: String(W - PAD_R), y2: String(zeroY),
+      class: 'perf-zero',
+    }),
+    svg('text', { x: String(PAD_L - 8), y: String(barTop + 4), class: 'perf-axis-y' },
+      `+${pMax.toFixed(1)}%`),
+    svg('text', { x: String(PAD_L - 8), y: String(barTop + H_BOT + 4), class: 'perf-axis-y' },
+      `-${pMax.toFixed(1)}%`),
+  );
+
+  const barW = Math.max(2, Math.min(14, (plotW / Math.max(points.length, 1)) * 0.7));
+  points.forEach((p, i) => {
+    if (p.dailyPct === null) return;
+    const v = Number(p.dailyPct);
+    const y = yP(v);
+    const bar = svg('rect', {
+      x: String(x(i) - barW / 2),
+      y: String(Math.min(y, zeroY)),
+      width: String(barW),
+      // Sıfıra çok yakın günler de görünsün: yükseklik en az 1 piksel.
+      height: String(Math.max(1, Math.abs(zeroY - y))),
+      class: v >= 0 ? 'perf-bar-pos' : 'perf-bar-neg',
+    });
+    bar.append(
+      svg('title', {}, `${p.date}  ${v >= 0 ? '+' : ''}${v.toFixed(2)}%  ·  ${money(p.value)}`),
+    );
+    root.append(bar);
+  });
+
+  // ── Tarih etiketleri: en fazla sekiz, kalabalık olmasın.
+  const step = Math.max(1, Math.ceil(points.length / 8));
+  points.forEach((p, i) => {
+    if (i % step !== 0 && i !== points.length - 1) return;
+    const tx = x(i);
+    const ty = barTop + H_BOT + 16;
+    root.append(
+      svg('text', {
+        x: String(tx), y: String(ty), class: 'perf-axis-x',
+        transform: `rotate(-30 ${String(tx)} ${String(ty)})`,
+      }, p.date.slice(5)),
+    );
+  });
+
+  return root;
+}
+
+async function performancePanel(): Promise<HTMLElement> {
+  let series: PerformanceSeries;
+  try {
+    series = (await api('/api/portfolio/performance')) as PerformanceSeries;
+  } catch {
+    return panel('Portföy performansı', 'son 30 iş günü',
+      el('p', { class: 'empty' }, ['Performans serisi alınamadı.']));
+  }
+
+  // İki günden kısa seri çizilmez: tek noktadan çizgi de bar da çıkmaz.
+  if (series.points.length < 2) {
+    return panel('Portföy performansı', 'son 30 iş günü',
+      el('p', { class: 'empty' }, [
+        'Grafik için en az iki işlem günü gerekiyor. Pozisyon açıldıkça seri dolacak.',
+      ]));
+  }
+
+  const first = series.points[0];
+  const last = series.points[series.points.length - 1];
+  const meta = first && last ? `${first.date} → ${last.date}` : 'son 30 iş günü';
+  const body = el('div', { class: 'perf-body' }, [performanceChart(series.points)]);
+  const toolbar = el('div', { class: 'chart-toolbar' }, [
+    el('span', { class: 'perf-total-label' }, ['Dönem getirisi']),
+    signed(series.totalPct),
+  ]);
+  return panel('Portföy performansı', meta, body, toolbar);
+}
+
 const ONLY_OWNED_KEY = 'tefas.dashboard.onlyOwned';
 
 /**
@@ -497,6 +663,7 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
       reload();
     }),
     ...positionSection(d.positions, onlyOwned),
+    await performancePanel(),
     el('h2', { class: 'section-title' }, ['Piyasa']),
     grid([
       chartPanel('En çok kazandıran (1 hafta)', kapsam, d.watchlistRanks['1w']?.top ?? []),

@@ -308,6 +308,22 @@ td.actions { text-align: right; }
 .section-title:first-child { margin-top: 0; }
 
 /* Grafik araç çubuğu: toggle solda, efsane sağda */
+/* Portföy performans grafiği — iki panel, ortak eksen.
+   Referans grafik açık tema içindi (#1f4e79 / #1a7a1a / #c00000); koyu zeminde
+   okunmadığı için panelin kendi paleti kullanılır, bar-pos/bar-neg düzeni korunur. */
+.perf-chart      { width: 100%; height: auto; display: block; }
+.perf-line       { fill: none; stroke: var(--accent); stroke-width: 1.8;
+                   stroke-linejoin: round; stroke-linecap: round; }
+.perf-area       { fill: var(--accent); opacity: .10; }
+.perf-grid       { stroke: var(--line-soft); stroke-width: 1; stroke-dasharray: 3 4; }
+.perf-zero       { stroke: var(--line); stroke-width: 1; }
+.perf-bar-pos    { fill: var(--accent); opacity: .85; }
+.perf-bar-neg    { fill: var(--danger); opacity: .75; }
+.perf-axis-y     { fill: var(--muted-dim); font-size: 10px; text-anchor: end; }
+.perf-axis-x     { fill: var(--muted-dim); font-size: 10px; text-anchor: end; }
+.perf-body       { padding: 4px 2px 0; }
+.perf-total-label{ color: var(--muted); font-size: 12px; }
+
 .chart-toolbar { display: flex; align-items: center; justify-content: space-between;
                  gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
 .toggle        { display: flex; align-items: center; gap: 8px;

@@ -52,6 +52,7 @@ import {
   removeFromWatchlist,
   type AppUser,
   type TransactionInput,
+  portfolioPerformance,
 } from './repository.js';
 
 const COOKIE_NAME = 'tefas_session';
@@ -301,6 +302,17 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
 
       if (path === '/api/portfolio' && method === 'GET') {
         sendJson(res, 200, await portfolioSummary(pool, user.id));
+        return;
+      }
+
+      if (path === '/api/portfolio/performance' && method === 'GET') {
+        const raw = url.searchParams.get('days');
+        const days = raw === null ? undefined : Number(raw);
+        if (raw !== null && !Number.isFinite(days)) {
+          sendJson(res, 400, { error: 'days sayı olmalı' });
+          return;
+        }
+        sendJson(res, 200, await portfolioPerformance(pool, user.id, days));
         return;
       }
 

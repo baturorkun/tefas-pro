@@ -1,0 +1,46 @@
+{
+  "runId": "20260901215421-RQ-0015",
+  "requirementId": "RQ-0015",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260901215421-RQ-0015/handoff.md",
+  "projectGuidelines": {
+    "combinedSha256": "73bde0d690f8ec23c37c27be97d17c628d2f60e56f49bffbe0810fd5769a70fb",
+    "files": [
+      {
+        "path": "AGENTS.md",
+        "sha256": "35dbcb26a57ab038e0e772629d210a83e459fa6674e4582d4ed0ed52b8bd28f8"
+      }
+    ]
+  },
+  "status": "passed",
+  "createdAt": "2026-09-01T21:54:21.546Z",
+  "updatedAt": "2026-09-01T22:04:14.278Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-09-01T21:54:50.211Z",
+      "finishedAt": "2026-09-01T22:04:14.274Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "db/migrations/023_portfolio_daily.sql",
+    "requirements/RQ-0015-portfoy-performans-grafigi-deger-cizgisi-ve-gunluk-getiri-barlari.md",
+    "src/main.ts",
+    "src/server/index.ts",
+    "src/server/repository.ts",
+    "src/styles.css",
+    "tests/performance.test.ts"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  }
+}
