@@ -1,0 +1,18 @@
+---
+id: RQ-0021
+status: draft
+executionMode: handoff
+pipelineFast: false
+createdByName: "Batur Orkun"
+createdByEmail: "batur@bc.int"
+createdAt: "2026-09-02T21:26:05.356Z"
+branch: "factory/RQ-0021"
+createdFromCommit: "f9176db219dfbaf85cea27699981d330ca83f25b"
+---
+# RQ-0021 - Gelistirme icin compose uzerinde canli yenilenen uygulama servisi
+
+<!-- Describe the requirement here. -->
+
+## Acceptance Criteria
+
+<!-- Add one acceptance criterion per bullet. -->
