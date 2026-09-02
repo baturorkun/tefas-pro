@@ -449,7 +449,12 @@ export interface DashboardData {
   metrics: {
     watchlist: number;
     trackedFunds: number;
+    /** Açık pozisyonu olan fon sayısı — portföy ekranındaki satır sayısı. */
     openPositions: number;
+    /** O fonları oluşturan açık alım kaydı sayısı. */
+    openLots: number;
+    /** Takip listesinde alıp sattığım fon sayısı; kalanı hâlâ izlediklerim. */
+    watchlistSold: number;
     dataDate: string | null;
     lastRun: { id: number; status: string; finishedAt: string | null } | null;
   };
@@ -478,12 +483,26 @@ export async function dashboard(
 ): Promise<DashboardData> {
   const [counts, lastRun, wl, pos, posSum, flow, inv] = await Promise.all([
     pool.query<{
-      watchlist: string; tracked_funds: string; open_positions: string; data_date: string | null;
+      watchlist: string; tracked_funds: string; open_positions: string;
+      open_lots: string; watchlist_sold: string; data_date: string | null;
     }>(
       `SELECT (SELECT count(*) FROM analytics.watchlist_visible WHERE user_id = $1) AS watchlist,
               (SELECT count(*) FROM analytics.tracked_fund) AS tracked_funds,
+              -- Takip listesinin durum dağılımı. "38 fon toplanıyor" o kutuda
+              -- bağlamsız kalıyordu; toplanan fon sayısı collector'ın kapsamı.
+              -- Durum tanımı takip ekranıyla aynı: fonda işlem varsa "çıktım".
+              (SELECT count(*) FROM analytics.watchlist_visible w
+                WHERE w.user_id = $1
+                  AND EXISTS (SELECT 1 FROM portfolio_transaction t
+                              WHERE t.fund_code = w.fund_code AND t.user_id = w.user_id)
+              ) AS watchlist_sold,
+              (SELECT count(*) FROM analytics.position_return
+                WHERE user_id = $1 AND is_open AND NOT simulated) AS open_positions,
+              -- Açıklık kuralı position_leg ile aynı olmalı: ileri tarihli
+              -- satışı olan kayıt hâlâ elde sayılır.
               (SELECT count(*) FROM portfolio_transaction
-                WHERE user_id = $1 AND sell_date IS NULL) AS open_positions,
+                WHERE user_id = $1
+                  AND (sell_date IS NULL OR sell_date > current_date)) AS open_lots,
               (SELECT to_char(max(trade_date), 'YYYY-MM-DD') FROM fact_fund_daily
                 WHERE daily_return_pct IS NOT NULL) AS data_date`,
       [userId],
@@ -672,6 +691,8 @@ export async function dashboard(
       watchlist: Number(c.watchlist),
       trackedFunds: Number(c.tracked_funds),
       openPositions: Number(c.open_positions),
+      openLots: Number(c.open_lots),
+      watchlistSold: Number(c.watchlist_sold),
       dataDate: c.data_date,
       lastRun: run ? { id: run.id, status: run.status, finishedAt: run.finished_at } : null,
     },

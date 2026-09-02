@@ -34,7 +34,7 @@
   --radius-nav:    9px;
   --radius-pill:   99px;
 
-  --sidebar-w:     264px;
+  --sidebar-w:     216px;
   --font: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
@@ -84,15 +84,6 @@ body {
 .login-card .brand { margin-bottom: 1.75rem; }
 
 .brand { display: flex; align-items: center; gap: .6rem; }
-.brand-mark {
-  width: 30px; height: 30px; flex: none;
-  display: grid; place-items: center;
-  border-radius: var(--radius-sm);
-  background: var(--accent-tint);
-  color: var(--accent);
-  font-weight: 700; font-size: .8rem;
-}
-.brand-name { font-weight: 600; color: var(--text-strong); letter-spacing: .01em; }
 .brand-sub { display: block; font-size: .72rem; color: var(--muted-dim); font-weight: 400; }
 
 /* ─── Uygulama iskeleti ────────────────────────────────────────────────── */
@@ -251,7 +242,8 @@ tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover td { background: #0e1c2a; }
 td.actions { text-align: right; }
 .fund-code { font-weight: 600; color: var(--text-strong); }
-.fund-title { display: block; font-size: .72rem; color: var(--muted-dim); font-weight: 400; max-width: 20rem; overflow: hidden; text-overflow: ellipsis; }
+.fund-title { display: block; font-size: .72rem; color: var(--muted-dim); font-weight: 400;
+              max-width: 17rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ─── Rozet ────────────────────────────────────────────────────────────── */
 
@@ -327,6 +319,89 @@ td.actions { text-align: right; }
    yoksa dönem getirisi panelin sağ kenarına yapışır. */
 .perf-toolbar    { padding: 0 1.1rem; margin-top: -2px; }
 .perf-total-label{ color: var(--muted); font-size: 12px; }
+
+/* ── RQ-0018 arayüz yenilemesi ─────────────────────────────────────────── */
+
+/* Logo: metin kısaltması yerine çizim. Ölçek çağıranın verdiği boyuttan gelir,
+   viewBox sabit olduğu için kenar çubuğunda ve giriş ekranında bozulmaz. */
+.logo-mark      { flex-shrink: 0; }
+.logo-plate     { fill: var(--bg-raised); stroke: var(--line); stroke-width: 1.5; }
+.logo-bar       { fill: var(--line); }
+.logo-dot       { fill: var(--accent); }
+
+.brand          { display: flex; align-items: center; gap: 11px; }
+.brand-text     { display: grid; gap: 1px; min-width: 0; }
+.brand-name     { color: var(--text-strong); font-size: 15px; font-weight: 700;
+                  letter-spacing: -.01em; }
+.brand-sub      { color: var(--muted-dim); font-size: 10.5px; }
+
+/* İkonlar tek çizgi kalınlığında; renk metinden miras alınır. */
+.icon           { flex-shrink: 0; fill: none; stroke: currentColor;
+                  stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Satır eylemi: yalnız ikon taşıyan düğme. Referanstaki ikonlar 10-12px olduğu
+   için ne oldukları anlaşılmıyordu; burada çizim 18px ve kutu 32px. */
+.icon-btn       { display: inline-grid; place-items: center; width: 32px; height: 32px;
+                  padding: 0; border: 1px solid var(--line); border-radius: 7px;
+                  background: var(--bg-raised); color: var(--muted);
+                  cursor: pointer; transition: .15s; }
+.icon-btn:hover { border-color: var(--accent); color: var(--accent);
+                  background: var(--accent-tint); }
+.icon-btn-danger:hover { border-color: var(--danger); color: var(--danger);
+                  background: var(--danger-tint); }
+td.actions      { text-align: right; white-space: nowrap; }
+td.actions .icon-btn + .icon-btn { margin-left: 6px; }
+
+/* Sürüm rozeti sağ üstte; tarih yerine hangi sürümün çalıştığını söyler. */
+.version-badge  { display: grid; gap: 2px; justify-items: end; padding: .55rem .8rem;
+                  border: 1px solid var(--line); border-radius: var(--radius);
+                  background: var(--bg-raised); }
+.version-label  { color: var(--muted-dim); font-size: 9.5px; font-weight: 600;
+                  letter-spacing: .08em; text-transform: uppercase; }
+.version-value  { color: var(--text); font-family: var(--mono); font-size: 12px;
+                  font-weight: 600; }
+
+/* Çıkış kendi şeridinde, kullanıcı kutusundan çizgiyle ayrılmış. */
+.sidebar-foot   { margin-top: auto; padding-top: .85rem; display: grid; gap: .35rem;
+                  border-top: 1px solid var(--line-soft); }
+.sidebar-logout { display: flex; align-items: center; gap: 10px; width: 100%;
+                  padding: .6rem .7rem; border: 0; border-radius: 7px;
+                  background: transparent; color: var(--muted); font-size: 13px;
+                  cursor: pointer; transition: .15s; }
+.sidebar-logout:hover { background: var(--panel-hover); color: var(--text-strong); }
+
+/* Form penceresi: onay penceresiyle aynı kabuk, gövdesi kaydırılabilir. */
+.modal-form     { width: min(34rem, 100%); padding: 0; }
+.modal-head     { display: flex; align-items: flex-start; justify-content: space-between;
+                  gap: 1rem; padding: 1.1rem 1.2rem; border-bottom: 1px solid var(--line-soft); }
+.modal-sub      { margin: .25rem 0 0; color: var(--muted); font-size: 12px; }
+.modal-body     { padding: 1.1rem 1.2rem; max-height: min(60vh, 32rem); overflow-y: auto; }
+.modal-form-grid{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; }
+.modal-form-grid .status { grid-column: 1 / -1; }
+.modal-form .modal-actions { margin: 0; padding: .9rem 1.2rem;
+                  border-top: 1px solid var(--line-soft); }
+
+.metric-card    { display: flex; align-items: flex-start; gap: 13px; }
+.metric-text    { display: grid; gap: 3px; min-width: 0; }
+/* Birim sayının yanında, ondan belirgin biçimde küçük: "25 fon". */
+.metric-unit    { margin-left: 6px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.metric-symbol  { display: grid; place-items: center; width: 34px; height: 34px; flex-shrink: 0;
+                  border-radius: 8px; background: var(--accent-tint); color: var(--accent); }
+.metric-symbol-money  { background: rgba(232,192,125,.12); color: var(--warn); }
+.metric-symbol-flag   { background: rgba(233,145,145,.12); color: var(--danger); }
+.metric-symbol-fund   { background: rgba(127,230,207,.12); color: var(--accent-soft); }
+.metric-symbol-transactions { background: rgba(95,159,214,.14); color: #7fb5e6; }
+
+.switch-field   { display: flex; align-items: center; gap: 10px; cursor: pointer;
+                  color: var(--text); font-size: 13px; align-self: end; padding-bottom: .4rem; }
+.switch-field input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+
+.panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.panel-heading-text { display: flex; align-items: baseline; justify-content: space-between;
+                  gap: 1rem; flex: 1; min-width: 0; }
+.btn-primary    { display: inline-flex; align-items: center; gap: 7px; }
+
+@media (max-width: 640px) { .modal-form-grid { grid-template-columns: 1fr; } }
 
 /* Onay penceresi. Geri alınamaz işlemlerde kullanıcı ne sildiğini okumadan
    onaylamasın diye kayıt satır satır gösterilir; sonucu anlatan uyarı ayrı

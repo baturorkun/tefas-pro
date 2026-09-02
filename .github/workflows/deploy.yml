@@ -137,14 +137,19 @@ jobs:
           SLOT: ${{ steps.target.outputs.slot }}
           DB_URL: ${{ steps.db.outputs.url }}
           ADMIN_INITIAL_PASSWORD: ${{ secrets.ADMIN_INITIAL_PASSWORD }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           [ -n "$ADMIN_INITIAL_PASSWORD" ] || {
             echo "ADMIN_INITIAL_PASSWORD secret'ı tanımlı değil."; exit 1; }
           root="${RUNNER_WORKSPACE}/tefas-pro-deployments/${SLOT}"
           mkdir -p "$root"
           umask 077
-          printf 'DATABASE_URL=%s\nADMIN_INITIAL_PASSWORD=%s\nSESSION_TTL=43200\nSECURE_COOKIE=false\n' \
-            "$DB_URL" "$ADMIN_INITIAL_PASSWORD" > "${root}/runtime.env"
+          # Sürüm rozeti için commit ve derleme zamanı. İmajın içinde .git
+          # bulunmadığından uygulama bunları kendi başına bulamaz; buradan
+          # verilmezse sürüm yalnız "v0.18.1" görünür.
+          commit_time="$(git log -1 --format=%cI 2>/dev/null || true)"
+          printf 'DATABASE_URL=%s\nADMIN_INITIAL_PASSWORD=%s\nSESSION_TTL=43200\nSECURE_COOKIE=false\nGIT_COMMIT_SHA=%s\nGIT_COMMIT_TIME=%s\n' \
+            "$DB_URL" "$ADMIN_INITIAL_PASSWORD" "${COMMIT_SHA:0:7}" "$commit_time" > "${root}/runtime.env"
           chmod 600 "${root}/runtime.env"
 
       - name: Run migrations on slot database
