@@ -140,6 +140,20 @@ describe('form görünümü', () => {
   });
 });
 
+describe('valör bilgisi', () => {
+  it('ilgili bölümün başlığında durur', () => {
+    // Formun dibinde tek satırken hangi alanla ilgili olduğu anlaşılmıyordu.
+    expect(main).toContain("class: 'section-note'");
+    expect(main).toMatch(/'form-section' \}, \[el\('span', \{\}, \['Alış'\]\), buyValorNote\]/);
+    expect(main).toMatch(/'form-section' \}, \[el\('span', \{\}, \['Satış'\]\), sellValorNote\]/);
+  });
+
+  it('fon bilinmiyorsa hiçbir şey yazmaz', () => {
+    expect(main).toMatch(/days === undefined \? '' :/);
+    expect(css).toContain('.section-note:empty { display: none; }');
+  });
+});
+
 describe('kabuk', () => {
   it('sürüm istemcide üretilmez, sunucudan alınır', () => {
     expect(main).toContain("api('/api/runtime')");
