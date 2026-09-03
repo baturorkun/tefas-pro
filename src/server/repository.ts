@@ -836,6 +836,150 @@ export async function portfolioPerformance(
   );
 }
 
+// ── Dönemsel getiri (aylık / haftalık) ───────────────────────────────────────
+
+/** Ayın en fazla kaç hafta satırına bölüneceği. */
+const MAX_WEEKS_PER_MONTH = 4;
+/** Bir hafta bloğunun işlem günü sayısı. */
+const WEEK_LENGTH = 5;
+
+const MONTH_NAMES = [
+  'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+  'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
+];
+
+export interface PeriodRow {
+  label: string;
+  startDate: string;
+  endDate: string;
+  /** Dönemin işlem günü sayısı. */
+  days: number;
+  /** Sermaye hareketinden arındırılmış TL kazanç. */
+  gain: string;
+  /** Günlük getirilerin bileşiği (%). Ölçülemiyorsa null. */
+  pct: string | null;
+}
+
+export interface MonthlyPeriod extends PeriodRow {
+  /** YYYY-AA. */
+  month: string;
+  weeks: PeriodRow[];
+}
+
+/**
+ * Bir gün kümesini tek döneme indirger.
+ *
+ * Kazanç günlük kazançların toplamı, getiri günlük getirilerin bileşiğidir.
+ * Yüzdeleri toplamak yanlış olurdu: her günün getirisi kendi açılış değerine
+ * göre ölçülür, paydalar farklıdır.
+ *
+ * Bu tanımın yan etkisi işe yarıyor — bir ayın kazancı haftalarının tam
+ * toplamına, getirisi de haftalarının tam bileşiğine eşit çıkar; ay ayrı bir
+ * formülle hesaplanmadığı için ikisi arasında tutarsızlık oluşamaz.
+ */
+function measure(label: string, days: readonly PortfolioDailyRow[]): PeriodRow {
+  let gain = 0;
+  let factor = 1;
+  let measured = false;
+  for (const day of days) {
+    const g = Number(day.dailyGain ?? 0);
+    if (Number.isFinite(g)) gain += g;
+    const prev = Number(day.prevValue ?? 0);
+    // Açılış değeri sıfır olan gün bileşiğe girmez: portföy o sabah boşken
+    // getiri tanımsızdır, sıfıra bölmek sonsuz getiri üretirdi.
+    if (day.dailyGain !== null && prev > 0) {
+      factor *= 1 + g / prev;
+      measured = true;
+    }
+  }
+  const first = days[0];
+  const last = days[days.length - 1];
+  return {
+    label,
+    startDate: first?.date ?? '',
+    endDate: last?.date ?? '',
+    days: days.length,
+    gain: gain.toFixed(2),
+    pct: measured ? ((factor - 1) * 100).toFixed(4) : null,
+  };
+}
+
+/**
+ * Ayın işlem günlerini hafta bloklarına ayırır.
+ *
+ * Bloklar ayın ilk işlem gününden ileri doğru beşerli gider; en fazla dört
+ * blok olur ve artan günler SON bloğa eklenir. Artanı başa koymak, tek bir
+ * işlem gününü "ayın ilk haftası" diye gösterip gerçek ilk haftayı iki satıra
+ * bölüyordu.
+ */
+function weekBlocks<T>(days: readonly T[]): T[][] {
+  const blocks: T[][] = [];
+  let cut = 0;
+  while (cut < days.length) {
+    const isLast = blocks.length === MAX_WEEKS_PER_MONTH - 1;
+    const tail = isLast ? days.length : Math.min(days.length, cut + WEEK_LENGTH);
+    blocks.push(days.slice(cut, tail));
+    cut = tail;
+  }
+  return blocks;
+}
+
+/**
+ * Günlük satırlardan ay ve hafta dönemlerini kurar.
+ *
+ * Aylar en yeniden en eskiye döner, ayın haftaları kendi içinde artan sırada
+ * kalır: ay içinde zaman ileri akar, aylar arasında geriye. Tablo böyle
+ * okununca "bu ay ne oldu" en üstte durur.
+ *
+ * Portföyün tamamen kapalı olduğu aylar hiç satır üretmez; `portfolio_daily`
+ * o günler için satır vermez ve boş bir ay göstermenin anlamı yok.
+ *
+ * Hesap SQL yerine burada: saf fonksiyon olarak çalışan veritabanı olmadan
+ * test edilebiliyor, `buildPerformanceSeries` de aynı sebeple burada.
+ */
+export function buildPeriodReturns(rows: readonly PortfolioDailyRow[]): MonthlyPeriod[] {
+  const byMonth = new Map<string, PortfolioDailyRow[]>();
+  for (const row of [...rows].sort((a, b) => a.date.localeCompare(b.date))) {
+    const key = row.date.slice(0, 7);
+    const bucket = byMonth.get(key);
+    if (bucket === undefined) byMonth.set(key, [row]);
+    else bucket.push(row);
+  }
+
+  const months: MonthlyPeriod[] = [];
+  for (const [month, days] of byMonth) {
+    const year = month.slice(0, 4);
+    const name = MONTH_NAMES[Number(month.slice(5, 7)) - 1] ?? month;
+    months.push({
+      ...measure(`${name} ${year}`, days),
+      month,
+      weeks: weekBlocks(days).map((block, i) => measure(`${String(i + 1)}. Hafta`, block)),
+    });
+  }
+  return months.sort((a, b) => b.month.localeCompare(a.month));
+}
+
+/** Kullanıcının ay ve hafta bazında dönemsel getirisi. */
+export async function periodReturns(pool: pg.Pool, userId: number): Promise<MonthlyPeriod[]> {
+  const r = await pool.query<{
+    d: string; value: string; daily_gain: string | null; prev_value: string | null;
+  }>(
+    `SELECT to_char(trade_date, 'YYYY-MM-DD') AS d, value, daily_gain, prev_value
+     FROM analytics.portfolio_daily
+     WHERE user_id = $1
+     ORDER BY trade_date`,
+    [userId],
+  );
+  return buildPeriodReturns(
+    r.rows.map((row) => ({
+      date: row.d,
+      value: row.value,
+      dailyGain: row.daily_gain,
+      prevValue: row.prev_value,
+    })),
+  );
+}
+
 // ── Kapanmış pozisyonlar ─────────────────────────────────────────────────────
 
 export interface ClosedPositionRow {

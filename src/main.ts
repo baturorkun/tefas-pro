@@ -128,6 +128,20 @@ interface ClosedPositionRow {
   realizedPct: string;
 }
 
+interface PeriodRow {
+  label: string;
+  startDate: string;
+  endDate: string;
+  days: number;
+  gain: string;
+  pct: string | null;
+}
+
+interface MonthlyPeriod extends PeriodRow {
+  month: string;
+  weeks: PeriodRow[];
+}
+
 interface PerformancePoint {
   date: string;
   /** Sermaye hareketinden arındırılmış değer — grafiğin çizgisi. */
@@ -141,7 +155,9 @@ interface PerformanceSeries {
   totalPct: string | null;
 }
 
-type ViewId = 'dashboard' | 'portfolio' | 'closed' | 'market' | 'transactions' | 'watchlist' | 'users' | 'settings';
+type ViewId =
+  | 'dashboard' | 'portfolio' | 'closed' | 'periods' | 'market'
+  | 'transactions' | 'watchlist' | 'users' | 'settings';
 
 const root = document.getElementById('app');
 
@@ -282,6 +298,7 @@ const ICON_PATHS: Record<string, string[]> = {
   chart: ['M4 19h16', 'm5 15 4-5 3 3 6-8'],
   flag: ['M5 21V4h9l-1 3h6v8h-7l-1-3H5'],
   closed: ['M20 6 9 17l-5-5'],
+  periods: ['M4 5h16v15H4z', 'M4 10h16', 'M9 5V3M15 5V3', 'M8 14h3M13 14h3'],
   market: ['M3 3v18h18', 'm7 14 3-4 3 3 5-7', 'M18 6h3v3'],
   settings: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'],
 };
@@ -1308,6 +1325,84 @@ async function closedView(): Promise<Node[]> {
   ];
 }
 
+/**
+ * Dönemsel getiri: ay ay, her ayın içinde hafta hafta kâr/zarar.
+ *
+ * Aylar en yeniden en eskiye, ayın haftaları kendi içinde artan sırada gelir —
+ * sıralamayı sunucu kurar, burada yeniden sıralanmaz.
+ */
+async function periodsView(): Promise<Node[]> {
+  const months = (await api('/api/periods')) as MonthlyPeriod[];
+
+  // Gün ve ay olarak kısa aralık: "01.08 – 07.08". Yıl yazılmaz, satırın
+  // kendisi zaten bir ayın içinde duruyor.
+  const range = (r: PeriodRow): string =>
+    r.startDate === '' ? '—' : `${r.startDate.slice(8)}.${r.startDate.slice(5, 7)} – ${r.endDate.slice(8)}.${r.endDate.slice(5, 7)}`;
+
+  const cells = (r: PeriodRow, isMonth: boolean): HTMLElement[] => [
+    el('td', {}, [
+      el('span', { class: isMonth ? 'period-name' : 'period-week-name' }, [r.label]),
+    ]),
+    el('td', { class: 'num dim' }, [range(r)]),
+    el('td', { class: 'num dim' }, [`${String(r.days)}g`]),
+    el('td', {}, [signed(r.gain, ' ₺')]),
+    el('td', {}, [signed(r.pct)]),
+  ];
+
+  const rows: HTMLElement[] = [];
+  for (const m of months) {
+    rows.push(el('tr', { class: 'period-month' }, cells(m, true)));
+    for (const w of m.weeks) rows.push(el('tr', { class: 'period-week' }, cells(w, false)));
+  }
+
+  const gains = months.map((m) => Number(m.gain));
+  const total = gains.reduce((a, b) => a + b, 0);
+  // Toplam getiri aylık getirilerin bileşiği; yüzdeleri toplamak yanlış olurdu.
+  const compound = months.reduce((a, m) => (m.pct === null ? a : a * (1 + Number(m.pct) / 100)), 1);
+  const winners = gains.filter((g) => g > 0).length;
+  const best = months.reduce<MonthlyPeriod | null>(
+    (a, m) => (a === null || Number(m.gain) > Number(a.gain) ? m : a), null);
+  const worst = months.reduce<MonthlyPeriod | null>(
+    (a, m) => (a === null || Number(m.gain) < Number(a.gain) ? m : a), null);
+  const latest = months[0];
+
+  return [
+    el('div', { class: 'metric-grid' }, [
+      metric('Toplam K/Z', money(String(total)),
+        months.length === 0 ? '—' : `${String(months.length)} ayın bileşiği · %${((compound - 1) * 100).toFixed(2)}`,
+        'money'),
+      metric('Son Ay', latest === undefined ? '—' : money(latest.gain),
+        latest === undefined ? '—' : `${latest.label}${latest.pct === null ? '' : ` · %${Number(latest.pct).toFixed(2)}`}`,
+        'chart'),
+      metric('En İyi Ay', best === null ? '—' : money(best.gain), best?.label ?? '—', 'flag'),
+      metric('Kazançlı Ay', String(winners),
+        worst === null || Number(worst.gain) >= 0
+          ? `${String(months.length - winners)} Zararla`
+          : `${String(months.length - winners)} Zararla · En Kötü ${worst.label}`,
+        'closed', 'ay'),
+    ]),
+    panel(
+      'Dönemsel Getiri',
+      `${String(months.length)} ay · en son ay üstte, haftalar ay içinde sırayla`,
+      el('div', { class: 'panel-body' }, [
+        months.length === 0
+          ? el('div', { class: 'empty-state' }, ['Getirisi ölçülebilen bir gün yok.'])
+          : table(['Dönem', 'Aralık', 'Gün', 'K/Z', 'Getiri'], rows),
+      ]),
+    ),
+    el('p', { class: 'panel-note' }, [
+      'Getiri sermaye hareketinden arındırılmıştır: para yatırılan veya çekilen gün ' +
+      'kazanç sayılmaz. Bir ayın kazancı haftalarının toplamı, getirisi haftalarının ' +
+      'bileşiğidir. Ay en fazla dört haftaya bölünür; artan günler son haftaya eklenir.',
+    ]),
+    el('p', { class: 'panel-note' }, [
+      'K/Z ile getiri işaret olarak ayrışabilir. K/Z o günkü portföy büyüklüğüne ' +
+      'göre ağırlıklıdır, getiri ise her günün kendi açılışına göre ölçülür; dönem ' +
+      'içinde para giriş çıkışı olduğunda ikisi farklı yöne bakabilir.',
+    ]),
+  ];
+}
+
 async function transactionsView(reload: () => void): Promise<Node[]> {
   const rows = (await api('/api/transactions')) as Transaction[];
   const open = rows.filter((t) => t.sellDate === null);
@@ -1720,6 +1815,7 @@ const VIEWS: { id: ViewId; label: string; adminOnly: boolean; crumb: string }[] 
   { id: 'dashboard', label: 'Panel', adminOnly: false, crumb: 'Genel' },
   { id: 'portfolio', label: 'Portföyüm', adminOnly: false, crumb: 'Genel' },
   { id: 'closed', label: 'Kapananlar', adminOnly: false, crumb: 'Genel' },
+  { id: 'periods', label: 'Dönemsel Getiri', adminOnly: false, crumb: 'Genel' },
   { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },
   { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
   { id: 'watchlist', label: 'Takip Listem', adminOnly: false, crumb: 'Genel' },
@@ -1800,6 +1896,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     if (current.id === 'dashboard') bodyNodes = await dashboardView(reload);
     else if (current.id === 'portfolio') bodyNodes = await portfolioView();
     else if (current.id === 'closed') bodyNodes = await closedView();
+    else if (current.id === 'periods') bodyNodes = await periodsView();
     else if (current.id === 'market') bodyNodes = await marketView(reload);
     else if (current.id === 'transactions') bodyNodes = await transactionsView(reload);
     else if (current.id === 'watchlist') bodyNodes = await watchlistView(reload);
