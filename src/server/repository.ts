@@ -1029,6 +1029,71 @@ export async function closedPositions(
 /** Tatil listesi bulunamazsa hesap hafta sonlarıyla yetinir; ekran çökmez. */
 const DEFAULT_HOLIDAYS: string[] = [];
 
+// ── Bankalar ─────────────────────────────────────────────────────────────────
+
+export interface BankRow {
+  name: string;
+  /** Bu bankayı kullanan işlem sayısı. Sıfırsa banka silinebilir. */
+  usage: number;
+}
+
+/** Adın kabul edilebilir hali. Boş veya yalnız boşluktan oluşan ad reddedilir. */
+export function normalizeBankName(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const name = raw.trim();
+  if (name === '' || name.length > 60) return null;
+  return name;
+}
+
+/** Bankalar, her birinin kaç işlemde kullanıldığıyla birlikte. */
+export async function listBanks(pool: pg.Pool): Promise<BankRow[]> {
+  const r = await pool.query<{ name: string; usage: string }>(
+    `SELECT b.name, count(t.id)::text AS usage
+     FROM bank b
+     LEFT JOIN portfolio_transaction t ON t.platform = b.name
+     GROUP BY b.name
+     ORDER BY count(t.id) DESC, b.name`,
+  );
+  return r.rows.map((row) => ({ name: row.name, usage: Number(row.usage) }));
+}
+
+/** Yeni banka. Aynı ad ikinci kez eklenmez; sessizce yutulmaz, false döner. */
+export async function addBank(pool: pg.Pool, name: string): Promise<boolean> {
+  const r = await pool.query(
+    'INSERT INTO bank (name) VALUES ($1) ON CONFLICT (name) DO NOTHING',
+    [name],
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+/**
+ * Banka siler.
+ *
+ * Kullanımdaki banka silinmez. Kaç işlemin engellediği sayılıp döndürülür ki
+ * uyarı "silinemez" demekle kalmayıp sebebini söyleyebilsin.
+ *
+ * Sayım ile silme arasına başka bir yazma girse bile veri bozulmaz: asıl
+ * güvence veritabanındaki ON DELETE RESTRICT, buradaki sayım yalnız mesaj
+ * içindir.
+ */
+export async function deleteBank(
+  pool: pg.Pool,
+  name: string,
+): Promise<{ deleted: boolean; usage: number; missing?: true }> {
+  const exists = await pool.query('SELECT 1 FROM bank WHERE name = $1', [name]);
+  if (exists.rowCount === 0) return { deleted: false, usage: 0, missing: true };
+
+  const used = await pool.query<{ n: string }>(
+    'SELECT count(*)::text AS n FROM portfolio_transaction WHERE platform = $1',
+    [name],
+  );
+  const usage = Number(used.rows[0]?.n ?? 0);
+  if (usage > 0) return { deleted: false, usage };
+
+  await pool.query('DELETE FROM bank WHERE name = $1', [name]);
+  return { deleted: true, usage: 0 };
+}
+
 export async function readSetting<T>(pool: pg.Pool, key: string, fallback: T): Promise<T> {
   const r = await pool.query<{ value: T }>('SELECT value FROM app_setting WHERE key = $1', [key]);
   return r.rows[0]?.value ?? fallback;

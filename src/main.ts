@@ -128,6 +128,11 @@ interface ClosedPositionRow {
   realizedPct: string;
 }
 
+interface BankRow {
+  name: string;
+  usage: number;
+}
+
 interface PeriodRow {
   label: string;
   startDate: string;
@@ -364,11 +369,15 @@ function openModal(title: string, subtitle: string | null, body: Node, footer: N
  * satır çıkar — referans arayüzdeki gibi. Alanın kendi boşluğu yoktur; onu
  * kuşatan ızgaranın `gap` değeri belirler.
  */
-function field(labelText: string, input: HTMLElement, hint?: string): HTMLElement {
+/** Hint metin ya da hazır bir düğüm olabilir: içeriği sonradan değişen ipuçları
+ *  (banka listesi yüklenirken olduğu gibi) düğüm olarak verilir. */
+function field(labelText: string, input: HTMLElement, hint?: string | HTMLElement): HTMLElement {
   return el('div', { class: 'field' }, [
     el('label', {}, [labelText]),
     input,
-    ...(hint === undefined ? [] : [el('div', { class: 'field-hint' }, [hint])]),
+    ...(hint === undefined
+      ? []
+      : [typeof hint === 'string' ? el('div', { class: 'field-hint' }, [hint]) : hint]),
   ]);
 }
 
@@ -985,6 +994,93 @@ async function marketView(reload: () => void): Promise<Node[]> {
 }
 
 /**
+ * Banka tanımları.
+ *
+ * İşlem formundaki banka alanı bu listeden beslenir; serbest metin girilemez.
+ * Aynı banka "Nkolay", "nkolay", "NKolay" diye üç ayrı platform gibi
+ * görünürse maliyet takibi platform bazında yapıldığı için doğrudan yanlış
+ * rakam çıkardı.
+ *
+ * Kullanımdaki banka silinemez. Asıl güvence veritabanındaki foreign key;
+ * buradaki kontrol yalnız kullanıcıya sebebini söylemek için.
+ */
+function bankPanel(banks: BankRow[], reload: () => void): HTMLElement {
+  const input = el('input', { placeholder: 'Banka adı', maxlength: '60' }) as HTMLInputElement;
+  const status = el('span', { class: 'status' });
+  const add = el('button', { class: 'btn-primary' }, [icon('add'), 'Ekle']);
+
+  const ekle = (): void => {
+    const name = input.value.trim();
+    if (name === '') {
+      status.textContent = 'Banka adı boş olamaz.';
+      return;
+    }
+    void (async () => {
+      try {
+        status.textContent = 'Ekleniyor…';
+        await api('/api/admin/banks', { method: 'POST', body: JSON.stringify({ name }) });
+        input.value = '';
+        reload();
+      } catch (err) {
+        status.textContent = err instanceof Error ? err.message : 'Eklenemedi.';
+      }
+    })();
+  };
+  add.addEventListener('click', ekle);
+  input.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') { e.preventDefault(); ekle(); }
+  });
+
+  const rows = banks.map((b) => {
+    const sil = iconButton('delete', 'Sil', 'danger');
+    sil.addEventListener('click', () => {
+      void (async () => {
+        // Kullanımdaki banka silme penceresi bile açılmadan reddedilir:
+        // onaylatıp sonra "olmaz" demek kullanıcıyı boşuna yürütürdü.
+        if (b.usage > 0) {
+          status.textContent = `"${b.name}" ${String(b.usage)} işlemde kullanılıyor, silinemez.`;
+          return;
+        }
+        const ok = await confirmDelete({
+          title: 'Bankayı sil',
+          detail: [b.name, 'Hiçbir işlemde kullanılmıyor'],
+          confirmLabel: 'Bankayı Sil',
+        });
+        if (!ok) return;
+        try {
+          await api(`/api/admin/banks/${encodeURIComponent(b.name)}`, { method: 'DELETE' });
+          reload();
+        } catch (err) {
+          status.textContent = err instanceof Error ? err.message : 'Silinemedi.';
+        }
+      })();
+    });
+    // Kullanımdaki bankanın silme düğmesi tıklanabilir kalır: devre dışı bir
+    // düğme neden çalışmadığını söyleyemez, tıklanınca sebep yazılır.
+    return el('tr', {}, [
+      el('td', {}, [el('span', { class: 'fund-code' }, [b.name])]),
+      el('td', { class: 'num' }, [b.usage === 0 ? '—' : String(b.usage)]),
+      el('td', {}, [b.usage === 0
+        ? badge('Kullanılmıyor', 'closed')
+        : badge('Kullanımda', 'open')]),
+      el('td', { class: 'actions' }, [sil]),
+    ]);
+  });
+
+  return panel(
+    'Bankalar',
+    `${String(banks.length)} tanım · işlem formu bu listeden seçer`,
+    el('div', { class: 'panel-body' }, [
+      el('div', { class: 'settings-actions settings-add' }, [input, add]),
+      banks.length === 0
+        ? el('div', { class: 'empty-state' }, ['Tanımlı banka yok.'])
+        : table(['Banka', 'İşlem', 'Durum', ''], rows),
+      status,
+    ]),
+  );
+}
+
+/**
  * Sistem ayarları. Şimdilik tek ayar var: resmî tatiller.
  *
  * Liste, emir tarihinden gerçekleşme tarihini hesaplarken kullanılır. Geçmiş
@@ -1015,6 +1111,8 @@ async function settingsView(reload: () => void): Promise<Node[]> {
     })();
   });
 
+  const banks = (await api('/api/banks')) as BankRow[];
+
   const sabit = data.holidays.filter((d) => d.length === 5);
   const yillik = data.holidays.filter((d) => d.length > 5);
   const yil = new Set(yillik.map((d) => d.slice(0, 4)));
@@ -1030,7 +1128,10 @@ async function settingsView(reload: () => void): Promise<Node[]> {
         'flag',
         'gün',
       ),
+      metric('Banka', String(banks.length),
+        `${String(banks.filter((b) => b.usage > 0).length)} tanesi kullanımda`, 'money'),
     ]),
+    bankPanel(banks, reload),
     panel(
       'Resmî Tatiller',
       'her satıra bir tarih',
@@ -1126,7 +1227,7 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
     units: el('input', { type: 'number', step: 'any', min: '0', required: 'true', placeholder: '1000' }),
     buyOrderDate: el('input', { type: 'date' }),
     tradeDate: el('input', { type: 'date', required: 'true' }),
-    platform: el('input', { required: 'true', placeholder: 'Nkolay' }),
+    platform: el('select', { required: 'true' }) as HTMLSelectElement,
     sellOrderDate: el('input', { type: 'date' }),
     sellDate: el('input', { type: 'date' }),
   };
@@ -1135,10 +1236,32 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
     f.units.value = existing.units;
     f.buyOrderDate.value = existing.buyOrderDate ?? '';
     f.tradeDate.value = existing.tradeDate;
-    f.platform.value = existing.platform;
     f.sellOrderDate.value = existing.sellOrderDate ?? '';
     f.sellDate.value = existing.sellDate ?? '';
   }
+
+  // Banka listesi tanımlardan gelir; alan serbest metin değil. Liste boşsa
+  // kullanıcı hiçbir işlem kaydedemez, bu yüzden sessiz boş bir açılır liste
+  // yerine nereye gitmesi gerektiğini söyleyen bir uyarı gösterilir.
+  const bankHint = el('div', { class: 'field-hint' }, ['Yükleniyor…']);
+  void (async () => {
+    try {
+      const banks = (await api('/api/banks')) as { name: string }[];
+      if (banks.length === 0) {
+        bankHint.textContent = 'Tanımlı banka yok. Ayarlar ekranından banka ekleyin.';
+        bankHint.classList.add('field-warn');
+        return;
+      }
+      for (const b of banks) f.platform.append(el('option', { value: b.name }, [b.name]));
+      // Düzenlemede mevcut değer seçili gelmeli; seçenekler eklenmeden önce
+      // atanan value boşa düşerdi.
+      f.platform.value = existing?.platform ?? banks[0]?.name ?? '';
+      bankHint.textContent = '';
+    } catch {
+      bankHint.textContent = 'Banka listesi alınamadı.';
+      bankHint.classList.add('field-warn');
+    }
+  })();
 
   // Valör hesabı için gereken veri: tatiller ve fonun valör günleri. Fon kodu
   // değiştikçe yenilenir; bilinmeyen fonda valör null kalır ve hesap atlanır,
@@ -1210,7 +1333,7 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
     el('div', { class: 'form-section' }, [el('span', {}, ['Alış']), buyValorNote]),
     field('Emir Tarihi', f.buyOrderDate, 'İsteğe bağlı; girilirse alış tarihi hesaplanır.'),
     field('Alış Tarihi', f.tradeDate, 'Emrin fiyatlandığı gün.'),
-    field('Banka', f.platform),
+    field('Banka', f.platform, bankHint),
     el('div', { class: 'form-section' }, [el('span', {}, ['Satış']), sellValorNote]),
     field('Satış Emir Tarihi', f.sellOrderDate, 'İsteğe bağlı; girilirse satış tarihi hesaplanır.'),
     field('Satış Tarihi', f.sellDate, 'Boş bırakılırsa pozisyon açık kalır.'),

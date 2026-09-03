@@ -35,20 +35,24 @@ import {
   sendJson,
 } from './http.js';
 import {
+  addBank,
   addToWatchlist,
   closedPositions,
   createSession,
   createTransaction,
   createUser,
   dashboard,
+  deleteBank,
   deleteTransaction,
   findSessionUser,
   findUserByUsername,
   fundValor,
   holidays,
+  listBanks,
   listTransactions,
   listUsers,
   listWatchlist,
+  normalizeBankName,
   periodReturns,
   portfolioPerformance,
   portfolioSummary,
@@ -351,6 +355,11 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         return;
       }
 
+      if (path === '/api/banks' && method === 'GET') {
+        sendJson(res, 200, await listBanks(pool));
+        return;
+      }
+
       if (path === '/api/periods' && method === 'GET') {
         sendJson(res, 200, await periodReturns(pool, user.id));
         return;
@@ -422,6 +431,40 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
           sendJson(res, 200, { holidays: clean });
           return;
         }
+        if (path === '/api/admin/banks' && method === 'POST') {
+          const name = normalizeBankName(asRecord(await readJson(req))['name']);
+          if (name === null) {
+            sendJson(res, 400, { error: 'Banka adı boş olamaz ve 60 karakteri aşamaz.' });
+            return;
+          }
+          if (!(await addBank(pool, name))) {
+            sendJson(res, 409, { error: `"${name}" zaten kayıtlı.` });
+            return;
+          }
+          sendJson(res, 201, await listBanks(pool));
+          return;
+        }
+
+        const bankName = matchPath('/api/admin/banks/:name', path);
+        if (bankName !== null && method === 'DELETE') {
+          const sonuc = await deleteBank(pool, decodeURIComponent(bankName));
+          if (sonuc.missing === true) {
+            sendJson(res, 404, { error: 'Banka bulunamadı.' });
+            return;
+          }
+          // Kullanımdaki banka silinmez. Kaç işlemin engellediği söylenir;
+          // yalnız "silinemez" demek kullanıcıyı sebebi aramaya bırakırdı.
+          if (!sonuc.deleted) {
+            sendJson(res, 409, {
+              error: `Bu banka ${String(sonuc.usage)} işlemde kullanılıyor, silinemez.`,
+              usage: sonuc.usage,
+            });
+            return;
+          }
+          sendJson(res, 200, await listBanks(pool));
+          return;
+        }
+
         if (path === '/api/admin/users' && method === 'GET') {
           sendJson(res, 200, await listUsers(pool));
           return;

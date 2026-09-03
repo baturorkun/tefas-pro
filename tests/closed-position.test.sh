@@ -23,17 +23,21 @@ q "DELETE FROM portfolio_transaction WHERE user_id IN (SELECT id FROM app_user W
    DELETE FROM app_user WHERE username = '__test_closed'" >/dev/null
 uid="$(q "INSERT INTO app_user (username, type, password_hash, password_salt, is_active)
           VALUES ('__test_closed', 'user', 'x', 'y', false) RETURNING id")"
-cleanup() { q "DELETE FROM portfolio_transaction WHERE user_id = ${uid}; DELETE FROM app_user WHERE id = ${uid}" >/dev/null; }
+cleanup() { q "DELETE FROM portfolio_transaction WHERE user_id = ${uid}; DELETE FROM app_user WHERE id = ${uid};
+            DELETE FROM bank WHERE name = '__test_bank'" >/dev/null; }
 trap cleanup EXIT
+
+# platform artık bank tablosuna bağlı; fixture kendi bankasını tanımlar.
+q "INSERT INTO bank (name) VALUES ('__test_bank') ON CONFLICT DO NOTHING" >/dev/null
 
 fund="$(q "SELECT fund_code FROM fact_fund_daily WHERE nav_per_share IS NOT NULL
            GROUP BY fund_code ORDER BY count(*) DESC LIMIT 1")"
 
 # Üç kayıt: geçmişte kapanmış, bugün kapanmış, ileri tarihli (henüz açık).
 q "INSERT INTO portfolio_transaction (user_id, fund_code, platform, trade_date, units, sell_date) VALUES
-   (${uid}, '${fund}', 'Test', current_date - 40, 1000, current_date - 10),
-   (${uid}, '${fund}', 'Test', current_date - 40, 1000, current_date),
-   (${uid}, '${fund}', 'Test', current_date - 40, 1000, current_date + 5)" >/dev/null
+   (${uid}, '${fund}', '__test_bank', current_date - 40, 1000, current_date - 10),
+   (${uid}, '${fund}', '__test_bank', current_date - 40, 1000, current_date),
+   (${uid}, '${fund}', '__test_bank', current_date - 40, 1000, current_date + 5)" >/dev/null
 
 n="$(q "SELECT count(*) FROM analytics.closed_position WHERE user_id = ${uid}")"
 [ "${n}" = "2" ] || fail "yalnız gerçekleşmiş satışlar listelenmeli, gelen: ${n}"
