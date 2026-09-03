@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
  */
 const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 describe('düğme kuralları', () => {
   it('satır eylemleri metin değil ikon düğmesidir', () => {
@@ -106,6 +107,36 @@ describe('ekran ayrımı', () => {
     const market = main.slice(main.indexOf('async function marketView'));
     expect(dash).toContain('watchlistToggle(');
     expect(market.slice(0, market.indexOf('// ─── Giriş'))).toContain('watchlistToggle(');
+  });
+});
+
+describe('form görünümü', () => {
+  it('alan kendi boşluğunu eklemez', () => {
+    // .field'ın margin'i ızgaranın gap'iyle toplanıp formu gereksiz uzatıyordu.
+    expect(css).not.toMatch(/\.field \{[^}]*margin-bottom/);
+  });
+
+  it('girdiler sabit yükseklikte', () => {
+    // date ve number girdileri tarayıcının kendi süslerini taşıdığı için
+    // serbest bırakılırsa komşularından farklı yükseklikte çıkıyor.
+    expect(css).toMatch(/input, select \{[^}]*height:/);
+    // Kutucuk bu kuraldan muaf olmalı, yoksa kocaman görünür.
+    expect(css).toMatch(/input\[type="checkbox"\][^}]*height: auto/);
+  });
+
+  it('alan yardımcı metin taşıyabilir', () => {
+    expect(main).toMatch(/function field\([^)]*hint\?: string/);
+    expect(main).toContain("'Boş bırakılırsa pozisyon açık kalır.'");
+  });
+
+  it('iptal düğmesi çerçevelidir', () => {
+    // RQ-0018'in "yazıdan düğme olmaz" kuralının gözden kaçan örneğiydi.
+    expect(css).toMatch(/\.btn-ghost \{[^}]*border:/);
+  });
+
+  it('aç/kapa alanı çıplak kutucuk değil', () => {
+    expect(css).toContain('.switch-track');
+    expect(main).toContain("class: 'switch-track'");
   });
 });
 

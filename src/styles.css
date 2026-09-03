@@ -186,22 +186,36 @@ body {
 
 /* ─── Form ─────────────────────────────────────────────────────────────── */
 
-label { display: block; font-size: .76rem; color: var(--muted); margin-bottom: .3rem; }
+/* Etiket alanın kendisinden geri planda durur: okunur ama baskın değil. */
+label { display: block; font-size: .7rem; font-weight: 500; letter-spacing: .01em;
+        color: var(--muted-dim); margin-bottom: .35rem; }
 
 input, select {
-  width: 100%; padding: .5rem .65rem;
+  width: 100%; padding: 0 .7rem;
+  /* Sabit yükseklik: date ve number girdileri tarayıcının kendi süslerini
+     (takvim ikonu, sayı okları) taşıdığı için serbest bırakılırsa komşu
+     alanlardan farklı yükseklikte çıkıyor ve ızgara bozuluyor. */
+  height: 2.45rem;
   background: var(--bg); color: var(--text);
   border: 1px solid var(--line); border-radius: var(--radius-sm);
-  font: inherit; font-size: .88rem;
+  font: inherit; font-size: .85rem;
   transition: border-color .15s ease, box-shadow .15s ease;
+}
+/* Tarih girdisinin takvim düğmesi koyu zeminde görünmüyordu. */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(.7) sepia(.2); cursor: pointer;
 }
 input:focus, select:focus {
   outline: none; border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-tint);
 }
-input[type="checkbox"] { width: auto; accent-color: var(--accent); cursor: pointer; }
+input[type="checkbox"] { width: auto; height: auto; accent-color: var(--accent); cursor: pointer; }
 
-.field { margin-bottom: 1rem; }
+/* Boşluk tek kaynaktan: ızgaranın gap'i. Buraya margin eklenirse iki kez
+   sayılır ve form gereksiz uzar. */
+.field { display: grid; }
+.field-hint { margin-top: .3rem; color: var(--muted-dim); font-size: .68rem;
+              line-height: 1.45; }
 
 .row-form {
   display: grid; gap: .75rem; align-items: end;
@@ -221,8 +235,10 @@ button {
 .btn-primary:hover { filter: brightness(1.08); }
 .btn-secondary { color: var(--text); background: var(--panel); border-color: #263b4f; }
 .btn-secondary:hover { background: var(--panel-hover); }
-.btn-ghost { color: var(--muted); background: transparent; padding: .3rem .5rem; }
-.btn-ghost:hover { color: var(--text); background: var(--panel); }
+.btn-ghost { color: var(--muted); background: var(--bg-raised);
+             border: 1px solid var(--line); padding: .45rem .9rem; }
+.btn-ghost:hover { color: var(--text-strong); border-color: var(--muted-dim);
+                   background: var(--panel-hover); }
 .btn-danger { color: var(--danger); background: transparent; padding: .3rem .5rem; }
 .btn-danger:hover { background: var(--danger-tint); }
 .btn-block { width: 100%; justify-content: center; }
@@ -371,12 +387,13 @@ td.actions .icon-btn + .icon-btn { margin-left: 6px; }
 .sidebar-logout:hover { background: var(--panel-hover); color: var(--text-strong); }
 
 /* Form penceresi: onay penceresiyle aynı kabuk, gövdesi kaydırılabilir. */
-.modal-form     { width: min(34rem, 100%); padding: 0; }
+.modal-form     { width: min(38rem, 100%); padding: 0; }
 .modal-head     { display: flex; align-items: flex-start; justify-content: space-between;
                   gap: 1rem; padding: 1.1rem 1.2rem; border-bottom: 1px solid var(--line-soft); }
 .modal-sub      { margin: .25rem 0 0; color: var(--muted); font-size: 12px; }
 .modal-body     { padding: 1.1rem 1.2rem; max-height: min(60vh, 32rem); overflow-y: auto; }
-.modal-form-grid{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; }
+.modal-form-grid{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+                  gap: .95rem 1rem; }
 .modal-form-grid .status { grid-column: 1 / -1; }
 .modal-form .modal-actions { margin: 0; padding: .9rem 1.2rem;
                   border-top: 1px solid var(--line-soft); }
@@ -392,9 +409,25 @@ td.actions .icon-btn + .icon-btn { margin-left: 6px; }
 .metric-symbol-fund   { background: rgba(127,230,207,.12); color: var(--accent-soft); }
 .metric-symbol-transactions { background: rgba(95,159,214,.14); color: #7fb5e6; }
 
-.switch-field   { display: flex; align-items: center; gap: 10px; cursor: pointer;
-                  color: var(--text); font-size: 13px; align-self: end; padding-bottom: .4rem; }
-.switch-field input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+/* Aç/kapa anahtarı. Çıplak kutucuk yerine referanstaki biçim: durumu uzaktan
+   okunur ve dokunma alanı geniş. */
+.switch-field   { display: flex; align-items: center; gap: 11px; cursor: pointer;
+                  align-self: end; padding-bottom: .45rem; }
+.switch-field input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.switch-track   { flex-shrink: 0; width: 36px; height: 20px; padding: 3px;
+                  border-radius: 99px; background: var(--line);
+                  transition: background .18s ease; }
+.switch-track::after { content: ''; display: block; width: 14px; height: 14px;
+                  border-radius: 50%; background: var(--muted-dim);
+                  transition: transform .18s ease, background .18s ease; }
+.switch-field input:checked + .switch-track { background: var(--accent-tint); }
+.switch-field input:checked + .switch-track::after {
+                  transform: translateX(16px); background: var(--accent); }
+.switch-field input:focus-visible + .switch-track {
+                  box-shadow: 0 0 0 3px var(--accent-tint); }
+.switch-text    { display: grid; gap: 2px; }
+.switch-text strong { color: var(--text); font-size: 13px; font-weight: 500; }
+.switch-text small  { color: var(--muted-dim); font-size: .68rem; }
 
 .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .panel-heading-text { display: flex; align-items: baseline; justify-content: space-between;
