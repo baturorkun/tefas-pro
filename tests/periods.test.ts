@@ -153,6 +153,58 @@ describe('buildPeriodReturns', () => {
     expect(Number(haziran?.pct)).toBeCloseTo(0.0006, 4);
   });
 
+  it('benchmark portföyün ölçülebildiği günler üzerinden zincirlenir', () => {
+    const gunler = ay('2026-08', [3, 4, 5]);
+    // Benchmark serisi portföyün olmadığı bir günü de taşıyor: o gün sayılmamalı,
+    // yoksa benchmark paranın hiç girmediği bir dönemin kazancıyla öne geçerdi.
+    const bench = new Map([
+      ['2026-08-03', 0.5], ['2026-08-04', 0.5], ['2026-08-05', 0.5],
+      ['2026-08-06', 90],
+    ]);
+    const [agustos] = buildPeriodReturns(gunler, bench);
+    // 1,005^3 - 1 = %1,5075 — 06 Ağustos'un %90'ı hesaba girmiyor.
+    expect(Number(agustos?.benchPct)).toBeCloseTo(1.5075, 3);
+  });
+
+  it('fark portföy ile benchmark arasındaki puan farkıdır', () => {
+    const bench = new Map([['2026-08-03', 0.4], ['2026-08-04', 0.4]]);
+    const [agustos] = buildPeriodReturns(ay('2026-08', [3, 4]), bench);
+    // Portföy günde %1: 1,01^2-1 = %2,01. Benchmark 1,004^2-1 = %0,8016.
+    expect(Number(agustos?.pct)).toBeCloseTo(2.01, 3);
+    expect(Number(agustos?.benchPct)).toBeCloseTo(0.8016, 3);
+    expect(Number(agustos?.diff)).toBeCloseTo(2.01 - 0.8016, 3);
+  });
+
+  it('ayın benchmark getirisi haftalarının bileşiğidir', () => {
+    const gunler = Array.from({ length: 12 }, (_, i) => i + 1);
+    const bench = new Map(
+      gunler.map((g) => [`2026-08-${String(g).padStart(2, '0')}`, 0.3] as const),
+    );
+    const [agustos] = buildPeriodReturns(ay('2026-08', gunler), bench);
+    const bilesik = (agustos?.weeks ?? [])
+      .reduce((a, w) => a * (1 + Number(w.benchPct) / 100), 1);
+    expect(Number(agustos?.benchPct)).toBeCloseTo((bilesik - 1) * 100, 3);
+  });
+
+  it('benchmark verisi yoksa yüzde ve fark null döner', () => {
+    const [agustos] = buildPeriodReturns(ay('2026-08', [3, 4]));
+    expect(agustos?.benchPct).toBeNull();
+    expect(agustos?.diff).toBeNull();
+    // Portföyün kendi getirisi etkilenmez.
+    expect(agustos?.pct).not.toBeNull();
+  });
+
+  it('portföyün ölçülemediği gün benchmark\'a da sayılmaz', () => {
+    const rows: PortfolioDailyRow[] = [
+      { date: '2026-08-03', value: '100000', dailyGain: null, prevValue: null },
+      { date: '2026-08-04', value: '101000', dailyGain: '1000', prevValue: '100000' },
+    ];
+    // İlk gün portföyün referans günü: kendi kazancı döneme ait değil.
+    const bench = new Map([['2026-08-03', 50], ['2026-08-04', 0.5]]);
+    const [agustos] = buildPeriodReturns(rows, bench);
+    expect(Number(agustos?.benchPct)).toBeCloseTo(0.5, 6);
+  });
+
   it('portföyün kapalı olduğu ay hiç satır üretmez', () => {
     // Temmuz ile Eylül arası boş: portfolio_daily o günler için satır vermez.
     const rows = [...ay('2026-07', [1, 2]), ...ay('2026-09', [1, 2])];

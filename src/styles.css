@@ -328,8 +328,14 @@ td.actions { text-align: right; }
    Ayrı bir dolgu rengi vermek yerine üstten çizgi ve koyu metin kullanılır —
    satırlar zaten kâr/zarara göre renkleniyor, üçüncü bir renk katmanı okumayı
    zorlaştırırdı. */
-.period-month td { border-top: 1px solid var(--line); background: #0d1a27;
+/* Ay satırı kendi haftalarının başlığı: zemin belirgin biçimde açık, üstte
+   kalın çizgi ve solda turkuaz şerit. Önceki değer panel zemininden bir puan
+   farklıydı, yani hiç görünmüyordu. */
+.period-month td { border-top: 2px solid var(--line); background: var(--panel-hover);
                    font-weight: 600; color: var(--text-strong); }
+.period-month td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.period-month.period-loss td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+.period-month:hover td { background: #182c3f; }
 .period-month:first-child td { border-top: 0; }
 .period-name { font-weight: 600; letter-spacing: .01em; }
 /* Hafta, ait olduğu ayın altında girintili durur. */

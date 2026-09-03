@@ -1,0 +1,42 @@
+[
+  {
+    "gate": "schemaCheck",
+    "status": "passed",
+    "output": "0 step file(s) valid",
+    "durationMs": 0
+  },
+  {
+    "gate": "build",
+    "status": "skipped",
+    "output": "No targetProject.commands.build configured.",
+    "durationMs": 0
+  },
+  {
+    "gate": "typeCheck",
+    "status": "passed",
+    "output": "> tefas-pro@0.1.0 typecheck /Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro\n> tsc --noEmit",
+    "durationMs": 1261,
+    "command": "pnpm typecheck",
+    "cwd": "/Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro"
+  },
+  {
+    "gate": "lint",
+    "status": "skipped",
+    "output": "No targetProject.commands.lint configured.",
+    "durationMs": 0
+  },
+  {
+    "gate": "tests",
+    "status": "passed",
+    "output": "> tefas-pro@0.1.0 test /Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro\n> vitest run && bash tests/db-install.test.sh && bash tests/db-sync.test.sh && bash tests/position-open.test.sh && bash tests/closed-position.test.sh && bash tests/settings.test.sh && bash tests/bank.test.sh && bash tests/collector-log.test.sh && bash tests/deployment-target.test.sh\n\n\n RUN  v2.1.9 /Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro\n\n ✓ tests/ui-conventions.test.ts (30 tests) 6ms\n ✓ tests/http.test.ts (11 tests) 3ms\n ✓ tests/settlement.test.ts (18 tests) 4ms\n ✓ tests/version.test.ts (11 tests) 14ms\n ✓ tests/fintables.test.ts (25 tests) 5ms\n ✓ tests/collector.test.ts (23 tests) 6ms\n ✓ tests/performance.test.ts (9 tests) 4ms\n ✓ tests/periods.test.ts (21 tests) 12ms\n ✓ tests/auth.test.ts (16 tests) 191ms\n\n Test Files  9 passed (9)\n      Tests  164 passed (164)\n   Start at  01:25:48\n   Duration  527ms (transform 344ms, setup 0ms, collect 799ms, tests 246ms, environment 1ms, prepare 550ms)\n\nPASS: geliştirme ortamı pnpm kısayollarıyla yönetiliyor\nPASS: install help documents local and remote modes\nPASS: rendered Compose config enforces images, isolation, persistence, and secret handling\nPASS: local mode rejects a symlinked secret directory\nPASS: local mode creates environment and verifies services\nPASS: local mode supports podman-compose fallback\nPASS: remote mode rejects option-like SSH targets\nPASS: remote mode rejects the development password\nPASS: remote mode rejects quoted or non-canonical passwords\nPASS: remote mode rejects low-entropy passwords\nPASS: remote mode rejects unsafe database identifiers\nPASS: remote mode validates service host port ranges\nPASS: remote mode validates SSH port range\nPASS: remote mode rejects dangerous system directories\nPASS: remote no-service mode copies, starts, verifies, and reports tunnel\nPASS: remote mode installs and verifies a rootless systemd service\nPASS: remote mode rejects an unexpected systemd state\nPASS: remote mode installs and verifies a root systemd service\nPASS: sync help from-remote kullanımını belgeliyor\nPASS: ters yön (local -> remote) hiç uygulanmamış\nPASS: hedef verilmezse reddedilir\nPASS: user@host olmayan hedef reddedilir\nPASS: seçenek benzeri hedef reddedilir\nPASS: kabuk metakarakteri taşıyan hedef reddedilir\nPASS: SSH portu 1-65535 aralığında doğrulanır\nPASS: bilinmeyen seçenek reddedilir\nPASS: bilinmeyen komut reddedilir\nPASS: DATABASE_URL tanımsızsa anlaşılır hata verir\nPASS: app_session içeriği hariç, app_user dahil\nPASS: sync sonrası migration uygulanır\nPASS: --yes onay sorusunu atlar\nPASS: restore hatası yutulmaz\nPASS: sürüm uyumsuzluğu meta komutları filtrelenir\nPASS: restore sonrası ANALYZE çalışır\nPASS: açıklık kuralı ileri tarihli satışı kapsıyor\nPASS: gerçekleşmemiş satışta değerleme son veri gününde duruyor\nPASS: ileri tarihli satış açık, bugünkü ve geçmiş satış kapalı\nPASS: değerleme son veri gününü aşmıyor\nPASS: fon sayısı ile açık kayıt sayısı ayrı ölçülüyor\nPASS: ileri tarihli satış kapanmış sayılmıyor\nPASS: ileri tarihli satış listede yok, gerçekleşenler var\nPASS: kâr/zarar satış ile alış farkına eşit\nPASS: yüzde ile tutarın işareti tutarlı\nPASS: kırılım işlem başına\nPASS: ayar tablosu ve emir tarihi kolonları tanımlı\nPASS: başlangıç tatil listesi yüklü (11 gün)\nPASS: sabit tatiller yılsız tutuluyor (7 gün)\nPASS: yıla özel tatiller fiyat verisiyle tutarlı\nPASS: satış emri satış tarihi olmadan reddediliyor\nNOT: benchmark henüz kaydedilmemiş, varsayılan kullanılıyor\nPASS: eksik fiyatlı günler seriye girmiyor\nPASS: banka tablosu ve foreign key kuralları tanımlı\nPASS: her işlemin bankası tanımlı\nPASS: kullanılan banka silinemiyor (Nkolay)\nPASS: kullanılmayan banka silinebiliyor\nPASS: tanımsız bankaya işlem yazılamıyor\nPASS: kaynak ayrımı ve takip listesi sorgusu doğru\nPASS: koşum kayıtları eksiksiz\nPASS: başarısız koşumların sebebi kayıtlı (3 hatalı koşum)\nPASS: fon sayısı saklanıyor ve tek fonluk koşum tek fon sayıyor\nPASS: kısmi koşumların sebebi kayıtlı\nPASS: fon hatası ile pencere hatası ayrı sayılıyor\nPASS: koşum durumları bilinen değerlerden\nPASS: main taban porta düşer\nPASS: RQ branch\"i taban + numara portuna düşer\nPASS: baştaki sıfırlar sekizlik yorumlanmaz\nPASS: büyük/küçük harf duyarsız\nPASS: taban port 9000-9099 aralığıyla çakışmıyor\nPASS: geçersiz branch adı reddedilir",
+    "durationMs": 5098,
+    "command": "pnpm test",
+    "cwd": "/Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro"
+  },
+  {
+    "gate": "security",
+    "status": "passed",
+    "output": "4 applied file(s) scanned — no issues",
+    "durationMs": 1
+  }
+]

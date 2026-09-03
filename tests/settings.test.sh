@@ -50,3 +50,33 @@ st=$?
 set -e
 [ "${st}" -ne 0 ] || { q "DELETE FROM portfolio_transaction WHERE platform='__test'" >/dev/null; fail "satış emri satış tarihi olmadan kabul edilmemeli"; }
 printf 'PASS: satış emri satış tarihi olmadan reddediliyor\n'
+
+# Benchmark ayarı: karşılaştırma noktası olmadan getiri "iyi mi kötü mü"
+# sorusunu cevaplamıyor.
+bench="$(q "SELECT value #>> '{}' FROM app_setting WHERE key='benchmark'")"
+if [ -n "${bench}" ]; then
+  veri="$(q "SELECT count(*) FROM fact_fund_daily
+             WHERE fund_code='${bench}' AND daily_return_pct IS NOT NULL")"
+  [ "${veri}" -gt 0 ] || fail "benchmark fonu ${bench} için getiri verisi yok"
+  printf 'PASS: benchmark fonu %s kullanılabilir (%s gün)\n' "${bench}" "${veri}"
+else
+  printf 'NOT: benchmark henüz kaydedilmemiş, varsayılan kullanılıyor\n'
+fi
+
+# Eksik fiyatlı gün değerlenmemeli: o gün fiyatı olmayan fon sıfır sayılırsa
+# portföy çökmüş görünüyor. Ölçülen veride 3 Eylül'de 39 fondan 2'si vardı ve
+# değer 3.762.405'ten 37.566'ya düşmüştü.
+eksik="$(q "WITH tam AS (
+              SELECT p.trade_date,
+                     (SELECT count(DISTINCT t.fund_code) FROM portfolio_transaction t
+                      WHERE t.user_id = p.user_id AND t.trade_date <= p.trade_date
+                        AND (t.sell_date IS NULL OR t.sell_date >= p.trade_date)) AS gereken,
+                     (SELECT count(DISTINCT t.fund_code) FROM portfolio_transaction t
+                      JOIN fact_fund_daily f ON f.fund_code = t.fund_code
+                       AND f.trade_date = p.trade_date AND f.daily_return_pct IS NOT NULL
+                      WHERE t.user_id = p.user_id AND t.trade_date <= p.trade_date
+                        AND (t.sell_date IS NULL OR t.sell_date >= p.trade_date)) AS var
+              FROM analytics.portfolio_daily p)
+            SELECT count(*) FROM tam WHERE var < gereken")"
+[ "${eksik}" = "0" ] || fail "${eksik} eksik fiyatlı gün seriye girmiş"
+printf 'PASS: eksik fiyatlı günler seriye girmiyor\n'
