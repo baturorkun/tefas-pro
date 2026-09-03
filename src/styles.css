@@ -429,6 +429,33 @@ td.actions .icon-btn + .icon-btn { margin-left: 6px; }
 .switch-text strong { color: var(--text); font-size: .875rem; font-weight: 500; }
 .switch-text small  { color: var(--muted-dim); font-size: .75rem; }
 
+/* Form içi bölüm başlığı: alış ve satış alanlarını ayırır. */
+.form-section   { grid-column: 1 / -1; margin-top: .3rem; padding-top: .8rem;
+                  display: flex; align-items: baseline; gap: .7rem;
+                  border-top: 1px solid var(--line-soft);
+                  color: var(--muted); font-size: .75rem; font-weight: 600;
+                  letter-spacing: .06em; text-transform: uppercase; }
+/* Valör notu başlığın yanında; boşken hiç yer kaplamaz. */
+.section-note   { color: var(--muted-dim); font-size: .72rem; font-weight: 500;
+                  letter-spacing: 0; text-transform: none; }
+.section-note:empty { display: none; }
+.form-section:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+
+.settings-note  { margin: 0 0 1rem; color: var(--muted); font-size: .85rem; line-height: 1.6; }
+.settings-formats { display: grid; gap: .5rem; margin-bottom: .9rem; }
+.settings-formats div { display: flex; align-items: baseline; gap: .7rem;
+                  color: var(--muted); font-size: .8rem; line-height: 1.5; }
+.settings-formats code { flex-shrink: 0; min-width: 6.5rem; color: var(--accent);
+                  font-family: var(--mono); font-size: .78rem; }
+.settings-actions { display: flex; align-items: center; justify-content: flex-end;
+                  gap: .8rem; margin-top: .9rem; }
+textarea        { width: 100%; padding: .7rem; background: var(--bg); color: var(--text);
+                  border: 1px solid var(--line); border-radius: var(--radius-sm);
+                  font-family: var(--mono); font-size: .875rem; line-height: 1.7;
+                  resize: vertical; }
+textarea:focus  { outline: none; border-color: var(--accent);
+                  box-shadow: 0 0 0 3px var(--accent-tint); }
+
 .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .panel-heading-text { display: flex; align-items: baseline; justify-content: space-between;
                   gap: 1rem; flex: 1; min-width: 0; }

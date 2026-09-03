@@ -16,6 +16,8 @@ interface Me {
 }
 
 interface Transaction {
+  buyOrderDate: string | null;
+  sellOrderDate: string | null;
   id: number;
   fundCode: string;
   fundTitle: string | null;
@@ -139,7 +141,7 @@ interface PerformanceSeries {
   totalPct: string | null;
 }
 
-type ViewId = 'dashboard' | 'portfolio' | 'closed' | 'market' | 'transactions' | 'watchlist' | 'users';
+type ViewId = 'dashboard' | 'portfolio' | 'closed' | 'market' | 'transactions' | 'watchlist' | 'users' | 'settings';
 
 const root = document.getElementById('app');
 
@@ -281,6 +283,7 @@ const ICON_PATHS: Record<string, string[]> = {
   flag: ['M5 21V4h9l-1 3h6v8h-7l-1-3H5'],
   closed: ['M20 6 9 17l-5-5'],
   market: ['M3 3v18h18', 'm7 14 3-4 3 3 5-7', 'M18 6h3v3'],
+  settings: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'],
 };
 
 function icon(name: keyof typeof ICON_PATHS | string, size = 18): SVGSVGElement {
@@ -460,6 +463,8 @@ function table(headers: string[], rows: HTMLElement[]): HTMLElement {
 }
 
 // ─── Grafik ─────────────────────────────────────────────────────────────────
+
+import { orderFromSettlement, settlementFromOrder } from './settlement.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -962,6 +967,78 @@ async function marketView(reload: () => void): Promise<Node[]> {
   ];
 }
 
+/**
+ * Sistem ayarları. Şimdilik tek ayar var: resmî tatiller.
+ *
+ * Liste, emir tarihinden gerçekleşme tarihini hesaplarken kullanılır. Geçmiş
+ * günler fiyat verisinden anlaşılabilir ama emir verilirken ileriki günlerin
+ * verisi henüz yok; bu yüzden elle tutuluyor.
+ */
+async function settingsView(reload: () => void): Promise<Node[]> {
+  const data = (await api('/api/admin/settings')) as { holidays: string[] };
+  const area = el('textarea', { rows: '14', spellcheck: 'false' }) as HTMLTextAreaElement;
+  area.value = data.holidays.join('\n');
+  const status = el('span', { class: 'status' });
+  const save = el('button', { class: 'btn-primary' }, [icon('add'), 'Kaydet']);
+
+  save.addEventListener('click', () => {
+    void (async () => {
+      const list = area.value.split('\n').map((x) => x.trim()).filter((x) => x !== '');
+      try {
+        status.textContent = 'Kaydediliyor…';
+        const r = (await api('/api/admin/settings', {
+          method: 'PUT', body: JSON.stringify({ holidays: list }),
+        })) as { holidays: string[] };
+        area.value = r.holidays.join('\n');
+        status.textContent = `${String(r.holidays.length)} tatil kaydedildi.`;
+        reload();
+      } catch (err) {
+        status.textContent = err instanceof Error ? err.message : 'Kaydedilemedi.';
+      }
+    })();
+  });
+
+  const sabit = data.holidays.filter((d) => d.length === 5);
+  const yillik = data.holidays.filter((d) => d.length > 5);
+  const yil = new Set(yillik.map((d) => d.slice(0, 4)));
+  return [
+    el('div', { class: 'metric-grid' }, [
+      // Tek kutu: ikisi de aynı listenin parçası, ayrı kutulardayken
+      // ilişkisiz iki ölçü gibi okunuyordu.
+      metric(
+        'Resmî Tatil',
+        String(data.holidays.length),
+        `${String(sabit.length)} sabit · ${String(yillik.length)} yıla özel` +
+          (yil.size === 0 ? '' : ` (${[...yil].sort().join(', ')})`),
+        'flag',
+        'gün',
+      ),
+    ]),
+    panel(
+      'Resmî Tatiller',
+      'her satıra bir tarih',
+      el('div', { class: 'panel-body' }, [
+        el('p', { class: 'settings-note' }, [
+          'Bu günler piyasa günü sayılmaz; emir tarihinden alış ve satış tarihi ' +
+          'hesaplanırken hafta sonlarıyla birlikte atlanır.',
+        ]),
+        el('div', { class: 'settings-formats' }, [
+          el('div', {}, [
+            el('code', {}, ['AA-GG']),
+            el('span', {}, ['Her yıl tekrarlayan sabit tatil — 23 Nisan her yıl 23 Nisan.']),
+          ]),
+          el('div', {}, [
+            el('code', {}, ['YYYY-AA-GG']),
+            el('span', {}, ['Yalnız o yıla ait tatil — dinî bayramlar hicrî takvimle kayar.']),
+          ]),
+        ]),
+        area,
+        el('div', { class: 'settings-actions' }, [status, save]),
+      ]),
+    ),
+  ];
+}
+
 // ─── Giriş ──────────────────────────────────────────────────────────────────
 
 function loginScreen(message?: string): void {
@@ -1030,17 +1107,82 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
   const f = {
     fundCode: el('input', { required: 'true', placeholder: 'THF', maxlength: '16' }),
     units: el('input', { type: 'number', step: 'any', min: '0', required: 'true', placeholder: '1000' }),
+    buyOrderDate: el('input', { type: 'date' }),
     tradeDate: el('input', { type: 'date', required: 'true' }),
     platform: el('input', { required: 'true', placeholder: 'Nkolay' }),
+    sellOrderDate: el('input', { type: 'date' }),
     sellDate: el('input', { type: 'date' }),
   };
   if (existing) {
     f.fundCode.value = existing.fundCode;
     f.units.value = existing.units;
+    f.buyOrderDate.value = existing.buyOrderDate ?? '';
     f.tradeDate.value = existing.tradeDate;
     f.platform.value = existing.platform;
+    f.sellOrderDate.value = existing.sellOrderDate ?? '';
     f.sellDate.value = existing.sellDate ?? '';
   }
+
+  // Valör hesabı için gereken veri: tatiller ve fonun valör günleri. Fon kodu
+  // değiştikçe yenilenir; bilinmeyen fonda valör null kalır ve hesap atlanır,
+  // kullanıcı tarihleri elle girer.
+  let holidayList: string[] = [];
+  let valor: { buy: number; sell: number } | null = null;
+  const loadSettlement = (): void => {
+    const code = f.fundCode.value.trim().toUpperCase();
+    void (async () => {
+      try {
+        const q = code === '' ? '' : `?fundCode=${encodeURIComponent(code)}`;
+        const r = (await api(`/api/settlement${q}`)) as {
+          holidays: string[];
+          valor: { buy: number; sell: number } | null;
+        };
+        holidayList = r.holidays;
+        valor = r.valor;
+        hintValor();
+      } catch {
+        valor = null;
+      }
+    })();
+  };
+  // Valör bilgisi ilgili bölümün başlığında durur: "ALIŞ · T+1 iş günü".
+  // Formun dibinde tek satır olarak dururken hangi alanla ilgili olduğu
+  // anlaşılmıyordu. Fon girilmemiş ya da tanınmamışsa hiçbir şey yazılmaz.
+  const buyValorNote = el('span', { class: 'section-note' }, ['']);
+  const sellValorNote = el('span', { class: 'section-note' }, ['']);
+  const hintValor = (): void => {
+    const note = (days: number | undefined): string =>
+      days === undefined ? '' : `T+${String(days)} iş günü`;
+    buyValorNote.textContent = note(valor?.buy);
+    sellValorNote.textContent = note(valor?.sell);
+  };
+
+  /**
+   * İki tarih birbirini tamamlar: hangisi doldurulursa diğeri valöre göre
+   * hesaplanır. Kullanıcı elle yazdığını ezmemek için yalnız boş olan alan
+   * doldurulur.
+   */
+  const link = (
+    order: HTMLInputElement,
+    settle: HTMLInputElement,
+    days: () => number | null,
+  ): void => {
+    order.addEventListener('change', () => {
+      const d = days();
+      if (d === null || order.value === '') return;
+      try { settle.value = settlementFromOrder(order.value, d, holidayList); } catch { /* elle girilsin */ }
+    });
+    settle.addEventListener('change', () => {
+      const d = days();
+      if (d === null || settle.value === '' || order.value !== '') return;
+      try { order.value = orderFromSettlement(settle.value, d, holidayList); } catch { /* elle girilsin */ }
+    });
+  };
+  link(f.buyOrderDate, f.tradeDate, () => valor?.buy ?? null);
+  link(f.sellOrderDate, f.sellDate, () => valor?.sell ?? null);
+  f.fundCode.addEventListener('change', loadSettlement);
+  loadSettlement();
+
   const status = el('span', { class: 'status' });
   const submit = el('button', { type: 'submit', class: 'btn-primary' }, [
     existing ? 'Güncelle' : 'İşlem Ekle',
@@ -1048,13 +1190,17 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
   const form = el('form', { class: 'modal-form-grid', id: 'tx-form' }, [
     field('Fon Kodu', f.fundCode, 'TEFAS kodu, üç harf.'),
     field('Adet', f.units, 'Fon payı adedi, tutar değil.'),
-    field('Alış Tarihi', f.tradeDate),
+    el('div', { class: 'form-section' }, [el('span', {}, ['Alış']), buyValorNote]),
+    field('Emir Tarihi', f.buyOrderDate, 'İsteğe bağlı; girilirse alış tarihi hesaplanır.'),
+    field('Alış Tarihi', f.tradeDate, 'Emrin fiyatlandığı gün.'),
     field('Banka', f.platform),
+    el('div', { class: 'form-section' }, [el('span', {}, ['Satış']), sellValorNote]),
+    field('Satış Emir Tarihi', f.sellOrderDate, 'İsteğe bağlı; girilirse satış tarihi hesaplanır.'),
     field('Satış Tarihi', f.sellDate, 'Boş bırakılırsa pozisyon açık kalır.'),
     status,
   ]);
-  // Düğme şeritte, form gövdenin içinde: gönderimi form kimliğiyle bağlarız.
   submit.setAttribute('form', 'tx-form');
+
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     void (async () => {
@@ -1063,6 +1209,8 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
         platform: f.platform.value,
         tradeDate: f.tradeDate.value,
         units: f.units.value,
+        buyOrderDate: f.buyOrderDate.value || null,
+        sellOrderDate: f.sellOrderDate.value || null,
         sellDate: f.sellDate.value || null,
       };
       try {
@@ -1576,6 +1724,7 @@ const VIEWS: { id: ViewId; label: string; adminOnly: boolean; crumb: string }[] 
   { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
   { id: 'watchlist', label: 'Takip Listem', adminOnly: false, crumb: 'Genel' },
   { id: 'users', label: 'Kullanıcılar', adminOnly: true, crumb: 'Yönetim' },
+  { id: 'settings', label: 'Ayarlar', adminOnly: true, crumb: 'Yönetim' },
 ];
 
 /**
@@ -1654,6 +1803,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     else if (current.id === 'market') bodyNodes = await marketView(reload);
     else if (current.id === 'transactions') bodyNodes = await transactionsView(reload);
     else if (current.id === 'watchlist') bodyNodes = await watchlistView(reload);
+    else if (current.id === 'settings') bodyNodes = await settingsView(reload);
     else bodyNodes = await usersView(reload);
   } catch (err) {
     bodyNodes = [errorBox(err instanceof Error ? err.message : 'Yüklenemedi.')];

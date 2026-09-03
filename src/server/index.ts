@@ -15,6 +15,7 @@ import type pg from 'pg';
 import { FintablesClient } from '../sources/fintables.js';
 import { makePool } from '../db/pool.js';
 import { currentVersion } from '../version.js';
+import { isValidHoliday } from '../settlement.js';
 import {
   clearCookie,
   generatePassword,
@@ -55,6 +56,9 @@ import {
   type TransactionInput,
   portfolioPerformance,
   closedPositions,
+  holidays,
+  writeSetting,
+  fundValor,
 } from './repository.js';
 
 const COOKIE_NAME = 'tefas_session';
@@ -81,6 +85,9 @@ const STATIC: Record<string, { file: string; type: string }> = {
   '/': { file: 'public/index.html', type: 'text/html; charset=utf-8' },
   '/index.html': { file: 'public/index.html', type: 'text/html; charset=utf-8' },
   '/app.js': { file: 'dist/main.js', type: 'text/javascript; charset=utf-8' },
+  // main.js bunu içe aktarıyor; listede olmazsa modül yüklenemez ve sayfa hiç
+  // açılmaz. Tablo bir izin listesi, dizin servis edilmiyor.
+  '/settlement.js': { file: 'dist/settlement.js', type: 'text/javascript; charset=utf-8' },
   '/styles.css': { file: 'src/styles.css', type: 'text/css; charset=utf-8' },
 };
 
@@ -162,6 +169,9 @@ function readTransactionInput(body: Record<string, unknown>): TransactionInput {
     units,
     sellDate,
     note: optString(body, 'note'),
+    // Emir tarihleri isteğe bağlı; değerlemeye girmez, kayıt için tutulur.
+    buyOrderDate: optDate(body, 'buyOrderDate'),
+    sellOrderDate: optDate(body, 'sellOrderDate'),
   };
 }
 
@@ -324,6 +334,17 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         return;
       }
 
+      // Tatil listesi ve valör: form tarih hesabını burada yapmaz, veriyi
+      // alıp istemcide hesaplar — kullanıcı yazarken anında görsün diye.
+      if (path === '/api/settlement' && method === 'GET') {
+        const code = url.searchParams.get('fundCode');
+        sendJson(res, 200, {
+          holidays: await holidays(pool),
+          valor: code === null ? null : await fundValor(pool, code),
+        });
+        return;
+      }
+
       if (path === '/api/closed' && method === 'GET') {
         sendJson(res, 200, await closedPositions(pool, user.id));
         return;
@@ -372,6 +393,27 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
       if (path.startsWith('/api/admin/')) {
         if (user.type !== 'admin') {
           sendJson(res, 403, { error: 'Bu işlem için admin yetkisi gerekir.' });
+          return;
+        }
+        if (path === '/api/admin/settings' && method === 'GET') {
+          sendJson(res, 200, { holidays: await holidays(pool) });
+          return;
+        }
+        if (path === '/api/admin/settings' && method === 'PUT') {
+          const body = asRecord(await readJson(req));
+          const list = body['holidays'];
+          // İki biçim geçerli: AA-GG her yıl tekrarlar, YYYY-AA-GG yalnız o yıl.
+          if (!Array.isArray(list) || list.some((d) => typeof d !== 'string' || !isValidHoliday(d))) {
+            sendJson(res, 400, {
+              error: 'Her satır AA-GG (her yıl) veya YYYY-AA-GG (yıla özel) olmalı.',
+            });
+            return;
+          }
+          // Sıralı ve tekrarsız: aynı gün iki kez yazılırsa hesap değişmez ama
+          // liste okunmaz hale gelir.
+          const clean = [...new Set(list as string[])].sort();
+          await writeSetting(pool, 'holidays', clean, user.id);
+          sendJson(res, 200, { holidays: clean });
           return;
         }
         if (path === '/api/admin/users' && method === 'GET') {

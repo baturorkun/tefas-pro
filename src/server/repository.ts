@@ -166,7 +166,9 @@ export interface Transaction {
 const TX_COLUMNS = `t.id, t.fund_code AS "fundCode", f.title AS "fundTitle",
                     t.platform, to_char(t.trade_date, 'YYYY-MM-DD') AS "tradeDate",
                     t.units::text AS units,
-                    to_char(t.sell_date, 'YYYY-MM-DD') AS "sellDate", t.note`;
+                    to_char(t.sell_date, 'YYYY-MM-DD') AS "sellDate", t.note,
+                    to_char(t.buy_order_date, 'YYYY-MM-DD')  AS "buyOrderDate",
+                    to_char(t.sell_order_date, 'YYYY-MM-DD') AS "sellOrderDate"`;
 
 export async function listTransactions(pool: pg.Pool, userId: number): Promise<Transaction[]> {
   const r = await pool.query<Transaction>(
@@ -186,6 +188,9 @@ export interface TransactionInput {
   units: number;
   sellDate: string | null;
   note: string | null;
+  /** Emrin verildiği günler. Değerlemede kullanılmaz; istatistik. */
+  buyOrderDate: string | null;
+  sellOrderDate: string | null;
 }
 
 export async function createTransaction(
@@ -194,8 +199,10 @@ export async function createTransaction(
   input: TransactionInput,
 ): Promise<Transaction> {
   const r = await pool.query<{ id: number }>(
-    `INSERT INTO portfolio_transaction (user_id, fund_code, platform, trade_date, units, sell_date, note)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+    `INSERT INTO portfolio_transaction
+       (user_id, fund_code, platform, trade_date, units, sell_date, note,
+        buy_order_date, sell_order_date)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
     [
       userId,
       input.fundCode,
@@ -204,6 +211,8 @@ export async function createTransaction(
       input.units,
       input.sellDate,
       input.note,
+      input.buyOrderDate,
+      input.sellOrderDate,
     ],
   );
   return (await getTransaction(pool, userId, r.rows[0]!.id))!;
@@ -236,7 +245,8 @@ export async function updateTransaction(
   const r = await pool.query(
     `UPDATE portfolio_transaction SET
        fund_code = $3, platform = $4, trade_date = $5, units = $6,
-       sell_date = $7, note = $8, updated_at = now()
+       sell_date = $7, note = $8,
+       buy_order_date = $9, sell_order_date = $10, updated_at = now()
      WHERE user_id = $1 AND id = $2`,
     [
       userId,
@@ -247,6 +257,8 @@ export async function updateTransaction(
       input.units,
       input.sellDate,
       input.note,
+      input.buyOrderDate,
+      input.sellOrderDate,
     ],
   );
   if (r.rowCount === 0) return null;
@@ -866,4 +878,49 @@ export async function closedPositions(
     [userId],
   );
   return r.rows as ClosedPositionRow[];
+}
+
+// ── Sistem ayarları ──────────────────────────────────────────────────────────
+
+/** Tatil listesi bulunamazsa hesap hafta sonlarıyla yetinir; ekran çökmez. */
+const DEFAULT_HOLIDAYS: string[] = [];
+
+export async function readSetting<T>(pool: pg.Pool, key: string, fallback: T): Promise<T> {
+  const r = await pool.query<{ value: T }>('SELECT value FROM app_setting WHERE key = $1', [key]);
+  return r.rows[0]?.value ?? fallback;
+}
+
+export async function writeSetting(
+  pool: pg.Pool,
+  key: string,
+  value: unknown,
+  userId: number,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO app_setting (key, value, updated_by) VALUES ($1, $2::jsonb, $3)
+     ON CONFLICT (key) DO UPDATE
+       SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+    [key, JSON.stringify(value), userId],
+  );
+}
+
+export async function holidays(pool: pg.Pool): Promise<string[]> {
+  return readSetting<string[]>(pool, 'holidays', DEFAULT_HOLIDAYS);
+}
+
+/**
+ * Fonun valör günleri. Bilinmeyen fonda null döner: form hesabı atlar ve
+ * kullanıcı tarihi elle girer, akış engellenmez.
+ */
+export async function fundValor(
+  pool: pg.Pool,
+  fundCode: string,
+): Promise<{ buy: number; sell: number } | null> {
+  const r = await pool.query<{ buy_valor_days: number | null; sell_valor_days: number | null }>(
+    'SELECT buy_valor_days, sell_valor_days FROM dim_fund_terms WHERE fund_code = $1',
+    [fundCode.toUpperCase()],
+  );
+  const row = r.rows[0];
+  if (!row) return null;
+  return { buy: row.buy_valor_days ?? 0, sell: row.sell_valor_days ?? 0 };
 }
