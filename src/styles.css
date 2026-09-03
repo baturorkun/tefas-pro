@@ -309,6 +309,23 @@ td.actions { text-align: right; }
 .total-row td { border-top: 1px solid var(--line); font-weight: 600;
                 color: var(--text-strong); }
 
+/* Dönemsel getiri tablosu: ay satırı kendi haftalarının başlığı gibi durur.
+   Ayrı bir dolgu rengi vermek yerine üstten çizgi ve koyu metin kullanılır —
+   satırlar zaten kâr/zarara göre renkleniyor, üçüncü bir renk katmanı okumayı
+   zorlaştırırdı. */
+.period-month td { border-top: 1px solid var(--line); background: #0d1a27;
+                   font-weight: 600; color: var(--text-strong); }
+.period-month:first-child td { border-top: 0; }
+.period-name { font-weight: 600; letter-spacing: .01em; }
+/* Hafta, ait olduğu ayın altında girintili durur. */
+.period-week-name { padding-left: 1.4rem; color: var(--muted); font-size: .84rem; }
+.period-week td { font-size: .84rem; }
+td.dim { color: var(--muted-dim); }
+
+/* Tablonun altındaki açıklama: hesabın nasıl yapıldığını söyler. */
+.panel-note { margin: .9rem .1rem 0; color: var(--muted-dim); font-size: .78rem;
+              line-height: 1.55; max-width: 62rem; }
+
 /* Bölüm başlığı: panel ile aynı hizada, grafik ızgarasının üstünde */
 .section-title { font-size: 13px; font-weight: 600; letter-spacing: .06em;
                  text-transform: uppercase; color: var(--muted-dim);

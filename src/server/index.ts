@@ -35,30 +35,31 @@ import {
   sendJson,
 } from './http.js';
 import {
+  addToWatchlist,
+  closedPositions,
   createSession,
   createTransaction,
   createUser,
+  dashboard,
   deleteTransaction,
   findSessionUser,
   findUserByUsername,
-  dashboard,
+  fundValor,
+  holidays,
   listTransactions,
   listUsers,
-  revokeSession,
-  updateTransaction,
-  updateUser,
   listWatchlist,
+  periodReturns,
+  portfolioPerformance,
   portfolioSummary,
-  addToWatchlist,
-  trackFundForUser,
   removeFromWatchlist,
+  revokeSession,
+  trackFundForUser,
   type AppUser,
   type TransactionInput,
-  portfolioPerformance,
-  closedPositions,
-  holidays,
+  updateTransaction,
+  updateUser,
   writeSetting,
-  fundValor,
 } from './repository.js';
 
 const COOKIE_NAME = 'tefas_session';
@@ -347,6 +348,11 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
 
       if (path === '/api/closed' && method === 'GET') {
         sendJson(res, 200, await closedPositions(pool, user.id));
+        return;
+      }
+
+      if (path === '/api/periods' && method === 'GET') {
+        sendJson(res, 200, await periodReturns(pool, user.id));
         return;
       }
 
