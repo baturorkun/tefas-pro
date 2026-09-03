@@ -27,6 +27,17 @@ const THROTTLE_MS = 700;
 /** Artımlı çekimde geriye örtüşme: geç gelen revizyonu yakalar. */
 const OVERLAP_DAYS = 5;
 
+/**
+ * `ingest_run.source` değerleri.
+ *
+ * Zamanlanmış tarama ile tek fonluk toplama ayrı tutulur: Panel'deki "Son
+ * Toplama" kutusu en son kaydı gösteriyor, ayrım olmasaydı takip listesine
+ * eklenen her fon gecelik taramanın yerine geçer ve kutu sistemin genel
+ * durumu yerine tek bir fonun durumunu gösterirdi.
+ */
+export const SCHEDULED_SOURCE = 'fintables-watchlist';
+export const ONDEMAND_SOURCE = 'fintables-fund';
+
 interface Args {
   funds: string[] | undefined;
   backfill: boolean;
@@ -270,6 +281,50 @@ async function lastFlowDate(pool: pg.Pool, code: string): Promise<string | null>
   return r.rows[0]?.d ?? null;
 }
 
+/**
+ * Tek fonun verisini toplar. Takip listesine fon eklenince sunucu bunu çağırır.
+ *
+ * Zamanlanmış taramadan farkı kapsam: evren sorgusu, getiri anlık görüntüsü ve
+ * diğer fonlar atlanır. Fonun kendi geçmişi çekilir, bu da yeni bir fon için
+ * on iki aylık para akışı ve altı aylık büyüklük demek — saniyeler sürer, bu
+ * yüzden çağıran taraf beklememeli.
+ *
+ * Kendi ingest_run kaydını açar ve kapatır; hata durumunda kayıt `failed`
+ * olarak kapanır ve hata yukarı verilir.
+ */
+export async function collectSingleFund(
+  pool: pg.Pool,
+  client: FintablesClient,
+  code: string,
+): Promise<{ runId: number; upserted: number }> {
+  const today = todayIso();
+  const runId = (
+    await pool.query<{ id: number }>(
+      `INSERT INTO ingest_run (source, status) VALUES ($1, 'running') RETURNING id`,
+      [ONDEMAND_SOURCE],
+    )
+  ).rows[0]!.id;
+
+  try {
+    const last = await lastFlowDate(pool, code);
+    const flowStart = last === null ? monthsBack(today, 12) : addDays(last, -OVERLAP_DAYS);
+    const upserted = await ingestFund(pool, client, code, today, flowStart, runId);
+    await pool.query(
+      `UPDATE ingest_run SET status = 'passed', finished_at = now(), rows_upserted = $2,
+              funds_ok = 1 WHERE id = $1`,
+      [runId, upserted],
+    );
+    return { runId, upserted };
+  } catch (err) {
+    await pool.query(
+      `UPDATE ingest_run SET status = 'failed', finished_at = now(), last_error = $2,
+              funds_failed = 1 WHERE id = $1`,
+      [runId, String(err)],
+    );
+    throw err;
+  }
+}
+
 async function ingestFund(
   pool: pg.Pool,
   client: FintablesClient,
@@ -454,14 +509,18 @@ async function main(): Promise<void> {
 
   const runId = (
     await pool.query<{ id: number }>(
-      `INSERT INTO ingest_run (source, status) VALUES ('fintables-watchlist', 'running')
-       RETURNING id`,
+      `INSERT INTO ingest_run (source, status) VALUES ($1, 'running') RETURNING id`,
+      [SCHEDULED_SOURCE],
     )
   ).rows[0]!.id;
 
   let upserted = 0;
   let ok = 0;
-  let failed = 0;
+  // Fon hataları ile pencere hataları ayrı sayılır: ikisi tek sayaçta
+  // toplanınca "3 fonda hata" denip aslında üç büyüklük penceresinin
+  // düşmüş olması mümkündü.
+  const fundErrors: string[] = [];
+  const windowErrors: string[] = [];
 
   try {
 
@@ -488,8 +547,9 @@ async function main(): Promise<void> {
         ok += 1;
         console.log(`  ✓ ${code}`);
       } catch (err) {
-        failed += 1;
-        console.error(`  ✗ ${code}: ${String(err).split('\n')[0]}`);
+        const reason = String(err).split('\n')[0] ?? '';
+        fundErrors.push(`${code}: ${reason}`);
+        console.error(`  ✗ ${code}: ${reason}`);
       }
     }
 
@@ -505,14 +565,27 @@ async function main(): Promise<void> {
       try {
         upserted += await ingestSizeWindow(pool, client, w, runId, w.end > monthsBack(today, 1), today);
       } catch (err) {
-        failed += 1;
-        console.error(`  ✗ pencere ${w.start}→${w.end}: ${String(err).split('\n')[0]}`);
+        const reason = String(err).split('\n')[0] ?? '';
+        windowErrors.push(`pencere ${w.start}→${w.end}: ${reason}`);
+        console.error(`  ✗ pencere ${w.start}→${w.end}: ${reason}`);
       }
     }
 
+    const failed = fundErrors.length + windowErrors.length;
+    // Sebepler kaydedilir: sayı "üç fon düştü" der ama hangisi ve neden
+    // olduğunu yalnız konsol biliyordu, o da koşum bitince kayboluyordu.
+    const errorText = [...fundErrors, ...windowErrors].join('\n');
     await pool.query(
-      `UPDATE ingest_run SET status = $2, finished_at = now(), rows_upserted = $3 WHERE id = $1`,
-      [runId, failed === 0 ? 'passed' : 'partial', upserted],
+      `UPDATE ingest_run SET status = $2, finished_at = now(), rows_upserted = $3,
+              funds_ok = $4, funds_failed = $5, last_error = $6 WHERE id = $1`,
+      [
+        runId,
+        failed === 0 ? 'passed' : 'partial',
+        upserted,
+        ok,
+        fundErrors.length,
+        errorText === '' ? null : errorText.slice(0, 4000),
+      ],
     );
     console.log(
       `\nBitti: ${ok} fon, ${failed} hata, ${upserted} satır yazıldı (run #${runId}).` +
