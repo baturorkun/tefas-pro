@@ -148,6 +148,8 @@ interface BankRow {
 
 interface PeriodRow {
   label: string;
+  benchPct: string | null;
+  diff: string | null;
   startDate: string;
   endDate: string;
   days: number;
@@ -238,13 +240,22 @@ function people(raw: string | null): string {
   return `${n > 0 ? '+' : ''}${n.toLocaleString('tr-TR')} kişi`;
 }
 
+/**
+ * İşaretli sayı. Yüzdede iki ondalık kalır — orada anlam taşıyor; TL
+ * tutarlarında kuruş gösterilmez, sütunu okumayı zorlaştırıyordu.
+ */
 function signed(raw: string | null, suffix = '%'): HTMLElement {
   if (raw === null || raw === '') return el('span', { class: 'num' }, ['—']);
   const n = Number(raw);
   const cls = n > 0 ? 'num pos' : n < 0 ? 'num neg' : 'num';
   const sign = n > 0 ? '+' : '';
+  // Yüzde ve puan hep iki hane: sütun halinde dizildiklerinde sondaki sıfır
+  // düşerse rakamlar kayıyor ve "+5,4" ile "+0,93" hizasız duruyor.
+  const digits = suffix.includes('₺') ? 0 : 2;
   return el('span', { class: cls }, [
-    `${sign}${n.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}${suffix}`,
+    `${sign}${n.toLocaleString('tr-TR', {
+      minimumFractionDigits: digits, maximumFractionDigits: digits,
+    })}${suffix}`,
   ]);
 }
 
@@ -1191,9 +1202,13 @@ async function runsView(): Promise<Node[]> {
  * verisi henüz yok; bu yüzden elle tutuluyor.
  */
 async function settingsView(reload: () => void): Promise<Node[]> {
-  const data = (await api('/api/admin/settings')) as { holidays: string[] };
+  const data = (await api('/api/admin/settings')) as { holidays: string[]; benchmark: string };
   const area = el('textarea', { rows: '14', spellcheck: 'false' }) as HTMLTextAreaElement;
   area.value = data.holidays.join('\n');
+  const benchInput = el('input', {
+    maxlength: '16', placeholder: 'TP2', spellcheck: 'false',
+  }) as HTMLInputElement;
+  benchInput.value = data.benchmark;
   const status = el('span', { class: 'status' });
   const save = el('button', { class: 'btn-primary' }, [icon('add'), 'Kaydet']);
 
@@ -1203,9 +1218,14 @@ async function settingsView(reload: () => void): Promise<Node[]> {
       try {
         status.textContent = 'Kaydediliyor…';
         const r = (await api('/api/admin/settings', {
-          method: 'PUT', body: JSON.stringify({ holidays: list }),
-        })) as { holidays: string[] };
+          method: 'PUT',
+          body: JSON.stringify({
+            holidays: list,
+            benchmark: benchInput.value.trim().toUpperCase(),
+          }),
+        })) as { holidays: string[]; benchmark: string };
         area.value = r.holidays.join('\n');
+        benchInput.value = r.benchmark;
         status.textContent = `${String(r.holidays.length)} tatil kaydedildi.`;
         reload();
       } catch (err) {
@@ -1231,9 +1251,21 @@ async function settingsView(reload: () => void): Promise<Node[]> {
         'flag',
         'gün',
       ),
+      metric('Benchmark', data.benchmark, 'Karşılaştırma Fonu', 'chart'),
       metric('Banka', String(banks.length),
         `${String(banks.filter((b) => b.usage > 0).length)} tanesi kullanımda`, 'money'),
     ]),
+    panel(
+      'Benchmark',
+      'karşılaştırma fonu',
+      el('div', { class: 'panel-body' }, [
+        el('p', { class: 'settings-note' }, [
+          'Portföyün getirisi bu fonun getirisiyle karşılaştırılır. Dönemsel ' +
+          'Getiri ekranında her ay ve hafta için fark puan olarak gösterilir.',
+        ]),
+        field('Fon Kodu', benchInput, 'TEFAS kodu. Getiri verisi olmayan kod kabul edilmez.'),
+      ]),
+    ),
     bankPanel(banks, reload),
     panel(
       'Resmî Tatiller',
@@ -1558,7 +1590,11 @@ async function closedView(): Promise<Node[]> {
  * sıralamayı sunucu kurar, burada yeniden sıralanmaz.
  */
 async function periodsView(): Promise<Node[]> {
-  const months = (await api('/api/periods')) as MonthlyPeriod[];
+  const [months, ayar] = (await Promise.all([
+    api('/api/periods'),
+    api('/api/benchmark'),
+  ])) as [MonthlyPeriod[], { benchmark: string }];
+  const bench = ayar.benchmark;
 
   // Gün ve ay olarak kısa aralık: "01.08 – 07.08". Yıl yazılmaz, satırın
   // kendisi zaten bir ayın içinde duruyor.
@@ -1573,11 +1609,18 @@ async function periodsView(): Promise<Node[]> {
     el('td', { class: 'num dim' }, [`${String(r.days)}g`]),
     el('td', {}, [signed(r.gain, ' ₺')]),
     el('td', {}, [signed(r.pct)]),
+    el('td', {}, [signed(r.benchPct)]),
+    // Birim başlıkta: her satırda tekrarlanınca sütunu okumayı zorlaştırıyor.
+    el('td', {}, [signed(r.diff, '')]),
   ];
 
   const rows: HTMLElement[] = [];
   for (const m of months) {
-    rows.push(el('tr', { class: 'period-month' }, cells(m, true)));
+    // Şeridin rengi ayın sonucunu söyler: satırı okumadan önce zarar mı kâr mı
+    // olduğu görünsün.
+    rows.push(el('tr', {
+      class: Number(m.gain) < 0 ? 'period-month period-loss' : 'period-month',
+    }, cells(m, true)));
     for (const w of m.weeks) rows.push(el('tr', { class: 'period-week' }, cells(w, false)));
   }
 
@@ -1586,8 +1629,6 @@ async function periodsView(): Promise<Node[]> {
   // Toplam getiri aylık getirilerin bileşiği; yüzdeleri toplamak yanlış olurdu.
   const compound = months.reduce((a, m) => (m.pct === null ? a : a * (1 + Number(m.pct) / 100)), 1);
   const winners = gains.filter((g) => g > 0).length;
-  const best = months.reduce<MonthlyPeriod | null>(
-    (a, m) => (a === null || Number(m.gain) > Number(a.gain) ? m : a), null);
   const worst = months.reduce<MonthlyPeriod | null>(
     (a, m) => (a === null || Number(m.gain) < Number(a.gain) ? m : a), null);
   const latest = months[0];
@@ -1600,7 +1641,10 @@ async function periodsView(): Promise<Node[]> {
       metric('Son Ay', latest === undefined ? '—' : money(latest.gain),
         latest === undefined ? '—' : `${latest.label}${latest.pct === null ? '' : ` · %${Number(latest.pct).toFixed(2)}`}`,
         'chart'),
-      metric('En İyi Ay', best === null ? '—' : money(best.gain), best?.label ?? '—', 'flag'),
+      metric(`${bench} Üstü`,
+        String(months.filter((m) => m.diff !== null && Number(m.diff) >= 0).length),
+        `${String(months.filter((m) => m.diff !== null && Number(m.diff) < 0).length)} Ayda Geride`,
+        'flag', 'ay'),
       metric('Kazançlı Ay', String(winners),
         worst === null || Number(worst.gain) >= 0
           ? `${String(months.length - winners)} Zararla`
@@ -1613,13 +1657,18 @@ async function periodsView(): Promise<Node[]> {
       el('div', { class: 'panel-body' }, [
         months.length === 0
           ? el('div', { class: 'empty-state' }, ['Getirisi ölçülebilen bir gün yok.'])
-          : table(['Dönem', 'Aralık', 'Gün', 'K/Z', 'Getiri'], rows),
+          : table(['Dönem', 'Aralık', 'Gün', 'K/Z', 'Getiri', bench, 'Fark (puan)'], rows),
       ]),
     ),
     el('p', { class: 'panel-note' }, [
       'Getiri sermaye hareketinden arındırılmıştır: para yatırılan veya çekilen gün ' +
       'kazanç sayılmaz. Bir ayın kazancı haftalarının toplamı, getirisi haftalarının ' +
       'bileşiğidir. Ay en fazla dört haftaya bölünür; artan günler son haftaya eklenir.',
+    ]),
+    el('p', { class: 'panel-note' }, [
+      `${bench} getirisi portföyün ölçülebildiği aynı günler üzerinden zincirlenir; ` +
+      'para tutulmayan günün getirisi benchmark\'a sayılmaz. Fark puan cinsindendir: ' +
+      'iki yüzdenin farkı yüzde değil puandır.',
     ]),
     el('p', { class: 'panel-note' }, [
       'K/Z ile getiri işaret olarak ayrışabilir. K/Z o günkü portföy büyüklüğüne ' +

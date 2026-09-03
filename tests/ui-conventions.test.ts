@@ -190,6 +190,20 @@ describe('collector log', () => {
   });
 });
 
+describe('dönemsel getiri tablosu', () => {
+  it('zararlı ayın şeridi kırmızı olur', () => {
+    // Şerit ayın sonucunu satırı okumadan önce söylüyor.
+    expect(main).toContain("'period-month period-loss'");
+    expect(css).toContain('.period-month.period-loss td:first-child');
+    expect(css).toContain('inset 3px 0 0 var(--danger)');
+  });
+
+  it('puan birimi başlıkta durur, her satırda değil', () => {
+    expect(main).toContain("'Fark (puan)'");
+    expect(main).not.toContain("signed(r.diff, ' p')");
+  });
+});
+
 describe('kabuk', () => {
   it('sürüm istemcide üretilmez, sunucudan alınır', () => {
     expect(main).toContain("api('/api/runtime')");

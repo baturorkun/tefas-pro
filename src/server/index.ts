@@ -38,6 +38,7 @@ import {
 import {
   addBank,
   addToWatchlist,
+  benchmarkCode,
   closedPositions,
   createSession,
   createTransaction,
@@ -48,6 +49,7 @@ import {
   findSessionUser,
   findUserByUsername,
   fundHasData,
+  fundIsUsableBenchmark,
   fundValor,
   holidays,
   ingestRuns,
@@ -398,6 +400,11 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         return;
       }
 
+      if (path === '/api/benchmark' && method === 'GET') {
+        sendJson(res, 200, { benchmark: await benchmarkCode(pool) });
+        return;
+      }
+
       if (path === '/api/periods' && method === 'GET') {
         sendJson(res, 200, await periodReturns(pool, user.id));
         return;
@@ -449,7 +456,10 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
           return;
         }
         if (path === '/api/admin/settings' && method === 'GET') {
-          sendJson(res, 200, { holidays: await holidays(pool) });
+          sendJson(res, 200, {
+            holidays: await holidays(pool),
+            benchmark: await benchmarkCode(pool),
+          });
           return;
         }
         if (path === '/api/admin/settings' && method === 'PUT') {
@@ -465,8 +475,24 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
           // Sıralı ve tekrarsız: aynı gün iki kez yazılırsa hesap değişmez ama
           // liste okunmaz hale gelir.
           const clean = [...new Set(list as string[])].sort();
+
+          // Benchmark isteğe bağlı gelir; verilmişse doğrulanır. Verisi
+          // olmayan bir kod sessizce kaydedilseydi karşılaştırma sütunu
+          // sebebi belirsiz biçimde boş kalırdı.
+          const bench = body['benchmark'];
+          if (bench !== undefined) {
+            const code = String(bench).trim().toUpperCase();
+            if (code === '' || !(await fundIsUsableBenchmark(pool, code))) {
+              sendJson(res, 400, {
+                error: `Benchmark fonu bulunamadı veya getiri verisi yok: ${code}`,
+              });
+              return;
+            }
+            await writeSetting(pool, 'benchmark', code, user.id);
+          }
+
           await writeSetting(pool, 'holidays', clean, user.id);
-          sendJson(res, 200, { holidays: clean });
+          sendJson(res, 200, { holidays: clean, benchmark: await benchmarkCode(pool) });
           return;
         }
         if (path === '/api/admin/banks' && method === 'POST') {

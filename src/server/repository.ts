@@ -861,6 +861,10 @@ const MONTH_NAMES = [
 
 export interface PeriodRow {
   label: string;
+  /** Benchmark fonun aynı günlerdeki getirisi (%). Verisi yoksa null. */
+  benchPct: string | null;
+  /** Portföy ile benchmark arasındaki fark, puan. */
+  diff: string | null;
   startDate: string;
   endDate: string;
   /** Dönemin işlem günü sayısı. */
@@ -888,10 +892,19 @@ export interface MonthlyPeriod extends PeriodRow {
  * toplamına, getirisi de haftalarının tam bileşiğine eşit çıkar; ay ayrı bir
  * formülle hesaplanmadığı için ikisi arasında tutarsızlık oluşamaz.
  */
-function measure(label: string, days: readonly PortfolioDailyRow[]): PeriodRow {
+function measure(
+  label: string,
+  days: readonly PortfolioDailyRow[],
+  bench: ReadonlyMap<string, number>,
+): PeriodRow {
   let gain = 0;
   let factor = 1;
   let measured = false;
+  // Benchmark portföyün ölçülebildiği AYNI günler üzerinden zincirlenir.
+  // Para tutulmayan günün getirisi benchmark'a yazılsaydı, benchmark paranın
+  // hiç girmediği bir dönemin kazancıyla öne geçmiş görünürdü.
+  let benchFactor = 1;
+  let benchMeasured = false;
   for (const day of days) {
     const g = Number(day.dailyGain ?? 0);
     if (Number.isFinite(g)) gain += g;
@@ -901,8 +914,15 @@ function measure(label: string, days: readonly PortfolioDailyRow[]): PeriodRow {
     if (day.dailyGain !== null && prev > 0) {
       factor *= 1 + g / prev;
       measured = true;
+      const b = bench.get(day.date);
+      if (b !== undefined) {
+        benchFactor *= 1 + b / 100;
+        benchMeasured = true;
+      }
     }
   }
+  const pct = measured ? (factor - 1) * 100 : null;
+  const benchPct = benchMeasured ? (benchFactor - 1) * 100 : null;
   const first = days[0];
   const last = days[days.length - 1];
   return {
@@ -911,7 +931,9 @@ function measure(label: string, days: readonly PortfolioDailyRow[]): PeriodRow {
     endDate: last?.date ?? '',
     days: days.length,
     gain: gain.toFixed(2),
-    pct: measured ? ((factor - 1) * 100).toFixed(4) : null,
+    pct: pct === null ? null : pct.toFixed(4),
+    benchPct: benchPct === null ? null : benchPct.toFixed(4),
+    diff: pct === null || benchPct === null ? null : (pct - benchPct).toFixed(4),
   };
 }
 
@@ -948,7 +970,10 @@ function weekBlocks<T>(days: readonly T[]): T[][] {
  * Hesap SQL yerine burada: saf fonksiyon olarak çalışan veritabanı olmadan
  * test edilebiliyor, `buildPerformanceSeries` de aynı sebeple burada.
  */
-export function buildPeriodReturns(rows: readonly PortfolioDailyRow[]): MonthlyPeriod[] {
+export function buildPeriodReturns(
+  rows: readonly PortfolioDailyRow[],
+  benchDaily: ReadonlyMap<string, number> = new Map(),
+): MonthlyPeriod[] {
   const byMonth = new Map<string, PortfolioDailyRow[]>();
   for (const row of [...rows].sort((a, b) => a.date.localeCompare(b.date))) {
     const key = row.date.slice(0, 7);
@@ -962,9 +987,10 @@ export function buildPeriodReturns(rows: readonly PortfolioDailyRow[]): MonthlyP
     const year = month.slice(0, 4);
     const name = MONTH_NAMES[Number(month.slice(5, 7)) - 1] ?? month;
     months.push({
-      ...measure(`${name} ${year}`, days),
+      ...measure(`${name} ${year}`, days, benchDaily),
       month,
-      weeks: weekBlocks(days).map((block, i) => measure(`${String(i + 1)}. Hafta`, block)),
+      weeks: weekBlocks(days).map((block, i) =>
+        measure(`${String(i + 1)}. Hafta`, block, benchDaily)),
     });
   }
   return months.sort((a, b) => b.month.localeCompare(a.month));
@@ -981,6 +1007,14 @@ export async function periodReturns(pool: pg.Pool, userId: number): Promise<Mont
      ORDER BY trade_date`,
     [userId],
   );
+  const code = await benchmarkCode(pool);
+  const b = await pool.query<{ d: string; pct: string }>(
+    `SELECT to_char(trade_date, 'YYYY-MM-DD') AS d, daily_return_pct::text AS pct
+     FROM fact_fund_daily
+     WHERE fund_code = $1 AND daily_return_pct IS NOT NULL`,
+    [code],
+  );
+
   return buildPeriodReturns(
     r.rows.map((row) => ({
       date: row.d,
@@ -988,6 +1022,7 @@ export async function periodReturns(pool: pg.Pool, userId: number): Promise<Mont
       dailyGain: row.daily_gain,
       prevValue: row.prev_value,
     })),
+    new Map(b.rows.map((row) => [row.d, Number(row.pct)])),
   );
 }
 
@@ -1178,6 +1213,23 @@ export async function writeSetting(
        SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
     [key, JSON.stringify(value), userId],
   );
+}
+
+/** Karşılaştırma fonu. Portföyün getirisi tek başına iyi mi kötü mü demiyor. */
+const DEFAULT_BENCHMARK = 'TP2';
+
+export async function benchmarkCode(pool: pg.Pool): Promise<string> {
+  return readSetting<string>(pool, 'benchmark', DEFAULT_BENCHMARK);
+}
+
+/** Fonun ölçülmüş getiri verisi var mı? Benchmark ayarı buna göre doğrulanır. */
+export async function fundIsUsableBenchmark(pool: pg.Pool, code: string): Promise<boolean> {
+  const r = await pool.query(
+    `SELECT 1 FROM fact_fund_daily
+     WHERE fund_code = $1 AND daily_return_pct IS NOT NULL LIMIT 1`,
+    [code],
+  );
+  return (r.rowCount ?? 0) > 0;
 }
 
 export async function holidays(pool: pg.Pool): Promise<string[]> {
