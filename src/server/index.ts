@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type pg from 'pg';
 
+import { collectSingleFund } from '../collector.js';
 import { FintablesClient } from '../sources/fintables.js';
 import { makePool } from '../db/pool.js';
 import { currentVersion } from '../version.js';
@@ -46,8 +47,10 @@ import {
   deleteTransaction,
   findSessionUser,
   findUserByUsername,
+  fundHasData,
   fundValor,
   holidays,
+  ingestRuns,
   listBanks,
   listTransactions,
   listUsers,
@@ -157,6 +160,40 @@ async function ensureFundKnown(
      ON CONFLICT (fund_code) DO NOTHING`,
     [fund.code, fund.title, fund.fundType, fund.umbrellaType, fund.managementCompanyId, fund.isByf],
   );
+}
+
+/**
+ * Toplaması süren fonlar. Aynı fonu iki kullanıcı arka arkaya eklerse ikinci
+ * istek yeni bir koşum başlatmaz: aynı veriyi iki kez çekmek kaynakta gereksiz
+ * yük, veritabanında da iki paralel upsert demek olurdu.
+ *
+ * Süreç belleğinde: tek sunucu süreci var ve kayıt kaybı zararsız — kaçan fon
+ * zamanlanmış taramada toplanır.
+ */
+const collecting = new Set<string>();
+
+/**
+ * Takip listesine eklenen fon için tek fonluk toplamayı arkada başlatır.
+ *
+ * İstek beklenmez: yeni bir fonun on iki aylık para akışı çekiliyor ve bu
+ * saniyeler sürüyor. Hata yutulmaz ama isteği de düşürmez — fon listede kalır,
+ * verisi zamanlanmış koşumda gelir. Ekleme kullanıcının kararı, toplama onun
+ * yan etkisi.
+ */
+function triggerFundCollection(pool: pg.Pool, client: FintablesClient, fundCode: string): void {
+  if (collecting.has(fundCode)) return;
+  collecting.add(fundCode);
+  void (async () => {
+    try {
+      if (await fundHasData(pool, fundCode)) return;
+      const { runId, upserted } = await collectSingleFund(pool, client, fundCode);
+      console.log(`Tek fon toplandı: ${fundCode}, ${String(upserted)} satır (run #${String(runId)})`);
+    } catch (err) {
+      console.error(`Tek fon toplanamadı: ${fundCode}: ${String(err).split('\n')[0]}`);
+    } finally {
+      collecting.delete(fundCode);
+    }
+  })();
 }
 
 function readTransactionInput(body: Record<string, unknown>): TransactionInput {
@@ -312,6 +349,7 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
           : String(body['note']).trim() || null;
         await ensureFundKnown(pool, client, fundCode);
         await addToWatchlist(pool, user.id, fundCode, note);
+        triggerFundCollection(pool, client, fundCode);
         sendJson(res, 201, { fundCode });
         return;
       }
@@ -462,6 +500,11 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
             return;
           }
           sendJson(res, 200, await listBanks(pool));
+          return;
+        }
+
+        if (path === '/api/admin/runs' && method === 'GET') {
+          sendJson(res, 200, await ingestRuns(pool));
           return;
         }
 

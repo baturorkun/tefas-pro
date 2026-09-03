@@ -309,6 +309,15 @@ td.actions { text-align: right; }
 .total-row td { border-top: 1px solid var(--line); font-weight: 600;
                 color: var(--text-strong); }
 
+/* Collector Log: hata metni kendi satırında, tabloya sığmıyor. */
+.run-error-row td { border-bottom: 1px solid var(--line-soft); padding-top: 0; }
+.run-error { display: block; white-space: pre-wrap; word-break: break-word;
+             color: var(--danger); font-size: .76rem; line-height: 1.5;
+             background: var(--danger-tint); border-radius: 6px; padding: .5rem .7rem; }
+/* Bekleyen durum: veri henüz gelmemiş, "yok" değil. */
+.status-pending { color: var(--accent); background: var(--panel); border-color: var(--line); }
+.status-danger  { color: var(--danger); background: var(--danger-tint); border-color: var(--danger); }
+
 /* Ayarlarda banka ekleme şeridi: alan solda geniş, düğme sağda. */
 .settings-add { display: flex; gap: .6rem; align-items: center; margin-bottom: 1rem; }
 .settings-add input { flex: 1; min-width: 0; }

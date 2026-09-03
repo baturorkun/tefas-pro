@@ -128,6 +128,19 @@ interface ClosedPositionRow {
   realizedPct: string;
 }
 
+interface IngestRunRow {
+  id: number;
+  source: string;
+  startedAt: string;
+  finishedAt: string | null;
+  seconds: number | null;
+  status: string;
+  rowsUpserted: number;
+  fundsOk: number;
+  fundsFailed: number;
+  lastError: string | null;
+}
+
 interface BankRow {
   name: string;
   usage: number;
@@ -162,7 +175,7 @@ interface PerformanceSeries {
 
 type ViewId =
   | 'dashboard' | 'portfolio' | 'closed' | 'periods' | 'market'
-  | 'transactions' | 'watchlist' | 'users' | 'settings';
+  | 'transactions' | 'watchlist' | 'users' | 'runs' | 'settings';
 
 const root = document.getElementById('app');
 
@@ -304,6 +317,7 @@ const ICON_PATHS: Record<string, string[]> = {
   flag: ['M5 21V4h9l-1 3h6v8h-7l-1-3H5'],
   closed: ['M20 6 9 17l-5-5'],
   periods: ['M4 5h16v15H4z', 'M4 10h16', 'M9 5V3M15 5V3', 'M8 14h3M13 14h3'],
+  runs: ['M12 8v4l3 2', 'M12 3a9 9 0 1 0 9 9 9 9 0 0 0-9-9z'],
   market: ['M3 3v18h18', 'm7 14 3-4 3 3 5-7', 'M18 6h3v3'],
   settings: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'],
 };
@@ -1081,6 +1095,95 @@ function bankPanel(banks: BankRow[], reload: () => void): HTMLElement {
 }
 
 /**
+ * Collector koşum geçmişi.
+ *
+ * Panel'deki "Son Toplama" kutusu yalnız son zamanlanmış koşumun saatini
+ * gösteriyor; süre, yazılan satır ve hata metni hiçbir yerde görünmüyordu.
+ * Başarısız koşumun sebebi tam da bakılması gereken şey.
+ */
+async function runsView(): Promise<Node[]> {
+  const runs = (await api('/api/admin/runs')) as IngestRunRow[];
+  const scheduled = runs.filter((r) => r.source === 'fintables-watchlist');
+  // Kısmi koşum da sorunlu: tamamı çökmemiş ama fonların bir kısmı düşmüş.
+  // Yalnız 'failed' sayılsaydı kutu sorunları olduğundan az gösterirdi.
+  const failed = runs.filter((r) => r.status === 'failed' || r.fundsFailed > 0);
+  const son = scheduled[0];
+
+  const sure = (r: IngestRunRow): string =>
+    r.seconds === null ? '—' : r.seconds < 60
+      ? `${String(r.seconds)}sn`
+      : `${String(Math.floor(r.seconds / 60))}dk ${String(r.seconds % 60)}sn`;
+
+  const rows: HTMLElement[] = [];
+  for (const r of runs) {
+    rows.push(el('tr', {}, [
+      el('td', { class: 'num dim' }, [`#${String(r.id)}`]),
+      el('td', {}, [r.source === 'fintables-watchlist'
+        ? badge('Zamanlanmış', 'watch')
+        : badge('Tek Fon', 'sold')]),
+      el('td', { class: 'num' }, [r.startedAt]),
+      el('td', { class: 'num dim' }, [sure(r)]),
+      el('td', {}, [badge(
+        r.status === 'passed' ? 'Başarılı' : r.status === 'failed' ? 'Hata'
+          : r.status === 'partial' ? 'Kısmi' : 'Sürüyor',
+        r.status === 'passed' ? 'open' : r.status === 'failed' ? 'danger' : 'sold',
+      )]),
+      el('td', { class: 'num' }, [
+        r.fundsOk === 0 && r.fundsFailed === 0 ? '—' : String(r.fundsOk),
+        ...(r.fundsFailed === 0 ? [] : [el('span', { class: 'num neg' }, [` +${String(r.fundsFailed)}`])]),
+      ]),
+      el('td', { class: 'num' }, [r.rowsUpserted === 0 ? '—' : r.rowsUpserted.toLocaleString('tr-TR')]),
+    ]));
+    // Hata metni kendi satırında: tabloya sığmayacak kadar uzun ve
+    // kısaltıldığında işe yaramaz hale geliyor.
+    if (r.lastError !== null && r.lastError !== '') {
+      rows.push(el('tr', { class: 'run-error-row' }, [
+        el('td', { colspan: '7' }, [el('code', { class: 'run-error' }, [r.lastError])]),
+      ]));
+    }
+  }
+
+  return [
+    el('div', { class: 'metric-grid' }, [
+      // Tarih ve saat tek değere sığmıyor, kutuda iki satıra taşıyordu:
+      // tarih büyük, saat alt satırda.
+      metric('Son Zamanlanmış', son === undefined ? '—' : son.startedAt.slice(0, 10),
+        son === undefined ? 'Henüz koşum yok'
+          : `${son.startedAt.slice(11)} · #${String(son.id)} · ${sure(son)}`, 'runs'),
+      metric('Toplam Koşum', String(runs.length),
+        `${String(scheduled.length)} zamanlanmış · ${String(runs.length - scheduled.length)} tek fon`,
+        'chart', 'koşum'),
+      metric('Sorunlu', String(failed.length),
+        failed.length === 0 ? 'Hepsi geçti' : `Son: #${String(failed[0]?.id ?? 0)}`, 'flag', 'koşum'),
+      metric('Son Koşumda Fon', son === undefined ? '—' : String(son.fundsOk),
+        son === undefined || son.fundsFailed === 0
+          ? 'Hepsi toplandı'
+          : `${String(son.fundsFailed)} fonda hata`,
+        'fund', 'fon'),
+    ]),
+    panel(
+      'Collector Log',
+      `${String(runs.length)} koşum · en yeni üstte`,
+      el('div', { class: 'panel-body' }, [
+        runs.length === 0
+          ? el('div', { class: 'empty-state' }, ['Henüz bir toplama koşumu yok.'])
+          : table(['#', 'Kaynak', 'Başlangıç', 'Süre', 'Durum', 'Fon', 'Yazılan Satır'], rows),
+      ]),
+    ),
+    // Fon sayısı sonradan kaydedilmeye başlandı. Eski koşumlarda tire durur;
+    // sayı geri getirilemiyor çünkü satırların ingest_run_id'si sonraki
+    // koşumlarda el değiştiriyor ve türetme olduğundan az fon gösteriyor.
+    ...(runs.some((r) => r.fundsOk === 0 && r.fundsFailed === 0 && r.rowsUpserted > 0)
+      ? [el('p', { class: 'panel-note' }, [
+          'Fon sayısı sonradan kaydedilmeye başlandı; daha eski koşumlarda tire ' +
+          'görünür. Yazılan satır sayısı upsert edilen kayıtları sayar, yalnız ' +
+          'yeni gelenleri değil — her koşum önceki beş günü yeniden yazar.',
+        ])]
+      : []),
+  ];
+}
+
+/**
  * Sistem ayarları. Şimdilik tek ayar var: resmî tatiller.
  *
  * Liste, emir tarihinden gerçekleşme tarihini hesaplarken kullanılır. Geçmiş
@@ -1736,7 +1839,12 @@ async function watchlistView(reload: () => void): Promise<Node[]> {
         el('span', { class: 'fund-code' }, [r.fundCode]),
         el('span', { class: 'fund-title' }, [r.title ?? '']),
       ]),
-      el('td', {}, [badge(STATUS_LABEL[r.status], r.status)]),
+      // Fiyat verisi yoksa fon yeni eklenmiş demektir: toplama arkada sürüyor.
+      // Sessizce tire dizisi göstermek "veri yok" ile "henüz gelmedi"yi aynı
+      // şeye benzetirdi.
+      el('td', {}, [r.navDate === null
+        ? badge('Veri Bekleniyor', 'pending')
+        : badge(STATUS_LABEL[r.status], r.status)]),
       el('td', { class: 'num' }, [r.navDate ?? '—']),
       el('td', { class: 'num' }, [
         r.navPerShare === null ? '—' : Number(r.navPerShare).toLocaleString('tr-TR', {
@@ -1943,6 +2051,7 @@ const VIEWS: { id: ViewId; label: string; adminOnly: boolean; crumb: string }[] 
   { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
   { id: 'watchlist', label: 'Takip Listem', adminOnly: false, crumb: 'Genel' },
   { id: 'users', label: 'Kullanıcılar', adminOnly: true, crumb: 'Yönetim' },
+  { id: 'runs', label: 'Collector Log', adminOnly: true, crumb: 'Yönetim' },
   { id: 'settings', label: 'Ayarlar', adminOnly: true, crumb: 'Yönetim' },
 ];
 
@@ -2023,6 +2132,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     else if (current.id === 'market') bodyNodes = await marketView(reload);
     else if (current.id === 'transactions') bodyNodes = await transactionsView(reload);
     else if (current.id === 'watchlist') bodyNodes = await watchlistView(reload);
+    else if (current.id === 'runs') bodyNodes = await runsView();
     else if (current.id === 'settings') bodyNodes = await settingsView(reload);
     else bodyNodes = await usersView(reload);
   } catch (err) {

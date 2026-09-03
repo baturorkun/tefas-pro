@@ -3,6 +3,8 @@
  */
 import type pg from 'pg';
 
+import { SCHEDULED_SOURCE } from '../collector.js';
+
 import { hashPassword, newSessionId } from './auth.js';
 
 export interface AppUser {
@@ -309,7 +311,14 @@ export async function listWatchlist(pool: pg.Pool, userId: number): Promise<Watc
   const r = await pool.query(
     // date sütunları to_char ile biçimlenir: pg sürücüsü date'i JS Date'e
     // çevirir ve JSON'a "2026-08-31T00:00:00.000Z" olarak serileşir.
-    `SELECT w.fund_code AS "fundCode", l.title,
+    // fund_latest LEFT JOIN: yeni eklenen fonun henüz fiyat verisi yok.
+    // Inner join'de böyle bir fon listede hiç görünmüyordu — kullanıcı fonu
+    // ekliyor, liste değişmiyordu. Artık satır çıkar, verisi olmadığı belli
+    // olur ve toplama bitince kendiliğinden dolar.
+    //
+    // Başlık dim_fund'dan yedekleniyor: fon eklenirken oraya yazılıyor,
+    // fiyat verisi ise ilk toplamadan sonra geliyor.
+    `SELECT w.fund_code AS "fundCode", coalesce(l.title, d.title) AS title,
             CASE WHEN count(t.id) > 0 THEN 'sold' ELSE 'watch' END AS status,
             to_char(w.added_at AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM-DD') AS "addedAt",
             w.note,
@@ -319,11 +328,12 @@ export async function listWatchlist(pool: pg.Pool, userId: number): Promise<Watc
             round(l.net_flow)::text AS "netFlow",
             l.tax_pct::text AS "taxPct", l.sell_valor_days AS "sellValorDays"
      FROM analytics.watchlist_visible w
-     JOIN analytics.fund_latest l USING (fund_code)
+     LEFT JOIN analytics.fund_latest l USING (fund_code)
+     LEFT JOIN dim_fund d ON d.fund_code = w.fund_code
      LEFT JOIN portfolio_transaction t
             ON t.fund_code = w.fund_code AND t.user_id = w.user_id
      WHERE w.user_id = $1
-     GROUP BY w.fund_code, w.added_at, w.note, l.title, l.nav_date, l.nav_per_share,
+     GROUP BY w.fund_code, w.added_at, w.note, l.title, d.title, l.nav_date, l.nav_per_share,
               l.daily_return_pct, l.net_flow, l.tax_pct, l.sell_valor_days
      ORDER BY w.fund_code`,
     [userId],
@@ -522,7 +532,8 @@ export async function dashboard(
     pool.query<{ id: number; status: string; finished_at: string | null }>(
       `SELECT id, status, to_char(finished_at AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM-DD HH24:MI')
                 AS finished_at
-       FROM ingest_run ORDER BY id DESC LIMIT 1`,
+       FROM ingest_run WHERE source = $1 ORDER BY id DESC LIMIT 1`,
+      [SCHEDULED_SOURCE],
     ),
     pool.query<{
       fund_code: string; title: string | null; owned: boolean;
@@ -1028,6 +1039,62 @@ export async function closedPositions(
 
 /** Tatil listesi bulunamazsa hesap hafta sonlarıyla yetinir; ekran çökmez. */
 const DEFAULT_HOLIDAYS: string[] = [];
+
+// ── Collector koşumları ──────────────────────────────────────────────────────
+
+export interface IngestRunRow {
+  id: number;
+  source: string;
+  startedAt: string;
+  finishedAt: string | null;
+  /** Saniye cinsinden süre; koşum sürüyorsa null. */
+  seconds: number | null;
+  status: string;
+  rowsUpserted: number;
+  /** Başarıyla toplanan fon sayısı. */
+  fundsOk: number;
+  /** Hata alan fon sayısı. */
+  fundsFailed: number;
+  lastError: string | null;
+}
+
+/**
+ * Collector koşum geçmişi, en yeni üstte.
+ *
+ * Hata metni de taşınır: şimdiye kadar yalnız veritabanında duruyordu, oysa
+ * başarısız koşumun sebebi ("relation watchlist does not exist", boş takip
+ * listesi) tam da bakılması gereken şey.
+ */
+export async function ingestRuns(pool: pg.Pool, limit = 100): Promise<IngestRunRow[]> {
+  const r = await pool.query<{
+    id: number; source: string; started_at: string; finished_at: string | null;
+    seconds: number | null; status: string; rows_upserted: number;
+    funds_ok: number; funds_failed: number; last_error: string | null;
+  }>(
+    `SELECT id, source,
+            to_char(started_at  AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM-DD HH24:MI') AS started_at,
+            to_char(finished_at AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM-DD HH24:MI') AS finished_at,
+            extract(epoch FROM (finished_at - started_at))::int AS seconds,
+            status, rows_upserted, funds_ok, funds_failed, last_error
+     FROM ingest_run ORDER BY id DESC LIMIT $1`,
+    [Math.min(Math.max(Math.trunc(limit) || 100, 1), 500)],
+  );
+  return r.rows.map((x) => ({
+    id: x.id, source: x.source, startedAt: x.started_at, finishedAt: x.finished_at,
+    seconds: x.seconds, status: x.status, rowsUpserted: x.rows_upserted,
+    fundsOk: x.funds_ok, fundsFailed: x.funds_failed, lastError: x.last_error,
+  }));
+}
+
+/** Fonun ölçülmüş getiri verisi var mı? Yoksa toplama tetiklenir. */
+export async function fundHasData(pool: pg.Pool, fundCode: string): Promise<boolean> {
+  const r = await pool.query(
+    `SELECT 1 FROM fact_fund_daily
+     WHERE fund_code = $1 AND daily_return_pct IS NOT NULL LIMIT 1`,
+    [fundCode],
+  );
+  return (r.rowCount ?? 0) > 0;
+}
 
 // ── Bankalar ─────────────────────────────────────────────────────────────────
 

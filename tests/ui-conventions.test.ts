@@ -172,6 +172,24 @@ describe('banka alanı', () => {
   });
 });
 
+describe('collector log', () => {
+  it('yönetim menüsünde kendi ekranı var', () => {
+    expect(main).toContain("{ id: 'runs', label: 'Collector Log', adminOnly: true");
+  });
+
+  it('hata metni kendi satırında gösterilir', () => {
+    // Hata metni tabloya sığmıyor ve kısaltılınca işe yaramaz hale geliyor.
+    expect(main).toContain("class: 'run-error-row'");
+    expect(css).toContain('.run-error {');
+  });
+
+  it('verisi gelmemiş fon takip listesinde belli olur', () => {
+    // Sessizce tire dizisi "veri yok" ile "henüz gelmedi"yi aynı şeye benzetirdi.
+    expect(main).toContain("badge('Veri Bekleniyor', 'pending')");
+    expect(css).toContain('.status-pending');
+  });
+});
+
 describe('kabuk', () => {
   it('sürüm istemcide üretilmez, sunucudan alınır', () => {
     expect(main).toContain("api('/api/runtime')");
