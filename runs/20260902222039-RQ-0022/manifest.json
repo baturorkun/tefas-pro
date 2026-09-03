@@ -1,0 +1,44 @@
+{
+  "runId": "20260902222039-RQ-0022",
+  "requirementId": "RQ-0022",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260902222039-RQ-0022/handoff.md",
+  "projectGuidelines": {
+    "combinedSha256": "73bde0d690f8ec23c37c27be97d17c628d2f60e56f49bffbe0810fd5769a70fb",
+    "files": [
+      {
+        "path": "AGENTS.md",
+        "sha256": "35dbcb26a57ab038e0e772629d210a83e459fa6674e4582d4ed0ed52b8bd28f8"
+      }
+    ]
+  },
+  "status": "approved",
+  "createdAt": "2026-09-02T22:20:39.732Z",
+  "updatedAt": "2026-09-03T08:29:40.853Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-09-02T22:21:08.541Z",
+      "finishedAt": "2026-09-02T22:25:33.351Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "src/main.ts",
+    "src/styles.css",
+    "tests/ui-conventions.test.ts"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-09-03T08:29:40.859Z",
+  "approvedBy": "human"
+}

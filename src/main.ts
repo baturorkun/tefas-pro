@@ -339,8 +339,17 @@ function openModal(title: string, subtitle: string | null, body: Node, footer: N
   return close;
 }
 
-function field(labelText: string, input: HTMLElement): HTMLElement {
-  return el('div', { class: 'field' }, [el('label', {}, [labelText]), input]);
+/**
+ * Form alanı. `hint` verilirse girdinin altında, ne beklendiğini söyleyen bir
+ * satır çıkar — referans arayüzdeki gibi. Alanın kendi boşluğu yoktur; onu
+ * kuşatan ızgaranın `gap` değeri belirler.
+ */
+function field(labelText: string, input: HTMLElement, hint?: string): HTMLElement {
+  return el('div', { class: 'field' }, [
+    el('label', {}, [labelText]),
+    input,
+    ...(hint === undefined ? [] : [el('div', { class: 'field-hint' }, [hint])]),
+  ]);
 }
 
 /**
@@ -1037,11 +1046,11 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
     existing ? 'Güncelle' : 'İşlem Ekle',
   ]) as HTMLButtonElement;
   const form = el('form', { class: 'modal-form-grid', id: 'tx-form' }, [
-    field('Fon Kodu', f.fundCode),
-    field('Adet', f.units),
+    field('Fon Kodu', f.fundCode, 'TEFAS kodu, üç harf.'),
+    field('Adet', f.units, 'Fon payı adedi, tutar değil.'),
     field('Alış Tarihi', f.tradeDate),
     field('Banka', f.platform),
-    field('Satış Tarihi', f.sellDate),
+    field('Satış Tarihi', f.sellDate, 'Boş bırakılırsa pozisyon açık kalır.'),
     status,
   ]);
   // Düğme şeritte, form gövdenin içinde: gönderimi form kimliğiyle bağlarız.
@@ -1311,7 +1320,7 @@ function watchlistForm(onDone: () => void): { body: HTMLElement; submit: HTMLBut
   const submit = el('button', { type: 'submit', class: 'btn-primary' }, ['Listeye Ekle']) as HTMLButtonElement;
   const form = el('form', { class: 'modal-form-grid', id: 'watch-form' }, [
     field('Fon Kodu', fundCode),
-    field('Not', note),
+    field('Not', note, 'Neden izlediğini yazabilirsin; isteğe bağlı.'),
     status,
   ]);
   submit.setAttribute('form', 'watch-form');
@@ -1456,11 +1465,17 @@ function userForm(existing: UserRow | null, onDone: () => void): {
   ]) as HTMLButtonElement;
   const form = el('form', { class: 'modal-form-grid', id: 'user-form' }, [
     field('Kullanıcı Adı', uname),
-    field('Parola', upass),
-    field('Tip', utype),
+    field('Parola', upass, existing === null
+      ? 'En az 8 karakter.'
+      : 'Boş bırakılırsa parola değişmez.'),
+    field('Tip', utype, 'Yönetici kullanıcı yönetebilir.'),
     el('label', { class: 'switch-field' }, [
       uactive,
-      el('span', {}, ['Hesap Aktif']),
+      el('span', { class: 'switch-track' }, []),
+      el('div', { class: 'switch-text' }, [
+        el('strong', {}, ['Hesap Aktif']),
+        el('small', {}, ['Pasif hesap giriş yapamaz.']),
+      ]),
     ]),
     status,
   ]);
