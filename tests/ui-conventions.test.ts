@@ -154,6 +154,24 @@ describe('valör bilgisi', () => {
   });
 });
 
+describe('banka alanı', () => {
+  it('seçim listesidir, serbest metin değil', () => {
+    // Serbest metinken aynı banka "Nkolay", "nkolay", "NKolay" diye üç ayrı
+    // platform gibi görünebiliyordu; maliyet platform bazında tutulduğu için
+    // bu doğrudan yanlış rakam üretirdi.
+    expect(main).toContain("platform: el('select', { required: 'true' })");
+    expect(main).not.toContain("placeholder: 'Nkolay'");
+  });
+
+  it('banka listesi boşken formda uyarı çıkar', () => {
+    expect(main).toContain('Tanımlı banka yok. Ayarlar ekranından banka ekleyin.');
+  });
+
+  it('kullanımdaki banka için silme sebebi yazılır', () => {
+    expect(main).toMatch(/işlemde kullanılıyor, silinemez/);
+  });
+});
+
 describe('kabuk', () => {
   it('sürüm istemcide üretilmez, sunucudan alınır', () => {
     expect(main).toContain("api('/api/runtime')");

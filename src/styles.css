@@ -309,6 +309,12 @@ td.actions { text-align: right; }
 .total-row td { border-top: 1px solid var(--line); font-weight: 600;
                 color: var(--text-strong); }
 
+/* Ayarlarda banka ekleme şeridi: alan solda geniş, düğme sağda. */
+.settings-add { display: flex; gap: .6rem; align-items: center; margin-bottom: 1rem; }
+.settings-add input { flex: 1; min-width: 0; }
+/* Banka listesi boşken formun uyarısı: ipucu değil, engel. */
+.field-warn { color: var(--danger); }
+
 /* Dönemsel getiri tablosu: ay satırı kendi haftalarının başlığı gibi durur.
    Ayrı bir dolgu rengi vermek yerine üstten çizgi ve koyu metin kullanılır —
    satırlar zaten kâr/zarara göre renkleniyor, üçüncü bir renk katmanı okumayı
