@@ -751,7 +751,7 @@ function performanceChart(points: PerformancePoint[]): SVGSVGElement {
   const PAD_L = 64;   // y ekseni etiketleri
   const PAD_R = 24;   // çizgi ve dolgu sağ kenara dayanmasın
   const PAD_T = 12;
-  const PAD_B = 46;   // eğik tarih etiketleri
+  const PAD_B = 66;   // dik tarih etiketleri
   const H = PAD_T + H_TOP + GAP + H_BOT + PAD_B;
   const plotW = W - PAD_L - PAD_R;
 
@@ -839,16 +839,22 @@ function performanceChart(points: PerformancePoint[]): SVGSVGElement {
     root.append(bar);
   });
 
-  // ── Tarih etiketleri: en fazla sekiz, kalabalık olmasın.
-  const step = Math.max(1, Math.ceil(points.length / 8));
+  // ── Tarih etiketleri.
+  //
+  // Etiket sayısı sabit değil, yere göre: -60 derecede "09-03" yatayda ~20px
+  // yer kaplıyor, kaç tanesi sığıyorsa o kadarı yazılıyor. Son 30 iş gününde
+  // hepsi sığar. Sabit sekiz etiket, sığdığı halde günleri gizliyordu.
+  const LABEL_FOOTPRINT = 20;
+  const maxLabels = Math.max(2, Math.floor(plotW / LABEL_FOOTPRINT));
+  const step = Math.max(1, Math.ceil(points.length / maxLabels));
   points.forEach((p, i) => {
     if (i % step !== 0 && i !== points.length - 1) return;
     const tx = x(i);
-    const ty = barTop + H_BOT + 20;
+    const ty = barTop + H_BOT + 18;
     root.append(
       svg('text', {
         x: String(tx), y: String(ty), class: 'perf-axis-x',
-        transform: `rotate(-30 ${String(tx)} ${String(ty)})`,
+        transform: `rotate(-60 ${String(tx)} ${String(ty)})`,
       }, p.date.slice(5)),
     );
   });

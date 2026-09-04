@@ -222,6 +222,19 @@ describe('tercihlerim', () => {
   });
 });
 
+describe('performans grafiği', () => {
+  it('tarih etiketi sayısı sığan kadar, sabit değil', () => {
+    // Sabit sekiz etiket, sığdığı halde günleri gizliyordu; son 30 iş gününde
+    // hepsi rahat sığıyor.
+    expect(main).toContain('const maxLabels = Math.max(2, Math.floor(plotW / LABEL_FOOTPRINT))');
+    expect(main).not.toContain('Math.ceil(points.length / 8)');
+  });
+
+  it('etiketler dik yazılır', () => {
+    expect(main).toContain('rotate(-60');
+  });
+});
+
 describe('fon hareketleri', () => {
   it('işlem başına fiyat, tutar ve kâr zarar gösterir', () => {
     expect(main).toContain("'Alış / Son', 'Maliyet / Değer', 'K/Z', 'K/Z %'");
