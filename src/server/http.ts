@@ -76,7 +76,27 @@ export function optString(body: Record<string, unknown>, key: string): string | 
   const v = body[key];
   if (v === null || v === undefined || v === '') return null;
   if (typeof v !== 'string') throw new Error(`\`${key}\` metin olmalıdır.`);
-  return v.trim();
+  // Boşluk boştur. Kırpma boş dize üretiyorsa alan hiç doldurulmamış demektir;
+  // veritabanına '' yazmak "boş not" ile "not yok" diye iki ayrı boş durum
+  // üretirdi ve okuyan tarafın ikisini de kontrol etmesi gerekirdi.
+  const kirpik = v.trim();
+  return kirpik === '' ? null : kirpik;
+}
+
+/**
+ * İsteğe bağlı, uzunluğu sınırlı metin.
+ *
+ * Sınır sunucuda da uygulanır: yalnız arayüzdeki `maxlength` olsaydı API'ye
+ * doğrudan istekle aşılabilirdi ve tabloyu taşıran bir kayıt kalıcı olurdu.
+ */
+export function optText(
+  body: Record<string, unknown>, key: string, maxLength: number,
+): string | null {
+  const v = optString(body, key);
+  if (v !== null && v.length > maxLength) {
+    throw new Error(`\`${key}\` en fazla ${String(maxLength)} karakter olabilir.`);
+  }
+  return v;
 }
 
 export function reqNumber(body: Record<string, unknown>, key: string): number {

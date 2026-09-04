@@ -16,6 +16,7 @@ import { collectSingleFund } from '../collector.js';
 import { FintablesClient } from '../sources/fintables.js';
 import { makePool } from '../db/pool.js';
 import { currentVersion } from '../version.js';
+import { NOTE_MAX } from '../limits.js';
 import { isValidHoliday } from '../settlement.js';
 import {
   clearCookie,
@@ -29,6 +30,7 @@ import {
   matchPath,
   optDate,
   optString,
+  optText,
   readJson,
   reqDate,
   reqNumber,
@@ -107,6 +109,7 @@ const STATIC: Record<string, { file: string; type: string }> = {
   // ui-conventions testi bunu kontrol ediyor.
   '/settlement.js': { file: 'dist/settlement.js', type: 'text/javascript; charset=utf-8' },
   '/fifo.js': { file: 'dist/fifo.js', type: 'text/javascript; charset=utf-8' },
+  '/limits.js': { file: 'dist/limits.js', type: 'text/javascript; charset=utf-8' },
   '/styles.css': { file: 'src/styles.css', type: 'text/css; charset=utf-8' },
 };
 
@@ -247,7 +250,7 @@ function readTransactionInput(body: Record<string, unknown>): TransactionInput {
     tradeDate,
     units,
     sellDate,
-    note: optString(body, 'note'),
+    note: optText(body, 'note', NOTE_MAX),
     // Emir tarihleri isteğe bağlı; değerlemeye girmez, kayıt için tutulur.
     buyOrderDate: optDate(body, 'buyOrderDate'),
     sellOrderDate: optDate(body, 'sellOrderDate'),

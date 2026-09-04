@@ -61,3 +61,13 @@ zincir="$(q "SELECT count(*) FROM portfolio_transaction c
              WHERE p.split_from_id IS NOT NULL")"
 [ "${zincir}" = "0" ] || fail "${zincir} kayıt bölünme zinciri oluşturmuş"
 printf 'PASS: bölünme grubu düz, zincir yok\n'
+
+# Bölünen kaydın notu iki parçada da durmalı: not kayda ait, satılan adede
+# değil. Artıkta kaybolsaydı kullanıcının yazdığı bilgi sessizce silinirdi.
+grep -q "buy_order_date, note," "${PROJECT_ROOT}/src/server/repository.ts" \
+  || fail "bölünen kaydın notu yeni parçaya taşınmalı"
+notsuz="$(q "SELECT count(*) FROM portfolio_transaction c
+             JOIN portfolio_transaction p ON p.id = c.split_from_id
+             WHERE p.note IS NOT NULL AND c.note IS DISTINCT FROM p.note")"
+[ "${notsuz}" = "0" ] || fail "${notsuz} bölünmüş parçada not kaybolmuş"
+printf 'PASS: bölünen kaydın notu iki parçada da duruyor\n'

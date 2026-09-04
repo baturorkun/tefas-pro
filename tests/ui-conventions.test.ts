@@ -679,3 +679,35 @@ describe('kabuk', () => {
     expect(main).not.toContain("class: 'brand-mark' }, ['TP']");
   });
 });
+
+describe('işlem notu', () => {
+  it('alan isteğe bağlı ve sınırı paylaşılan sabitten gelir', () => {
+    // İki ayrı sabit tutulsaydı biri değişince diğeri sessizce geride kalırdı:
+    // arayüz 200'de keser, sunucu 500'e izin verir gibi.
+    const limits = readFileSync(new URL('../src/limits.ts', import.meta.url), 'utf8');
+    expect(limits).toContain('export const NOTE_MAX');
+    expect(main).toContain("import { NOTE_MAX } from './limits.js'");
+    const server = readFileSync(new URL('../src/server/index.ts', import.meta.url), 'utf8');
+    expect(server).toContain("from '../limits.js'");
+    expect(server).toContain("optText(body, 'note', NOTE_MAX)");
+    // Zorunlu değil: required taşımamalı.
+    expect(main).toMatch(/note: el\('input', \{ maxlength: String\(NOTE_MAX\)/);
+    expect(main).not.toMatch(/note: el\('input', \{[^}]*required/);
+  });
+
+  it('not ayrı sütun açmaz, fon kodunun altında durur', () => {
+    // Tablo on bir sütunlu ve zaten dar; on ikinci sütun kayıtların çoğunda
+    // boş dururdu.
+    expect(main).toContain("class: 'tx-note', title: t.note");
+    expect(css).toContain('.tx-note');
+    // Uzun not sütunu genişletmemeli, kırpılmalı.
+    expect(css).toMatch(/\.tx-note \{[^}]*text-overflow: ellipsis/);
+  });
+
+  it('yalnız boşluktan oluşan not boş sayılır', () => {
+    // '' ile null iki ayrı boş durum üretirdi ve okuyan tarafın ikisini de
+    // kontrol etmesi gerekirdi.
+    const http = readFileSync(new URL('../src/server/http.ts', import.meta.url), 'utf8');
+    expect(http).toContain("return kirpik === '' ? null : kirpik;");
+  });
+});
