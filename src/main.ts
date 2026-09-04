@@ -218,7 +218,12 @@ function errorBox(message: string): HTMLElement {
   return el('p', { class: 'error' }, [message]);
 }
 
-/** Büyük TL tutarlarını okunur kısaltır: 1.479.274.366 → 1,48 mr ₺ */
+/**
+ * Büyük TL tutarlarını okunur kısaltır: 1.479.274.366 → 1,48 mr ₺
+ *
+ * Kısaltmalar tek harf: b bin, m milyon. Milyar mr kalır, çünkü m
+ * milyona ayrılmış.
+ */
 function money(raw: string | null): string {
   if (raw === null || raw === '') return '—';
   const n = Number(raw);
@@ -227,7 +232,7 @@ function money(raw: string | null): string {
   const fmt = (v: number, suffix: string): string =>
     `${v.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} ${suffix}`;
   if (abs >= 1e9) return fmt(n / 1e9, 'mr ₺');
-  if (abs >= 1e6) return fmt(n / 1e6, 'mn ₺');
+  if (abs >= 1e6) return fmt(n / 1e6, 'm ₺');
   if (abs >= 1e3) return fmt(n / 1e3, 'b ₺');
   return fmt(n, '₺');
 }
