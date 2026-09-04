@@ -265,9 +265,23 @@ function money(raw: string | null): string {
   return fmt(n, '₺');
 }
 
-/** YYYY-AA-GG (veya başında onu taşıyan bir metin) → GG.AA. */
-function gunAy(iso: string | null): string {
-  return iso === null || iso.length < 10 ? '—' : `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
+const AY_ADLARI = [
+  'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+  'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
+];
+
+/**
+ * YYYY-AA-GG → "4 Eylül". Başındaki sıfır atılır.
+ *
+ * Yıl yalnız içinde bulunulan yıldan farklıysa yazılır: her satıra yıl koymak
+ * gürültü, ama eski bir tarihi yılsız göstermek onu bu yılmış gibi okutur.
+ */
+function gunAd(iso: string | null): string {
+  if (iso === null || iso.length < 10) return '—';
+  const [y, a, g] = [iso.slice(0, 4), Number(iso.slice(5, 7)), Number(iso.slice(8, 10))];
+  const ay = AY_ADLARI[a - 1] ?? iso.slice(5, 7);
+  const buYil = String(new Date().getFullYear());
+  return `${String(g)} ${ay}${y === buYil ? '' : ` ${y}`}`;
 }
 
 /**
@@ -991,13 +1005,13 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
       // biri dörtlü ızgaraya sığmıyordu.
       metric(
         'Getiri Günü',
-        gunAy(m.dataDate),
+        gunAd(m.dataDate),
         run?.finishedAt === null || run?.finishedAt === undefined
           ? 'Henüz Koşmadı'
           // Toplama günü veri günüyle aynıysa tarih tekrarlanmaz: üstte zaten
           // yazıyor. Ayrıldıklarında yazılır, çünkü o zaman "hangi gün
           // toplandı" ayrı bir bilgi olur.
-          : `toplandı ${gunAy(run.finishedAt) === gunAy(m.dataDate) ? '' : `${gunAy(run.finishedAt)} `}${run.finishedAt.slice(11)} · ${String(m.trackedFunds)} fon`,
+          : `toplandı ${gunAd(run.finishedAt) === gunAd(m.dataDate) ? '' : `${gunAd(run.finishedAt)} `}${run.finishedAt.slice(11)} · ${String(m.trackedFunds)} fon`,
         'fund',
       ),
       // Panel'in üstünde artık portföyün kendisi duruyor. Takip Listem ve
