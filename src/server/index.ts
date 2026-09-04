@@ -38,6 +38,7 @@ import {
 import {
   addBank,
   addToWatchlist,
+  allocation,
   benchmarkCode,
   clearUserSetting,
   closedPositions,
@@ -462,6 +463,11 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
 
       if (path === '/api/benchmark' && method === 'GET') {
         sendJson(res, 200, { benchmark: (await userBenchmark(pool, user.id)).code });
+        return;
+      }
+
+      if (path === '/api/allocation' && method === 'GET') {
+        sendJson(res, 200, await allocation(pool, user.id));
         return;
       }
 

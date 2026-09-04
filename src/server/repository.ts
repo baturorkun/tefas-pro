@@ -1075,6 +1075,110 @@ export async function closedPositions(
 /** Tatil listesi bulunamazsa hesap hafta sonlarıyla yetinir; ekran çökmez. */
 const DEFAULT_HOLIDAYS: string[] = [];
 
+// ── Dağılım ──────────────────────────────────────────────────────────────────
+
+/** Bacak bazında dilim: bir işlemin maliyeti, değeri ve ait olduğu gruplar. */
+export interface PositionSlice {
+  fundCode: string;
+  platform: string;
+  umbrellaType: string | null;
+  cost: string;
+  value: string;
+}
+
+export interface AllocationGroup {
+  key: string;
+  /** Gruptaki farklı fon sayısı. Ağırlık değil — ayrı bir bilgi. */
+  funds: number;
+  /** Gruptaki alım kaydı sayısı. */
+  lots: number;
+  cost: string;
+  value: string;
+  gain: string;
+  /** Güncel değere göre ağırlık (%). */
+  weightPct: string;
+}
+
+export interface Allocation {
+  total: { funds: number; lots: number; cost: string; value: string; gain: string };
+  byBank: AllocationGroup[];
+  byCategory: AllocationGroup[];
+}
+
+/** Kategorisi boş fon burada toplanır; sessizce düşürmek dağılımı eksik gösterirdi. */
+const UNKNOWN_CATEGORY = 'Bilinmiyor';
+
+/**
+ * Dilimleri bir boyuta göre gruplar.
+ *
+ * Ağırlık güncel değer üzerinden ölçülür, fon sayısı üzerinden değil: ölçülen
+ * veride on fon hisse senedi şemsiyesinde ama para olarak orada yalnız %19 var,
+ * tek bir para piyasası fonu neredeyse aynı ağırlıkta. Fon saymak dağılımı
+ * yanlış anlatırdı.
+ */
+function groupBy(
+  slices: readonly PositionSlice[],
+  dimension: (s: PositionSlice) => string,
+): AllocationGroup[] {
+  const total = slices.reduce((a, s) => a + Number(s.value), 0);
+  const buckets = new Map<string, { funds: Set<string>; lots: number; cost: number; value: number }>();
+  for (const s of slices) {
+    const key = dimension(s);
+    const b = buckets.get(key) ?? { funds: new Set<string>(), lots: 0, cost: 0, value: 0 };
+    b.funds.add(s.fundCode);
+    b.lots += 1;
+    b.cost += Number(s.cost);
+    b.value += Number(s.value);
+    buckets.set(key, b);
+  }
+  return [...buckets.entries()]
+    .map(([key, b]) => ({
+      key,
+      funds: b.funds.size,
+      lots: b.lots,
+      cost: b.cost.toFixed(2),
+      value: b.value.toFixed(2),
+      gain: (b.value - b.cost).toFixed(2),
+      weightPct: total === 0 ? '0.0000' : ((b.value / total) * 100).toFixed(4),
+    }))
+    .sort((a, b) => Number(b.value) - Number(a.value));
+}
+
+/** Açık pozisyonların banka ve kategori kırılımı. */
+export function buildAllocation(slices: readonly PositionSlice[]): Allocation {
+  const cost = slices.reduce((a, s) => a + Number(s.cost), 0);
+  const value = slices.reduce((a, s) => a + Number(s.value), 0);
+  return {
+    total: {
+      funds: new Set(slices.map((s) => s.fundCode)).size,
+      lots: slices.length,
+      cost: cost.toFixed(2),
+      value: value.toFixed(2),
+      gain: (value - cost).toFixed(2),
+    },
+    byBank: groupBy(slices, (s) => s.platform),
+    byCategory: groupBy(slices, (s) => s.umbrellaType ?? UNKNOWN_CATEGORY),
+  };
+}
+
+export async function allocation(pool: pg.Pool, userId: number): Promise<Allocation> {
+  const r = await pool.query<{
+    fund_code: string; platform: string; umbrella_type: string | null;
+    cost: string; value: string;
+  }>(
+    `SELECT fund_code, platform, umbrella_type, cost::text, value::text
+     FROM analytics.position_slice
+     WHERE user_id = $1 AND is_open`,
+    [userId],
+  );
+  return buildAllocation(
+    r.rows.map((x) => ({
+      fundCode: x.fund_code, platform: x.platform, umbrellaType: x.umbrella_type,
+      cost: x.cost, value: x.value,
+    })),
+  );
+}
+
 // ── Collector koşumları ──────────────────────────────────────────────────────
 
 export interface IngestRunRow {

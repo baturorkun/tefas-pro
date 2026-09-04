@@ -1,0 +1,48 @@
+{
+  "runId": "20260904061336-RQ-0029",
+  "requirementId": "RQ-0029",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260904061336-RQ-0029/handoff.md",
+  "projectGuidelines": {
+    "combinedSha256": "73bde0d690f8ec23c37c27be97d17c628d2f60e56f49bffbe0810fd5769a70fb",
+    "files": [
+      {
+        "path": "AGENTS.md",
+        "sha256": "35dbcb26a57ab038e0e772629d210a83e459fa6674e4582d4ed0ed52b8bd28f8"
+      }
+    ]
+  },
+  "status": "passed",
+  "createdAt": "2026-09-04T06:13:37.001Z",
+  "updatedAt": "2026-09-04T06:29:15.417Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-09-04T06:23:08.112Z",
+      "finishedAt": "2026-09-04T06:29:15.417Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "db/migrations/032_position_slice.sql",
+    "package.json",
+    "src/main.ts",
+    "src/server/index.ts",
+    "src/server/repository.ts",
+    "src/styles.css",
+    "tests/allocation.test.sh",
+    "tests/allocation.test.ts",
+    "tests/ui-conventions.test.ts"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  }
+}
