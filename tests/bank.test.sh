@@ -52,3 +52,12 @@ if [ -n "${fon}" ]; then
   fi
   printf 'PASS: tanımsız bankaya işlem yazılamıyor\n'
 fi
+
+# Sıralama Türkçe: veritabanının collation'ı Türkçe değil ve "tr-TR" bu
+# sunucuda tanımlı değil, o yüzden SQL'de sıralanırsa "İş" ve "Vakıflar"
+# listenin sonuna düşüyor. Sıra uygulamada kuruluyor.
+grep -q "localeCompare(b.name, 'tr')" "${PROJECT_ROOT}/src/server/repository.ts" \
+  || fail "banka listesi Türkçe sıralanmalı"
+grep -q "ORDER BY count(t.id) DESC, b.name" "${PROJECT_ROOT}/src/server/repository.ts" \
+  && fail "sıralama SQL'de kalmış; Türkçe harfler yanlış yere düşer"
+printf 'PASS: banka listesi Türkçe sıralanıyor\n'

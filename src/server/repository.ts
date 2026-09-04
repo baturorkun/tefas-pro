@@ -1499,10 +1499,15 @@ export async function listBanks(pool: pg.Pool): Promise<BankRow[]> {
     `SELECT b.name, count(t.id)::text AS usage
      FROM bank b
      LEFT JOIN portfolio_transaction t ON t.platform = b.name
-     GROUP BY b.name
-     ORDER BY count(t.id) DESC, b.name`,
+     GROUP BY b.name`,
   );
-  return r.rows.map((row) => ({ name: row.name, usage: Number(row.usage) }));
+  // Sıralama SQL'de değil burada: veritabanının collation'ı Türkçe değil ve
+  // "tr-TR" bu sunucuda tanımlı değil, o yüzden "İş" ile "Vakıflar" ASCII
+  // sırasına göre listenin sonuna düşüyordu. Kullanılan bankalar önce gelir —
+  // liste 19 satır olunca her seferinde aranmasın diye.
+  return r.rows
+    .map((row) => ({ name: row.name, usage: Number(row.usage) }))
+    .sort((a, b) => b.usage - a.usage || a.name.localeCompare(b.name, 'tr'));
 }
 
 /** Yeni banka. Aynı ad ikinci kez eklenmez; sessizce yutulmaz, false döner. */
