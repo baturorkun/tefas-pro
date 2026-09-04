@@ -729,6 +729,7 @@ function comboFilter(opts: {
 // ─── Grafik ─────────────────────────────────────────────────────────────────
 
 import { planFifoSale } from './fifo.js';
+import { NOTE_MAX } from './limits.js';
 import { orderFromSettlement, settlementFromOrder } from './settlement.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -1767,6 +1768,9 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
     platform: el('select', { required: 'true' }) as HTMLSelectElement,
     sellOrderDate: el('input', { type: 'date' }),
     sellDate: el('input', { type: 'date' }),
+    // textarea değil input: sınır zaten tek satırlık. Çok satırlı bir kutu
+    // paragraf yazmaya davet eder, tabloda da öyle görünmez.
+    note: el('input', { maxlength: String(NOTE_MAX), placeholder: 'İsteğe bağlı' }),
   };
   if (existing) {
     f.fundCode.value = existing.fundCode;
@@ -1774,6 +1778,7 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
     // olduğu gibi basıyordu. Fon payı kesirli olabildiği için haneler duruyor
     // ama gereksiz sıfırlar atılır: 9911.000000 → 9911, 12.345600 → 12.3456.
     f.units.value = String(Number(existing.units));
+    f.note.value = existing.note ?? '';
     f.buyOrderDate.value = existing.buyOrderDate ?? '';
     f.tradeDate.value = existing.tradeDate;
     f.sellOrderDate.value = existing.sellOrderDate ?? '';
@@ -1871,6 +1876,9 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
           field('Satış Tarihi', f.sellDate, 'Boşaltılırsa pozisyon yeniden açılır.'),
         ]
       : []),
+    // Not en altta: kaydın kendisi değil, kayıt hakkında. Zorunlu alanların
+    // arasına girseydi doldurulması gerekiyormuş gibi görünürdü.
+    field('Not', f.note, `İsteğe bağlı, en fazla ${String(NOTE_MAX)} karakter.`),
     status,
   ]);
   submit.setAttribute('form', 'tx-form');
@@ -1884,6 +1892,7 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
       buyOrderDate: f.buyOrderDate.value || null,
       sellOrderDate: f.sellOrderDate.value || null,
       sellDate: f.sellDate.value || null,
+      note: f.note.value,
     };
     await api(
       existing ? `/api/transactions/${String(existing.id)}` : '/api/transactions',
@@ -2505,6 +2514,12 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
         // kayıt küçüldü ("Bölündü"), makinenin açtığı satır ise onun artığı
         // ("Kalan"). Aynı etiket ikisinde de dururken hangisinin nereden
         // geldiği okunmuyordu.
+        // Not fon kodunun altında, bölünme işaretiyle aynı yerde. Ayrı sütun
+        // açılmıyor: tablo on bir sütunlu ve zaten dar, üstelik sütun kayıtların
+        // çoğunda boş dururdu. Uzun not CSS ile kırpılır, tamamı ipucunda.
+        ...(t.note === null || t.note === '' ? [] : [
+          el('span', { class: 'tx-note', title: t.note }, [t.note]),
+        ]),
         ...(t.splitRole === null ? [] : [(() => {
           const asil = t.splitTotal === null
             ? ''
