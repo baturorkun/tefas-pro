@@ -961,7 +961,11 @@ function positionSection(
   const s = p.summary;
   const kapsam = onlyOwned ? 'yalnız portföyüm' : 'takip listem dahil, almış gibi';
   return [
-    el('h2', { class: 'section-title' }, ['Pozisyonlarım']),
+    // "Pozisyonlarım" yanıltıyordu: liste takip listesindeki fonları da içeriyor
+    // ve onlarda pozisyon yok, "almış gibi" hesaplanıyorlar. "Fonlarım" ikisini
+    // birden kapsıyor; "Fonlar" ise Piyasa ekranındaki piyasa geneli sıralamayla
+    // karışırdı.
+    el('h2', { class: 'section-title' }, ['Fonlarım']),
     ...(s === null
       ? []
       : [
@@ -973,10 +977,10 @@ function positionSection(
           ]),
         ]),
     el('div', { class: 'chart-grid' }, [
-      chartPanel('En çok kazandıran pozisyonlarım', kapsam, p.top,
-        { emptyText: 'Henüz ölçülebilir pozisyon yok.' }),
-      chartPanel('En çok kaybettiren pozisyonlarım', kapsam, p.bottom,
-        { emptyText: 'Zararda pozisyonum yok.' }),
+      chartPanel('En çok kazandıran fonlarım', kapsam, p.top,
+        { emptyText: 'Henüz ölçülebilir fon yok.' }),
+      chartPanel('En çok kaybettiren fonlarım', kapsam, p.bottom,
+        { emptyText: 'Zararda fonum yok.' }),
     ]),
   ];
 }
