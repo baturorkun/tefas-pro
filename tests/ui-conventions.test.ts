@@ -267,6 +267,74 @@ describe('fon hareketleri', () => {
     expect(main).toContain("'Alış / Son', 'Maliyet / Değer', 'K/Z', 'K/Z %'");
   });
 
+  it('fon ve banka filtresi vardır ve birlikte çalışır', () => {
+    expect(main).toContain('const fonFiltre = comboFilter({');
+    expect(main).toContain('const bankaFiltre = comboFilter({');
+    // AND: ikisi aynı anda uygulanabilmeli.
+    expect(main).toMatch(/txFiltre\.fundCode === '' \|\| t\.fundCode === txFiltre\.fundCode/);
+    expect(main).toMatch(/txFiltre\.platform === '' \|\| t\.platform === txFiltre\.platform/);
+  });
+
+  it('filtreler sütun adlarının üstünde, kendi hizalarında durur', () => {
+    // Panel başlığındayken "İşlem Ekle" düğmesi aramanın parçası gibi
+    // görünüyordu, oysa alakasız. Sütun adlarının altına düşünce de tablonun
+    // içindeymiş gibi duruyordu.
+    expect(main).toContain('[fonFiltre, null, null, bankaFiltre');
+    expect(css).toContain('.filter-row th');
+    // Filtre satırı başlık satırından ÖNCE eklenir.
+    const t = main.slice(main.indexOf('function table('));
+    expect(t.indexOf("class: 'filter-row'")).toBeLessThan(t.indexOf('head.push('));
+  });
+
+  it('seçim temizlenebilir', () => {
+    // Seçimi geri almanın yolu listeyi açıp "Tümü" aramak olmamalı.
+    expect(main).toContain("class: 'combo-clear'");
+    expect(main).toContain("opts.onChange('')");
+  });
+
+  it('seçim kutusunda arama vardır', () => {
+    expect(main).toContain("class: 'combo-search'");
+    expect(css).toContain('.combo-search');
+  });
+
+  it('arama Türkçe noktalı ve noktasız i ayrımına takılmaz', () => {
+    // "DFI" Türkçe küçültmede "dfı" oluyor; kullanıcı "dfi" yazınca eşleşme
+    // çıkmıyordu.
+    expect(main).toContain('function aramaAnahtari');
+    expect(main).toMatch(/replace\(\/\[ıİi\]\/g, 'i'\)/);
+  });
+
+  it('fon filtresinde yalnız kod görünür', () => {
+    // Sütun dar; ad listede ikinci satır olarak duruyor.
+    expect(main).toMatch(/value: kod, label: kod, hint: ad \?\? undefined/);
+  });
+
+  it('filtre işlem sonrası korunur', () => {
+    // Liste her ekleme, düzenleme ve silmeden sonra baştan yükleniyor; durum
+    // view içinde tutulsaydı her seferinde sıfırlanırdı.
+    expect(main).toContain('const txFiltre = {');
+    const view = main.slice(main.indexOf('async function transactionsView'));
+    expect(view.slice(0, view.indexOf('const rows'))).not.toContain('let txFiltre');
+  });
+
+  it('toplam ve sayaç filtrelenmiş kümeyi yansıtır', () => {
+    // Filtreyi yok sayan bir toplam yanlış okumaya yol açardı.
+    expect(main).toContain('const olculen = gorunen.filter');
+    expect(main).toContain('const body = gorunen.map');
+    // "102 içinden" belirsizdi; bölü işareti paydayı zaten anlatıyor.
+    expect(main).toMatch(/\/ \$\{String\(rows\.length\)\} kayıt/);
+  });
+
+  it('metrik kutuları filtreden etkilenmez', () => {
+    // Kutular portföyün özeti; filtreye bağlanırlarsa aynı kutu ekrandan
+    // ekrana farklı şey anlatır.
+    expect(main).toContain("metric('Açık Pozisyon', String(open.length)");
+  });
+
+  it('filtre sonucu boşsa sebebi yazar', () => {
+    expect(main).toContain('Bu filtreye uyan işlem yok');
+  });
+
   it('başlangıç ve son değerler tek hücrede toplanır', () => {
     // Ayrı sütun olsalar tablo kapsayıcısını aşıyor, işlem düğmeleri ekran
     // dışında kalıyordu. Fiyat ile maliyet/değer aynı deseni kullanır.
@@ -303,7 +371,7 @@ describe('fon hareketleri', () => {
   });
 
   it('ölçülemeyen işlem toplama katılmaz', () => {
-    expect(main).toContain("rows.filter((t) => t.cost !== null)");
+    expect(main).toContain("gorunen.filter((t) => t.cost !== null)");
   });
 
   it('toplam satırında yüzde yazmaz', () => {

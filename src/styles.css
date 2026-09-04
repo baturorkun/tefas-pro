@@ -317,6 +317,52 @@ td.actions { text-align: right; }
 
 /* Fon hareketleri on bir sütunlu: fon adı ve satış hücresi dar tutulur, yoksa
    tablo kapsayıcısını 180px aşıyor ve işlem düğmeleri ekran dışında kalıyor. */
+/* ─── Filtre satırı ve aranabilir seçim kutusu ─────────────────────────── */
+
+/* Filtreler sütun adlarının üstünde, kendi hizalarında. */
+.filter-row th { padding-top: .55rem; padding-bottom: .5rem; background: var(--panel);
+                 border-bottom: 0; }
+
+.combo { position: relative; display: inline-flex; align-items: center; gap: .25rem; }
+.combo-trigger {
+  display: inline-flex; align-items: center; gap: .35rem;
+  height: 1.9rem; padding: 0 .6rem; font: inherit; font-size: .8rem;
+  color: var(--muted); background: var(--bg-raised);
+  border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer;
+}
+.combo-trigger:hover { color: var(--text); border-color: var(--muted-dim); }
+/* Seçili filtre belirgin: hangi sütunun süzüldüğü tabloya bakınca görünmeli. */
+.combo-active { color: var(--accent-ink); background: var(--accent); border-color: var(--accent);
+                font-weight: 600; }
+.combo-clear {
+  display: grid; place-items: center; width: 1.35rem; height: 1.35rem; padding: 0;
+  color: var(--muted); background: transparent; border: 0; border-radius: 50%;
+  cursor: pointer;
+}
+.combo-clear:hover { color: var(--danger); background: var(--danger-tint); }
+
+.combo-panel {
+  display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
+  width: 15rem; padding: .45rem; background: var(--panel-hover);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .45);
+}
+.combo-open .combo-panel { display: block; }
+.combo-search { width: 100%; height: 2rem; margin-bottom: .4rem; font-size: .82rem; }
+.combo-list { max-height: 15rem; overflow-y: auto; }
+.combo-option {
+  display: block; width: 100%; padding: .35rem .5rem; text-align: left;
+  font: inherit; color: var(--text); background: transparent; border: 0;
+  border-radius: var(--radius-sm); cursor: pointer;
+}
+.combo-option:hover { background: var(--bg-raised); }
+.combo-option-on { color: var(--accent); }
+.combo-option-value { display: block; font-size: .84rem; font-weight: 600; }
+/* Fon adı yalnız listede: tetikleyicide kod duruyor, sütun dar. */
+.combo-option-hint { display: block; font-size: .72rem; color: var(--muted-dim);
+                     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-empty { padding: .5rem; font-size: .8rem; color: var(--muted-dim); }
+
 /* Satırın sonucu soldaki şeritte: Dönemsel Getiri'deki ay satırıyla aynı dil. */
 .tx-gain td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .tx-loss td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
@@ -538,8 +584,10 @@ textarea:focus  { outline: none; border-color: var(--accent);
                   box-shadow: 0 0 0 3px var(--accent-tint); }
 
 .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.panel-heading-text { display: flex; align-items: baseline; justify-content: space-between;
-                  gap: 1rem; flex: 1; min-width: 0; }
+/* Başlık ve açıklaması yan yana: açıklama panelin kendisini anlatıyor, sağ
+   kenara itilince hangi panele ait olduğu bakışla kurulmuyordu. */
+.panel-heading-text { display: flex; align-items: baseline; justify-content: flex-start;
+                  gap: .8rem; flex: 1; min-width: 0; }
 .btn-primary    { display: inline-flex; align-items: center; gap: 7px; }
 
 @media (max-width: 640px) { .modal-form-grid { grid-template-columns: 1fr; } }
