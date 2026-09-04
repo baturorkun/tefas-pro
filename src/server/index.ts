@@ -39,6 +39,7 @@ import {
   addBank,
   addToWatchlist,
   benchmarkCode,
+  clearUserSetting,
   closedPositions,
   createSession,
   createTransaction,
@@ -49,7 +50,6 @@ import {
   findSessionUser,
   findUserByUsername,
   fundHasData,
-  fundIsUsableBenchmark,
   fundValor,
   holidays,
   ingestRuns,
@@ -68,7 +68,9 @@ import {
   type TransactionInput,
   updateTransaction,
   updateUser,
+  userBenchmark,
   writeSetting,
+  writeUserSetting,
 } from './repository.js';
 
 const COOKIE_NAME = 'tefas_session';
@@ -196,6 +198,32 @@ function triggerFundCollection(pool: pg.Pool, client: FintablesClient, fundCode:
       collecting.delete(fundCode);
     }
   })();
+}
+
+/**
+ * Benchmark olarak kaydedilecek fon kodunu hazırlar.
+ *
+ * Ölçüt "bizde verisi var mı" değil, "TEFAS evreninde böyle bir fon var mı".
+ * Önceki hali yalnız toplanan fonları kabul ediyordu; o zaman serbest metin
+ * alanının bir anlamı kalmıyordu, çünkü kullanıcı zaten yalnız bildiğimiz
+ * fonlardan birini yazabiliyordu.
+ *
+ * Takip listesine fon eklemekle aynı akış: fon dim_fund'da yoksa evrenden
+ * çekilip yazılır, sonra toplaması arkada başlatılır. Fon ayara yazıldığı anda
+ * analytics.tracked_fund'a da girer, yani bundan sonraki her taramada toplanır.
+ *
+ * Evrende olmayan kod reddedilir: kaydedilseydi karşılaştırma sütunu kalıcı
+ * olarak boş kalır ve sebebi görünmezdi.
+ */
+async function prepareBenchmark(
+  pool: pg.Pool,
+  client: FintablesClient,
+  raw: unknown,
+): Promise<string> {
+  const code = String(raw).trim().toUpperCase();
+  if (code === '') throw new Error('Benchmark fon kodu boş olamaz.');
+  await ensureFundKnown(pool, client, code);
+  return code;
 }
 
 function readTransactionInput(body: Record<string, unknown>): TransactionInput {
@@ -400,8 +428,40 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         return;
       }
 
+      // Kullanıcının kendi tercihleri. Oturumdaki kullanıcıya bağlı: id
+      // dışarıdan alınmaz, başkasının ayarı okunamaz veya yazılamaz.
+      if (path === '/api/preferences' && method === 'GET') {
+        sendJson(res, 200, { benchmark: await userBenchmark(pool, user.id) });
+        return;
+      }
+
+      if (path === '/api/preferences' && method === 'PUT') {
+        const body = asRecord(await readJson(req));
+        const raw = body['benchmark'];
+        // null: kişisel tercih temizlenir, kullanıcı genel ayara döner.
+        if (raw === null) {
+          await clearUserSetting(pool, user.id, 'benchmark');
+        } else {
+          let code: string;
+          try {
+            code = await prepareBenchmark(pool, client, raw);
+          } catch (err) {
+            sendJson(res, 400, {
+              error: err instanceof Error ? err.message : 'Fon kodu doğrulanamadı.',
+            });
+            return;
+          }
+          await writeUserSetting(pool, user.id, 'benchmark', code);
+          // Verisi olmayan yeni fon arkada toplanır; karşılaştırma sütunu o
+          // bitene kadar boş kalır, bu yüzden istek beklemez.
+          triggerFundCollection(pool, client, code);
+        }
+        sendJson(res, 200, { benchmark: await userBenchmark(pool, user.id) });
+        return;
+      }
+
       if (path === '/api/benchmark' && method === 'GET') {
-        sendJson(res, 200, { benchmark: await benchmarkCode(pool) });
+        sendJson(res, 200, { benchmark: (await userBenchmark(pool, user.id)).code });
         return;
       }
 
@@ -476,19 +536,22 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
           // liste okunmaz hale gelir.
           const clean = [...new Set(list as string[])].sort();
 
-          // Benchmark isteğe bağlı gelir; verilmişse doğrulanır. Verisi
-          // olmayan bir kod sessizce kaydedilseydi karşılaştırma sütunu
-          // sebebi belirsiz biçimde boş kalırdı.
+          // Benchmark isteğe bağlı gelir; verilmişse evrende doğrulanır.
+          // Evrende olmayan kod kaydedilseydi karşılaştırma sütunu kalıcı
+          // olarak boş kalır ve sebebi görünmezdi.
           const bench = body['benchmark'];
           if (bench !== undefined) {
-            const code = String(bench).trim().toUpperCase();
-            if (code === '' || !(await fundIsUsableBenchmark(pool, code))) {
+            let code: string;
+            try {
+              code = await prepareBenchmark(pool, client, bench);
+            } catch (err) {
               sendJson(res, 400, {
-                error: `Benchmark fonu bulunamadı veya getiri verisi yok: ${code}`,
+                error: err instanceof Error ? err.message : 'Fon kodu doğrulanamadı.',
               });
               return;
             }
             await writeSetting(pool, 'benchmark', code, user.id);
+            triggerFundCollection(pool, client, code);
           }
 
           await writeSetting(pool, 'holidays', clean, user.id);

@@ -1007,7 +1007,7 @@ export async function periodReturns(pool: pg.Pool, userId: number): Promise<Mont
      ORDER BY trade_date`,
     [userId],
   );
-  const code = await benchmarkCode(pool);
+  const { code } = await userBenchmark(pool, userId);
   const b = await pool.query<{ d: string; pct: string }>(
     `SELECT to_char(trade_date, 'YYYY-MM-DD') AS d, daily_return_pct::text AS pct
      FROM fact_fund_daily
@@ -1218,18 +1218,71 @@ export async function writeSetting(
 /** Karşılaştırma fonu. Portföyün getirisi tek başına iyi mi kötü mü demiyor. */
 const DEFAULT_BENCHMARK = 'TP2';
 
+/** Genel benchmark: kendi seçimi olmayan kullanıcıların devraldığı değer. */
 export async function benchmarkCode(pool: pg.Pool): Promise<string> {
   return readSetting<string>(pool, 'benchmark', DEFAULT_BENCHMARK);
 }
 
-/** Fonun ölçülmüş getiri verisi var mı? Benchmark ayarı buna göre doğrulanır. */
-export async function fundIsUsableBenchmark(pool: pg.Pool, code: string): Promise<boolean> {
-  const r = await pool.query(
-    `SELECT 1 FROM fact_fund_daily
-     WHERE fund_code = $1 AND daily_return_pct IS NOT NULL LIMIT 1`,
-    [code],
+/**
+ * Kullanıcı ayarı. Satır yoksa null döner; çağıran genel ayara düşer.
+ *
+ * Değer kayıt anında kopyalanmaz. Kopyalansaydı admin genel ayarı
+ * değiştirdiğinde hiç tercih belirtmemiş kullanıcılar eski değerde donar ve
+ * bunu fark etmezlerdi.
+ */
+export async function readUserSetting<T>(
+  pool: pg.Pool,
+  userId: number,
+  key: string,
+): Promise<T | null> {
+  const r = await pool.query<{ value: T }>(
+    'SELECT value FROM user_setting WHERE user_id = $1 AND key = $2',
+    [userId, key],
   );
-  return (r.rowCount ?? 0) > 0;
+  return r.rows[0]?.value ?? null;
+}
+
+export async function writeUserSetting(
+  pool: pg.Pool,
+  userId: number,
+  key: string,
+  value: unknown,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO user_setting (user_id, key, value) VALUES ($1, $2, $3::jsonb)
+     ON CONFLICT (user_id, key) DO UPDATE
+       SET value = EXCLUDED.value, updated_at = now()`,
+    [userId, key, JSON.stringify(value)],
+  );
+}
+
+/** Tercihi siler: kullanıcı genel ayara geri döner. */
+export async function clearUserSetting(
+  pool: pg.Pool,
+  userId: number,
+  key: string,
+): Promise<void> {
+  await pool.query('DELETE FROM user_setting WHERE user_id = $1 AND key = $2', [userId, key]);
+}
+
+/**
+ * Kullanıcının kıyaslama fonu ve bunun nereden geldiği.
+ *
+ * Ekran devralınan değer ile kişisel seçimi ayırt edebilsin diye kaynak da
+ * döner: "TP2" yazan iki kullanıcıdan biri onu seçmiş, diğeri devralmış
+ * olabilir ve genel ayar değişince yalnız ikincisi etkilenir.
+ */
+export async function userBenchmark(
+  pool: pg.Pool,
+  userId: number,
+): Promise<{ code: string; personal: boolean; inherited: string; hasData: boolean }> {
+  const inherited = await benchmarkCode(pool);
+  const own = await readUserSetting<string>(pool, userId, 'benchmark');
+  const code = own ?? inherited;
+  // Verinin gelip gelmediği ekrana taşınır: yeni seçilen fonun toplaması
+  // saniyeler sürüyor ve o sırada karşılaştırma sütunu boş kalıyor. Sebebini
+  // söylemezsek bozuk görünür.
+  return { code, personal: own !== null, inherited, hasData: await fundHasData(pool, code) };
 }
 
 export async function holidays(pool: pg.Pool): Promise<string[]> {
