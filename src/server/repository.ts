@@ -4,6 +4,7 @@
 import type pg from 'pg';
 
 import { SCHEDULED_SOURCE } from '../collector.js';
+import { planFifoSale, type FifoStep } from '../fifo.js';
 
 import { hashPassword, newSessionId } from './auth.js';
 
@@ -179,6 +180,10 @@ export interface Transaction {
   buyPrice: string | null;
   /** Güncel (kapanmışta satış) birim fiyat. */
   nowPrice: string | null;
+  /** Kısmi satışta bölünmüş bir alımın parçası mı? İki parça da işaretlenir. */
+  /** 'parent': bölünen asıl kayıt. 'remainder': ondan ayrılan açık artık. */
+  splitRole: 'parent' | 'remainder' | null;
+  splitTotal: string | null;
 }
 
 const TX_COLUMNS = `t.id, t.fund_code AS "fundCode", f.title AS "fundTitle",
@@ -193,7 +198,22 @@ const TX_COLUMNS = `t.id, t.fund_code AS "fundCode", f.title AS "fundTitle",
                     CASE WHEN s.cost > 0 THEN round((s.value / s.cost - 1) * 100, 4)::text END
                       AS "gainPct",
                     CASE WHEN t.units > 0 THEN round(s.cost  / t.units, 6)::text END AS "buyPrice",
-                    CASE WHEN t.units > 0 THEN round(s.value / t.units, 6)::text END AS "nowPrice"`;
+                    CASE WHEN t.units > 0 THEN round(s.value / t.units, 6)::text END AS "nowPrice",
+                    -- Bölünmenin iki parçası aynı şey değil: biri kullanıcının
+                    -- girdiği, adedi küçülmüş kayıt; diğeri makinenin açtığı
+                    -- artık. Tek etiket ikisini de "bölündü" diye gösteriyordu.
+                    CASE
+                      WHEN EXISTS (SELECT 1 FROM portfolio_transaction c
+                                   WHERE c.split_from_id = t.id) THEN 'parent'
+                      WHEN t.split_from_id IS NOT NULL            THEN 'remainder'
+                    END AS "splitRole",
+                    -- Bölünen alımın bölünmeden önceki adedi: parçaların
+                    -- toplamı. Satırda 20.728 görüp "35.114 nereye gitti?"
+                    -- diye sorulmasın diye ipucu metninde yazılıyor. Yeni
+                    -- parça hep köke bağlandığı için grup düz, zincir değil.
+                    (SELECT sum(g.units) FROM portfolio_transaction g
+                      WHERE coalesce(g.split_from_id, g.id)
+                            = coalesce(t.split_from_id, t.id))::text AS "splitTotal"`;
 
 export async function listTransactions(pool: pg.Pool, userId: number): Promise<Transaction[]> {
   const r = await pool.query<Transaction>(
@@ -207,6 +227,112 @@ export async function listTransactions(pool: pg.Pool, userId: number): Promise<T
     [userId],
   );
   return r.rows;
+}
+
+
+/**
+ * FIFO satış: adet en eski açık alım kaydından başlayarak düşülür.
+ *
+ * Kullanıcı satır seçmez, adet girer. Seçim ortadan kalkınca yanlış kaydı
+ * işaretleme ihtimali de kalkıyor — uyarı görmezden gelinebilirdi, bu
+ * gelinemez.
+ *
+ * Sıra fon VE banka bazında: Fiba'daki ve Nkolay'daki paylar ayrı havuz, her
+ * platform kendi sırasını uygular.
+ *
+ * Bölme yalnız bir kaydın ortasında kalındığında olur; tam tüketilen kayıtlara
+ * yalnız satış tarihi yazılır. Dolayısıyla bir satış en fazla bir kaydı böler.
+ */
+export async function sellFifo(
+  pool: pg.Pool,
+  userId: number,
+  input: { fundCode: string; platform: string; units: number; sellDate: string;
+           sellOrderDate: string | null },
+): Promise<{ touched: number; split: boolean }> {
+  if (!(input.units > 0)) throw new Error('Satış adedi sıfırdan büyük olmalı.');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const acik = await client.query<{ id: number; units: string }>(
+      `SELECT id, units::text FROM portfolio_transaction
+       WHERE user_id = $1 AND fund_code = $2 AND platform = $3 AND sell_date IS NULL
+       ORDER BY trade_date, id
+       FOR UPDATE`,
+      [userId, input.fundCode, input.platform],
+    );
+    if (acik.rows.length === 0) {
+      throw new Error(`${input.fundCode} · ${input.platform} için açık pozisyon yok.`);
+    }
+    let steps: FifoStep[];
+    try {
+      steps = planFifoSale(
+        acik.rows.map((r) => ({ id: r.id, units: Number(r.units) })), input.units,
+      );
+    } catch (err) {
+      // Fon ve banka mesaja eklenir: hangi havuzda ne kadar olduğu söylenmezse
+      // kullanıcı hatayı düzeltemez.
+      throw new Error(
+        `${input.fundCode} · ${input.platform} için `
+        + (err instanceof Error ? err.message : 'satış yapılamadı.'),
+      );
+    }
+
+    for (const step of steps) {
+      if (step.keep > 0) {
+        // Kaydın ortasında kalındı: satılan parça bu satırda kalır, kalan adet
+        // yeni bir satıra taşınır. Alış tarihi ve banka korunduğu için alış
+        // fiyatı — dolayısıyla toplam maliyet — değişmez.
+        await client.query(
+          `INSERT INTO portfolio_transaction
+             (user_id, fund_code, units, trade_date, platform, buy_order_date, note,
+              split_from_id)
+           SELECT user_id, fund_code, $2, trade_date, platform, buy_order_date, note,
+                  coalesce(split_from_id, id)
+           FROM portfolio_transaction WHERE id = $1`,
+          [step.id, step.keep],
+        );
+      }
+      await client.query(
+        `UPDATE portfolio_transaction
+         SET units = $2, sell_date = $3, sell_order_date = $4 WHERE id = $1`,
+        [step.id, step.sell, input.sellDate, input.sellOrderDate],
+      );
+    }
+    await client.query('COMMIT');
+    return { touched: steps.length, split: steps.some((x) => x.keep > 0) };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Bir alım kaydına doğrudan satış tarihi girilerek FIFO sırası atlanabilir mi?
+ *
+ * Yalnız açıktan kapalıya geçişte bakılır: zaten satılmış bir kaydın tarihini
+ * düzeltmek engellenmemeli.
+ */
+export async function fifoBlocker(
+  pool: pg.Pool,
+  userId: number,
+  id: number | null,
+  fundCode: string,
+  platform: string,
+  tradeDate: string,
+): Promise<{ tradeDate: string; units: string } | null> {
+  const r = await pool.query<{ trade_date: string; units: string }>(
+    `SELECT to_char(trade_date, 'YYYY-MM-DD') AS trade_date, units::text
+     FROM portfolio_transaction
+     WHERE user_id = $1 AND fund_code = $2 AND platform = $3
+       AND sell_date IS NULL AND trade_date < $4::date
+       AND ($5::int IS NULL OR id <> $5)
+     ORDER BY trade_date LIMIT 1`,
+    [userId, fundCode, platform, tradeDate, id],
+  );
+  const row = r.rows[0];
+  return row === undefined ? null : { tradeDate: row.trade_date, units: row.units };
 }
 
 export interface TransactionInput {

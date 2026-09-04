@@ -133,9 +133,29 @@ run_sync() {
     exclude_args="${exclude_args} --exclude-table-data=public.${table}"
   done
 
+  # Local şemalar önce tamamen düşürülür.
+  #
+  # Yalnız dump'ın --clean adımına güvenmek yetmiyor: o yalnız UZAKTA var olan
+  # nesneler için DROP üretir. Local'de uzakta olmayan bir nesne varsa — henüz
+  # deploy edilmemiş bir migration'ın eklediği kısıt gibi — restore ona takılır.
+  # Ölçülen hata: portfolio_transaction.split_from_id kendine referans veren bir
+  # foreign key ve birincil anahtar indeksine bağlı; dump onu bilmediği için
+  # DROP üretmiyor, pkey düşürülemiyor ve restore yarıda kalıyor.
+  #
+  # Şemayı düşürmek bunu kökten çözer: local ne içerirse içersin, uzağın tam
+  # kopyası kalır. plpgsql dışında eklenti yok, ikisi de pg_catalog'da.
+  log "Local şema temizleniyor."
+  psql "${DATABASE_URL}" --quiet --set ON_ERROR_STOP=on \
+    -c 'DROP SCHEMA IF EXISTS analytics CASCADE' \
+    -c 'DROP SCHEMA IF EXISTS public CASCADE' \
+    -c 'CREATE SCHEMA public' >/dev/null || {
+      error "Local şema temizlenemedi."
+      exit 1
+    }
+
   log "Dump alınıp local'e aktarılıyor (app_session içeriği hariç)."
-  # Akış halinde aktarılır: ara dosya bırakılmaz. --clean --if-exists mevcut
-  # şemayı düşürür, böylece uzakta silinmiş nesneler local'de kalmaz.
+  # Akış halinde aktarılır: ara dosya bırakılmaz. Dump'ın --clean --if-exists
+  # ifadeleri artık boşa düşer ama zararsızdır.
   #
   # sed, dump'ın başına ve sonuna konan \restrict / \unrestrict meta
   # komutlarını atar: uzak pg_dump ile local psql aynı sürüm ailesinden değil

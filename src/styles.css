@@ -317,6 +317,13 @@ td.actions { text-align: right; }
 
 /* Fon hareketleri on bir sütunlu: fon adı ve satış hücresi dar tutulur, yoksa
    tablo kapsayıcısını 180px aşıyor ve işlem düğmeleri ekran dışında kalıyor. */
+/* Kısmi satışta bölünmüş kayıt işareti.
+   İki parça ayrı renkte: "Bölündü" satılan parça, "Kalan" hâlâ açık olan.
+   Aynı renkte olsalar tabloda hangisinin ne olduğu ancak okunarak anlaşılırdı. */
+.split-mark { display: block; font-size: .68rem; font-weight: 500; letter-spacing: .02em; }
+.split-parent    { color: var(--warn); }
+.split-remainder { color: var(--accent); }
+
 /* ─── Filtre satırı ve aranabilir seçim kutusu ─────────────────────────── */
 
 /* Filtreler sütun adlarının üstünde, kendi hizalarında. */
@@ -569,6 +576,9 @@ td.actions .icon-btn + .icon-btn { margin-left: 6px; }
 .form-section:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 
 .settings-note  { margin: 0 0 1rem; color: var(--muted); font-size: .85rem; line-height: 1.6; }
+/* Form ızgarasının içindeyken tek sütuna sıkışıp yarım satır genişliğinde
+   kalıyordu; açıklama metni tam genişliği hak ediyor. */
+.modal-form-grid > .settings-note { grid-column: 1 / -1; margin-bottom: .25rem; }
 .settings-formats { display: grid; gap: .5rem; margin-bottom: .9rem; }
 .settings-formats div { display: flex; align-items: baseline; gap: .7rem;
                   color: var(--muted); font-size: .8rem; line-height: 1.5; }
@@ -654,3 +664,57 @@ textarea:focus  { outline: none; border-color: var(--accent);
 @media (max-width: 520px) {
   .metric-grid { grid-template-columns: 1fr; }
 }
+
+/* Satış penceresindeki FIFO önizlemesi: hangi alımdan ne kadar düşeceği.
+   Tablo değil liste — üç kısa alan, başlığa değmeyecek kadar az bilgi. */
+/* Izgaranın iki sütununu da kaplar: satırlar dar sütuna sıkışınca adet ile
+   açıklama iç içe geçiyordu. */
+.fifo-plan { grid-column: 1 / -1; display: grid; gap: 2px; margin-top: 2px; }
+.fifo-plan:empty { display: none; }
+/* Satır düğme: basınca adet o alıma kadar toplanıyor. Tarayıcının düğme
+   varsayılanları (ortalı metin, kendi yazı tipi, dar genişlik) sıfırlanır. */
+.fifo-row {
+  display: grid;
+  grid-template-columns: 7rem 6.5rem 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  width: 100%;
+  padding: 6px 9px;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  background: var(--bg-raised);
+  border: 1px solid transparent;
+}
+.fifo-row:hover { border-color: var(--line); background: var(--panel-hover); }
+.fifo-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fifo-when { color: var(--muted); }
+.fifo-units { text-align: right; font-family: var(--mono); color: var(--text-strong); }
+.fifo-note { color: var(--muted); font-size: 0.78rem; }
+/* Bölünen kayıt vurgulanır: kullanıcının yazmadığı sayılar oradan çıkıyor. */
+.fifo-part { border-color: var(--warn); background: var(--panel); }
+.fifo-part .fifo-note { color: var(--warn); }
+/* Dokunulmayan kayıt soluk: satışın nerede durduğu görünsün. */
+/* Seçilmemiş satır soluk ama okunur: seçilecek şey görünmezse seçilemez. */
+.fifo-idle { opacity: 0.72; }
+.fifo-idle .fifo-units { color: var(--muted); }
+.fifo-idle .fifo-note { color: var(--accent); }
+.fifo-full .fifo-note { color: var(--ok); }
+
+/* Seçimden çıkarma: yalnız seçili satırlarda çizilir, satırın tıklamasını
+   yutar. Seçilmemiş satırlarda yerini boş bir hücre tutuyor ki sütunlar
+   kaymasın. */
+.fifo-undo, .fifo-undo-gap { width: 20px; height: 20px; }
+.fifo-undo {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--muted); cursor: pointer;
+}
+.fifo-undo:hover { background: var(--danger-tint); color: var(--danger); }
+.fifo-undo:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Panel başlığındaki eylemler: alış ve satış yan yana, aynı boyda. */
+.panel-actions { display: flex; gap: 8px; align-items: center; }
