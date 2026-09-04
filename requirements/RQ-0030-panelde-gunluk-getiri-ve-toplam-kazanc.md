@@ -8,6 +8,9 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-09-04T06:53:13.251Z"
 branch: "factory/RQ-0030"
 createdFromCommit: "de88d44453452c1c3dffeb7104073aa4a8841181"
+githubIssueUrl: "https://github.com/baturorkun/tefas-pro/issues/59"
+githubIssueIid: 59
+repositoryProvider: github
 ---
 # RQ-0030 - Panelde gunluk getiri ve toplam kazanc
 
