@@ -1060,9 +1060,13 @@ function watchlistToggle(checked: boolean, onChange: (v: boolean) => void): HTML
   input.addEventListener('change', () => {
     onChange(input.checked);
   });
+  // Kullanıcı formundaki anahtarın aynısı. Kendi stilini almasaydı ekranda
+  // iki ayrı aç/kapa biçimi olurdu; aynı işi yapan şey aynı görünmeli.
+  // Buradaki fark yalnız yerleşim: form alanı değil, araç çubuğu öğesi.
   return el('div', { class: 'chart-toolbar' }, [
-    el('label', { class: 'toggle', for: 'toggle-watchlist' }, [
+    el('label', { class: 'switch-field switch-inline', for: 'toggle-watchlist' }, [
       input,
+      el('span', { class: 'switch-track' }, []),
       el('span', {}, ['Takip listem de gösterilsin']),
     ]),
     el('div', { class: 'chart-legend' }, [

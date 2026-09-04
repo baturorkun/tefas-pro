@@ -573,6 +573,11 @@ td.actions .icon-btn + .icon-btn { margin-left: 6px; }
                   transform: translateX(16px); background: var(--accent); }
 .switch-field input:focus-visible + .switch-track {
                   box-shadow: 0 0 0 3px var(--accent-tint); }
+/* Araç çubuğundaki hâli: form ızgarasında değil, satır içinde duruyor.
+   switch-field'ın `align-self: end` ve alt boşluğu orada alanı aşağı itiyordu. */
+.switch-inline  { align-self: auto; padding-bottom: 0; gap: 9px;
+                  font-size: 13px; color: var(--text); }
+
 .switch-text    { display: grid; gap: 2px; }
 .switch-text strong { color: var(--text); font-size: .875rem; font-weight: 500; }
 .switch-text small  { color: var(--muted-dim); font-size: .75rem; }
@@ -639,9 +644,6 @@ textarea:focus  { outline: none; border-color: var(--accent);
 
 .chart-toolbar { display: flex; align-items: center; justify-content: space-between;
                  gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
-.toggle        { display: flex; align-items: center; gap: 8px;
-                 font-size: 13px; color: var(--text); cursor: pointer; }
-.toggle input  { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
 
 /* Grafik efsanesi */
 .chart-legend      { display: flex; gap: 14px; align-items: center;

@@ -140,6 +140,17 @@ describe('form görünümü', () => {
     expect(css).toContain('.switch-track');
     expect(main).toContain("class: 'switch-track'");
   });
+
+  it('grafik araç çubuğu da aynı anahtarı kullanır', () => {
+    // İki ayrı aç/kapa biçimi olsaydı aynı işi yapan şey iki türlü görünürdü.
+    expect(main).toContain("class: 'switch-field switch-inline'");
+    expect(css).toContain('.switch-inline');
+    // Eski çıplak kutucuk stili kalmamalı: kullanılmayan stil bir sonraki
+    // eklemede yanlışlıkla yeniden kullanılır.
+    expect(css).not.toMatch(/^\.toggle\s/m);
+    expect(css).not.toContain('.toggle input');
+    expect(main).not.toContain("class: 'toggle'");
+  });
 });
 
 describe('valör bilgisi', () => {
