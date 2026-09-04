@@ -13,9 +13,9 @@
       }
     ]
   },
-  "status": "passed",
+  "status": "approved",
   "createdAt": "2026-09-04T20:31:45.396Z",
-  "updatedAt": "2026-09-04T20:31:59.724Z",
+  "updatedAt": "2026-09-04T20:33:14.655Z",
   "steps": [
     {
       "agent": "handoff",
@@ -34,5 +34,7 @@
     "lint": "skipped",
     "tests": "passed",
     "security": "skipped"
-  }
+  },
+  "approvedAt": "2026-09-04T20:33:14.656Z",
+  "approvedBy": "human"
 }
