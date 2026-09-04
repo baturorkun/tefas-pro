@@ -67,3 +67,33 @@ kayit="$(q "SELECT count(*) FROM portfolio_transaction
             WHERE user_id = ${uid} AND (sell_date IS NULL OR sell_date > current_date)")"
 [ "${fon}" -le "${kayit}" ] || fail "fon sayısı kayıt sayısını aşamaz (${fon} > ${kayit})"
 printf 'PASS: fon sayısı ile açık kayıt sayısı ayrı ölçülüyor\n'
+
+# Açık pozisyonu olan fon takip listesinde de sayılmamalı: position_return'e
+# hem gerçek hem simüle bacak girince fon "En çok kazandıran pozisyonlarım"
+# grafiğinde iki kez görünüyordu. Ölçülen veride DFI böyleydi — beş lotunun
+# satışı ileri tarihliydi, watchlist_visible onu "elimde yok" sayıyordu.
+cift="$(q "SELECT count(*) FROM (
+             SELECT fund_code FROM analytics.position_leg
+             WHERE is_open GROUP BY user_id, fund_code
+             HAVING count(*) FILTER (WHERE NOT simulated) > 0
+                AND count(*) FILTER (WHERE simulated) > 0) x")"
+[ "${cift}" = "0" ] || fail "${cift} fon hem gerçek hem simüle açık bacağa sahip"
+printf 'PASS: açık pozisyonlu fon takip bacağı üretmiyor\n'
+
+# Açıklık kuralı iki yerde iki ayrı tanım olmamalı.
+grep -q "p.sell_date IS NULL OR p.sell_date > current_date" \
+  "${PROJECT_ROOT}/db/migrations/033_watchlist_visible_forward_sale.sql" \
+  || fail "takip listesi görünümü ileri tarihli satışı açık saymalı"
+printf 'PASS: takip listesi açıklık kuralı position_leg ile aynı\n'
+
+# Tamamen satılmış fon listede kalmalı: çıkmak kullanıcının kararı.
+satilmis="$(q "SELECT count(*) FROM user_watchlist w
+               WHERE EXISTS (SELECT 1 FROM portfolio_transaction p
+                             WHERE p.user_id = w.user_id AND p.fund_code = w.fund_code)
+                 AND NOT EXISTS (SELECT 1 FROM portfolio_transaction p
+                                 WHERE p.user_id = w.user_id AND p.fund_code = w.fund_code
+                                   AND (p.sell_date IS NULL OR p.sell_date > current_date))
+                 AND NOT EXISTS (SELECT 1 FROM analytics.watchlist_visible v
+                                 WHERE v.user_id = w.user_id AND v.fund_code = w.fund_code)")"
+[ "${satilmis}" = "0" ] || fail "${satilmis} tamamen satılmış fon listeden düşmüş"
+printf 'PASS: tamamen satılmış fon takip listesinde kalıyor\n'
