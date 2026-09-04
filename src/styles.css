@@ -315,6 +315,29 @@ td.actions { text-align: right; }
 /* Beklenen durumu anlatan not: hata değil ama dikkat çekmeli. */
 .panel-note-warn { color: var(--warn); }
 
+/* Fon hareketleri on bir sütunlu: fon adı ve satış hücresi dar tutulur, yoksa
+   tablo kapsayıcısını 180px aşıyor ve işlem düğmeleri ekran dışında kalıyor. */
+/* Satırın sonucu soldaki şeritte: Dönemsel Getiri'deki ay satırıyla aynı dil. */
+.tx-gain td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.tx-loss td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+/* Gerçekleşmiş satış soluk: kapanmış kayıt artık takip edilecek bir şey değil.
+   Opaklık satırın tamamına uygulanır ki renkli K/Z sayıları da geri çekilsin;
+   yalnız metin rengini soldurmak onları olduğu gibi bırakırdı. Üzerine gelince
+   tam okunurluğa döner. */
+.tx-closed { opacity: .55; }
+.tx-closed:hover { opacity: 1; }
+
+/* Fon adı bu tabloda yazılmıyor (title ile üzerine gelince çıkar); imleç
+   bunun anlaşılmasına yardım etsin. */
+.tx-table td[title] { cursor: help; }
+.tx-table td .status-badge { display: block; width: fit-content; margin-top: .25rem; }
+
+/* Başlangıç ve son değer tek hücrede alt alta: üstteki soluk, alttaki
+   belirgin — hangisinin şimdiki değer olduğu okumadan anlaşılsın. Fiyat ile
+   maliyet/değer aynı deseni kullanıyor. */
+.stack-from { display: block; color: var(--muted-dim); font-size: .78rem; }
+.stack-to   { display: block; color: var(--text); }
+
 /* Ağırlık sütunu: sayı ve onun altında ince bir çubuk. Çubuk yüzdeyi
    okumadan da grupların birbirine oranını gösteriyor. */
 .weight-cell { min-width: 7rem; }

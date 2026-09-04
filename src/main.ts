@@ -26,6 +26,13 @@ interface Transaction {
   units: string;
   sellDate: string | null;
   note: string | null;
+  /** Getiri günü olmayan işlemde null: sıfır "kâr etmedi" demek olurdu. */
+  cost: string | null;
+  value: string | null;
+  gain: string | null;
+  gainPct: string | null;
+  buyPrice: string | null;
+  nowPrice: string | null;
 }
 
 interface WatchlistRow {
@@ -276,6 +283,18 @@ const AY_ADLARI = [
  * Yıl yalnız içinde bulunulan yıldan farklıysa yazılır: her satıra yıl koymak
  * gürültü, ama eski bir tarihi yılsız göstermek onu bu yılmış gibi okutur.
  */
+function fiyat(raw: string | null): string {
+  if (raw === null || raw === '') return '—';
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return '—';
+  // Ölçek çok geniş — 0,44 ile 9.440 arası. Sabit hane sayısı küçük fiyatta
+  // bilgi kaybı, büyük fiyatta gürültü olurdu.
+  const digits = Math.abs(n) >= 1000 ? 2 : 4;
+  return n.toLocaleString('tr-TR', {
+    minimumFractionDigits: digits, maximumFractionDigits: digits,
+  });
+}
+
 function gunAd(iso: string | null): string {
   if (iso === null || iso.length < 10) return '—';
   const [y, a, g] = [iso.slice(0, 4), Number(iso.slice(5, 7)), Number(iso.slice(8, 10))];
@@ -1708,7 +1727,7 @@ async function allocationView(): Promise<Node[]> {
       el('td', { class: 'num' }, [money(g.value)]),
       el('td', {}, [signed(g.gain, ' ₺')]),
       el('td', {}, [signed(Number(g.cost) === 0 ? null
-        : String((Number(g.gain) / Number(g.cost)) * 100))]),
+        : String((Number(g.gain) / Number(g.cost)) * 100), '')]),
       el('td', { class: 'weight-cell' }, [
         el('span', { class: 'num' }, [pct(Number(g.weightPct), 1)]),
         bar(g.weightPct),
@@ -1721,7 +1740,7 @@ async function allocationView(): Promise<Node[]> {
       el('td', { class: 'num' }, [money(a.total.value)]),
       el('td', {}, [signed(a.total.gain, ' ₺')]),
       el('td', {}, [signed(Number(a.total.cost) === 0 ? null
-        : String((Number(a.total.gain) / Number(a.total.cost)) * 100))]),
+        : String((Number(a.total.gain) / Number(a.total.cost)) * 100), '')]),
       el('td', { class: 'num' }, [pct(100, 1)]),
     ]);
     return table([birinci, 'Kapsam', 'Maliyet', 'Değer', 'K/Z', 'K/Z %', 'Ağırlık'],
@@ -1786,7 +1805,7 @@ async function closedView(): Promise<Node[]> {
     el('td', { class: 'num' }, [num(r.buyValue)]),
     el('td', { class: 'num' }, [num(r.sellValue)]),
     el('td', {}, [signed(r.realizedGain, ' ₺')]),
-    el('td', {}, [signed(r.realizedPct)]),
+    el('td', {}, [signed(r.realizedPct, '')]),
   ]));
 
   const foot = el('tr', { class: 'total-row' }, [
@@ -1795,7 +1814,7 @@ async function closedView(): Promise<Node[]> {
     el('td', { class: 'num' }, [num(String(buy))]),
     el('td', { class: 'num' }, [num(String(sell))]),
     el('td', {}, [signed(String(gain), ' ₺')]),
-    el('td', {}, [signed(buy === 0 ? null : String((sell / buy - 1) * 100))]),
+    el('td', {}, [signed(buy === 0 ? null : String((sell / buy - 1) * 100), '')]),
   ]);
 
   return [
@@ -1932,19 +1951,73 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
   const addBtn = el('button', { class: 'btn-primary' }, [icon('add'), 'İşlem Ekle']);
   addBtn.addEventListener('click', () => { openTransactionModal(null, reload); });
 
+  // Toplam yalnız parası ölçülebilen satırlardan: getiri günü olmayan işlem
+  // maliyetsiz görünüyor, onu sıfır sayıp toplama katmak yanlış olurdu.
+  const bugun = new Date().toISOString().slice(0, 10);
+  const olculen = rows.filter((t) => t.cost !== null);
+  const tMaliyet = olculen.reduce((a, t) => a + Number(t.cost), 0);
+  const tDeger = olculen.reduce((a, t) => a + Number(t.value), 0);
+  const toplamSatiri = el('tr', { class: 'total-row' }, [
+    el('td', {}, [`TOPLAM (${String(olculen.length)})`]),
+    el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []),
+    el('td', { class: 'num' }, [
+      el('span', { class: 'stack-from' }, [money(String(tMaliyet))]),
+      el('span', { class: 'stack-to' }, [money(String(tDeger))]),
+    ]),
+    el('td', {}, [signed(String(tDeger - tMaliyet), ' ₺')]),
+    // Yüzde yok: bu sütun toplam değil oran ve payda burada BRÜT alım, yani
+    // aynı fona defalarca girip çıkınca şişen bir sayı. Doğru getiri oranı
+    // Panel'de, net sermayeye bölünmüş halde duruyor.
+    el('td', {}, []),
+    el('td', {}, []), el('td', {}, []),
+  ]);
+
   const body = rows.map((t) => {
     const editBtn = iconButton('edit', 'Düzenle');
     const delBtn = iconButton('delete', 'Sil', 'danger');
-    const tr = el('tr', {}, [
-      el('td', {}, [
+    // Soldaki şerit satırın sonucunu söyler; Dönemsel Getiri'deki ay satırıyla
+    // aynı dil. Gerçekleşmiş satış soluk yazılır: kapanmış bir kayıt artık
+    // takip edilecek bir şey değil, listede yer tutuyor.
+    const kapali = t.sellDate !== null && t.sellDate <= bugun;
+    const sinif = [
+      t.gain === null ? '' : Number(t.gain) < 0 ? 'tx-loss' : 'tx-gain',
+      kapali ? 'tx-closed' : '',
+    ].filter((c) => c !== '').join(' ');
+    const tr = el('tr', sinif === '' ? {} : { class: sinif }, [
+      // Fon adı yazılmıyor, üzerine gelince çıkıyor. Kısaltılmış hâli zaten
+      // ayırt edici değildi — DOH da THF de "TERA PORTFÖY…" diye başlıyor —
+      // ama sütunun yarısını yiyor ve satırı iki katına çıkarıyordu.
+      el('td', { title: t.fundTitle ?? t.fundCode }, [
         el('span', { class: 'fund-code' }, [t.fundCode]),
-        el('span', { class: 'fund-title' }, [t.fundTitle ?? '']),
       ]),
       el('td', { class: 'num' }, [Number(t.units).toLocaleString('tr-TR')]),
       el('td', { class: 'num' }, [t.tradeDate]),
       el('td', {}, [t.platform]),
-      el('td', { class: 'num' }, [t.sellDate ?? '—']),
-      el('td', {}, [t.sellDate === null ? badge('Açık', 'open') : badge('Kapandı', 'closed')]),
+      // Alış ve güncel fiyat tek hücrede alt alta: ayrı sütun olsalar tablo
+      // on bir sütuna çıkıyordu, oysa ikisi aynı büyüklüğün iki ucu ve zaten
+      // birbirine bakılarak okunuyor.
+      el('td', { class: 'num' }, t.buyPrice === null ? ['—'] : [
+        el('span', { class: 'stack-from' }, [fiyat(t.buyPrice)]),
+        el('span', { class: 'stack-to' }, [fiyat(t.nowPrice)]),
+      ]),
+      // Maliyet ve değer de aynı desende: üstte başlangıç, altta son. İkisi
+      // ayrı sütunken tablo kapsayıcısını aşıyordu ve zaten hep birbirine
+      // bakılarak okunuyorlar.
+      el('td', { class: 'num' }, t.cost === null ? ['—'] : [
+        el('span', { class: 'stack-from' }, [money(t.cost)]),
+        el('span', { class: 'stack-to' }, [money(t.value)]),
+      ]),
+      el('td', {}, [signed(t.gain, ' ₺')]),
+      // Birim başlıkta ("K/Z %"), her satırda tekrarlanmıyor.
+      el('td', {}, [signed(t.gainPct, '')]),
+      // Satış ve durum tek sütunda. Tarih varsa pozisyon kapanmıştır — tek
+      // istisna ileri tarihli satış: emir verilmiş ama gerçekleşmemiş, o yüzden
+      // hâlâ açık. Bilgi yalnız o satırda rozet olarak veriliyor; iki ayrı
+      // sütun tablonun sağını ekran dışına itiyordu.
+      el('td', { class: 'num' }, t.sellDate === null ? ['—'] : [
+        t.sellDate,
+        ...(t.sellDate > bugun ? [badge('Bekliyor', 'pending')] : []),
+      ]),
       el('td', { class: 'actions' }, [editBtn, delBtn]),
     ]);
     delBtn.addEventListener('click', () => {
@@ -1989,7 +2062,16 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
       'Fon Hareketleri',
       `${String(rows.length)} kayıt · ${String(open.length)} açık`,
       el('div', { class: 'panel-body' }, [
-        table(['Fon', 'Adet', 'Alış', 'Banka', 'Satış', 'Durum', ''], body),
+        // Kendi sınıfı: on bir sütunla tablo genişliyor, fon adı ve satış
+        // hücresi burada daha dar tutulur. Diğer tablolar etkilenmez.
+        el('div', { class: 'tx-table' }, [
+          table(
+            // "Fiyat" başlığı iki satırın hangisi olduğunu söylemiyordu.
+            ['Fon', 'Adet', 'Alış', 'Banka', 'Alış / Son', 'Maliyet / Değer', 'K/Z', 'K/Z %',
+              'Satış', ''],
+            [...body, toplamSatiri],
+          ),
+        ]),
       ]),
       addBtn,
     ),
@@ -2024,9 +2106,9 @@ async function portfolioView(): Promise<Node[]> {
         el('span', { class: 'fund-code' }, [r.fundCode]),
         el('span', { class: 'fund-title' }, [r.title ?? '']),
       ]),
-      el('td', {}, [signed(r.dailyReturnPct)]),
-      el('td', {}, [signed(r.return1m)]),
-      el('td', {}, [signed(r.return3m)]),
+      el('td', {}, [signed(r.dailyReturnPct, '')]),
+      el('td', {}, [signed(r.return1m, '')]),
+      el('td', {}, [signed(r.return3m, '')]),
       el('td', { class: 'num' }, [`${String(r.days)}g`]),
       el('td', { class: 'num' }, [num(r.units, 0)]),
       el('td', { class: 'num' }, [num(r.cost, 0)]),
@@ -2040,7 +2122,7 @@ async function portfolioView(): Promise<Node[]> {
           : []),
       ]),
       el('td', {}, [signed(r.gain, ' ₺')]),
-      el('td', {}, [signed(r.returnPct)]),
+      el('td', {}, [signed(r.returnPct, '')]),
     ]);
   });
 
@@ -2050,7 +2132,7 @@ async function portfolioView(): Promise<Node[]> {
     el('td', { class: 'num' }, [num(String(cost), 0)]),
     el('td', { class: 'num' }, [num(String(value), 0)]),
     el('td', {}, [signed(String(gain), ' ₺')]),
-    el('td', {}, [signed(cost === 0 ? null : String((value / cost - 1) * 100))]),
+    el('td', {}, [signed(cost === 0 ? null : String((value / cost - 1) * 100), '')]),
   ]);
 
   return [

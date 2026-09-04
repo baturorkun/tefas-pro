@@ -24,11 +24,13 @@ describe('düğme kuralları', () => {
 
 describe('metin kuralları', () => {
   it('durum rozetleri büyük harfle başlar', () => {
-    for (const t of ['Açık', 'Kapandı', 'Aktif', 'Pasif']) {
-      expect(main).toContain(`badge('${t}'`);
-    }
-    for (const t of ['açık', 'kapandı', 'aktif', 'pasif']) {
-      expect(main).not.toContain(`badge('${t}'`);
+    // Kural etiketlerin kendisinde değil biçiminde: sabit bir liste tutmak,
+    // etiket değişince testi yanlış yere kırıyordu. Kullanılan bütün rozetler
+    // taranıp ilk harfleri kontrol ediliyor.
+    const etiketler = [...main.matchAll(/badge\('([^']+)'/g)].map((m) => m[1] ?? '');
+    expect(etiketler.length).toBeGreaterThan(3);
+    for (const e of etiketler) {
+      expect(e[0], `rozet küçük harfle başlıyor: ${e}`).toBe((e[0] ?? '').toLocaleUpperCase('tr'));
     }
   });
 
@@ -217,6 +219,70 @@ describe('tercihlerim', () => {
 
   it('kişisel tercih temizlenebilir', () => {
     expect(main).toContain("'Genel Ayara Dön'");
+  });
+});
+
+describe('fon hareketleri', () => {
+  it('işlem başına fiyat, tutar ve kâr zarar gösterir', () => {
+    expect(main).toContain("'Alış / Son', 'Maliyet / Değer', 'K/Z', 'K/Z %'");
+  });
+
+  it('başlangıç ve son değerler tek hücrede toplanır', () => {
+    // Ayrı sütun olsalar tablo kapsayıcısını aşıyor, işlem düğmeleri ekran
+    // dışında kalıyordu. Fiyat ile maliyet/değer aynı deseni kullanır.
+    expect(main).toContain("class: 'stack-from'");
+    expect(main).toContain("class: 'stack-to'");
+    expect(css).toContain('.stack-from {');
+  });
+
+  it('fon adı yazılmaz, üzerine gelince çıkar', () => {
+    // Kısaltılmış ad ayırt edici değildi (DOH da THF de "TERA PORTFÖY…")
+    // ama sütunun yarısını yiyor ve satırı iki katına çıkarıyordu.
+    expect(main).toContain("el('td', { title: t.fundTitle ?? t.fundCode }");
+    expect(css).toContain('.tx-table td[title]');
+  });
+
+  it('satırın sonucu soldaki şeritte görünür', () => {
+    // Dönemsel Getiri'deki ay satırıyla aynı dil.
+    expect(main).toContain("'tx-loss' : 'tx-gain'");
+    expect(css).toContain('.tx-gain td:first-child');
+    expect(css).toContain('.tx-loss td:first-child');
+  });
+
+  it('gerçekleşmiş satış soluk yazılır', () => {
+    // Kapanmış kayıt takip edilecek bir şey değil; ileri tarihli satış ise
+    // hâlâ açık, o solmamalı.
+    expect(main).toContain("t.sellDate !== null && t.sellDate <= bugun");
+    expect(css).toContain('.tx-closed { opacity:');
+  });
+
+  it('ileri tarihli satış açık olduğunu belli eder', () => {
+    // Tarih dolu ama pozisyon henüz kapanmadı; ayrı Durum sütunu olmadan da
+    // bu ayrım görünmeli.
+    expect(main).toContain("badge('Bekliyor', 'pending')");
+  });
+
+  it('ölçülemeyen işlem toplama katılmaz', () => {
+    expect(main).toContain("rows.filter((t) => t.cost !== null)");
+  });
+
+  it('toplam satırında yüzde yazmaz', () => {
+    // O sütun toplam değil oran; payda brüt alım olurdu ve şişik çıkardı.
+    expect(main).toMatch(/Yüzde yok: bu sütun toplam değil oran/);
+  });
+});
+
+describe('yüzde sütunları', () => {
+  it('başlığında % olan sütunda hücrede tekrarlanmaz', () => {
+    // "K/Z %" başlığı altında "+0,37%" yazmak birimi iki kez söylüyordu.
+    expect(main).toContain("signed(t.gainPct, '')");
+    expect(main).toContain("signed(r.returnPct, '')");
+    expect(main).toContain("signed(r.realizedPct, '')");
+  });
+
+  it('başlığında % olmayan sütunda işaret kalır', () => {
+    // Takip Listem'in başlığı yalnız "Günlük"; orada birim hücrede durmalı.
+    expect(main).toContain('signed(r.dailyReturnPct)]');
   });
 });
 

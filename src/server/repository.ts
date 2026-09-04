@@ -163,6 +163,22 @@ export interface Transaction {
   units: string;
   sellDate: string | null;
   note: string | null;
+  /**
+   * Para değerleri position_slice'tan gelir; Portföyüm ve Dağılım da aynı
+   * kaynağı kullanıyor, üç ekran farklı rakam gösteremesin.
+   *
+   * Getiri günü olmayan işlemde (aynı gün alınmış, henüz ölçülemiyor) null
+   * kalır: sıfır yazmak "kâr etmedi" demek olurdu, oysa "henüz ölçülemiyor".
+   */
+  cost: string | null;
+  /** Açıkta güncel değer, kapanmışta satış anındaki değer. */
+  value: string | null;
+  gain: string | null;
+  gainPct: string | null;
+  /** Alış birim fiyatı: maliyet bölü adet. */
+  buyPrice: string | null;
+  /** Güncel (kapanmışta satış) birim fiyat. */
+  nowPrice: string | null;
 }
 
 const TX_COLUMNS = `t.id, t.fund_code AS "fundCode", f.title AS "fundTitle",
@@ -170,12 +186,22 @@ const TX_COLUMNS = `t.id, t.fund_code AS "fundCode", f.title AS "fundTitle",
                     t.units::text AS units,
                     to_char(t.sell_date, 'YYYY-MM-DD') AS "sellDate", t.note,
                     to_char(t.buy_order_date, 'YYYY-MM-DD')  AS "buyOrderDate",
-                    to_char(t.sell_order_date, 'YYYY-MM-DD') AS "sellOrderDate"`;
+                    to_char(t.sell_order_date, 'YYYY-MM-DD') AS "sellOrderDate",
+                    s.cost::text  AS cost,
+                    s.value::text AS value,
+                    (s.value - s.cost)::text AS gain,
+                    CASE WHEN s.cost > 0 THEN round((s.value / s.cost - 1) * 100, 4)::text END
+                      AS "gainPct",
+                    CASE WHEN t.units > 0 THEN round(s.cost  / t.units, 6)::text END AS "buyPrice",
+                    CASE WHEN t.units > 0 THEN round(s.value / t.units, 6)::text END AS "nowPrice"`;
 
 export async function listTransactions(pool: pg.Pool, userId: number): Promise<Transaction[]> {
   const r = await pool.query<Transaction>(
+    // LEFT JOIN: getiri günü olmayan işlem dilim üretmez ama satır olarak
+    // görünmeye devam etmeli, yoksa kullanıcı az önce girdiği kaydı bulamaz.
     `SELECT ${TX_COLUMNS} FROM portfolio_transaction t
      LEFT JOIN dim_fund f USING (fund_code)
+     LEFT JOIN analytics.position_slice s ON s.transaction_id = t.id
      WHERE t.user_id = $1
      ORDER BY t.trade_date DESC, t.id DESC`,
     [userId],
@@ -228,6 +254,7 @@ export async function getTransaction(
   const r = await pool.query<Transaction>(
     `SELECT ${TX_COLUMNS} FROM portfolio_transaction t
      LEFT JOIN dim_fund f USING (fund_code)
+     LEFT JOIN analytics.position_slice s ON s.transaction_id = t.id
      WHERE t.user_id = $1 AND t.id = $2`,
     [userId, id],
   );
