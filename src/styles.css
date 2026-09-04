@@ -315,6 +315,14 @@ td.actions { text-align: right; }
 /* Beklenen durumu anlatan not: hata değil ama dikkat çekmeli. */
 .panel-note-warn { color: var(--warn); }
 
+/* Ağırlık sütunu: sayı ve onun altında ince bir çubuk. Çubuk yüzdeyi
+   okumadan da grupların birbirine oranını gösteriyor. */
+.weight-cell { min-width: 7rem; }
+.weight-bar  { margin-top: .3rem; height: 4px; border-radius: 2px;
+               background: var(--line-soft); overflow: hidden; }
+.weight-bar span { display: block; height: 100%; background: var(--accent);
+                   border-radius: 2px; }
+
 /* Menü grubu başlığı: düz listede kullanıcı ve yönetim ekranları ayırt
    edilemiyordu. Tıklanmaz, yalnız sınırı gösterir. */
 .nav-group { padding: .9rem .9rem .35rem; font-size: .66rem; font-weight: 600;

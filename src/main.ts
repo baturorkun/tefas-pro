@@ -114,6 +114,22 @@ interface Dashboard {
   investorRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
 }
 
+interface AllocationGroup {
+  key: string;
+  funds: number;
+  lots: number;
+  cost: string;
+  value: string;
+  gain: string;
+  weightPct: string;
+}
+
+interface Allocation {
+  total: { funds: number; lots: number; cost: string; value: string; gain: string };
+  byBank: AllocationGroup[];
+  byCategory: AllocationGroup[];
+}
+
 interface ClosedPositionRow {
   fundCode: string;
   title: string | null;
@@ -177,7 +193,7 @@ interface PerformanceSeries {
 
 type ViewId =
   | 'dashboard' | 'portfolio' | 'closed' | 'periods' | 'market'
-  | 'transactions' | 'watchlist' | 'prefs' | 'users' | 'runs' | 'settings';
+  | 'allocation' | 'transactions' | 'watchlist' | 'prefs' | 'users' | 'runs' | 'settings';
 
 const root = document.getElementById('app');
 
@@ -235,6 +251,17 @@ function money(raw: string | null): string {
   if (abs >= 1e6) return fmt(n / 1e6, 'm ₺');
   if (abs >= 1e3) return fmt(n / 1e3, 'b ₺');
   return fmt(n, '₺');
+}
+
+/**
+ * Yüzde metni: %13,25. toFixed İngilizce ondalık üretiyor ve tabloda
+ * toLocaleString ile biçimlenmiş sayıların yanına düşünce "%61.6" ile
+ * "%100,0" aynı sütunda görünüyordu.
+ */
+function pct(value: number, digits = 2): string {
+  return `%${value.toLocaleString('tr-TR', {
+    minimumFractionDigits: digits, maximumFractionDigits: digits,
+  })}`;
 }
 
 /** Yatırımcı sayısı değişimi: 105316 → +105.316 kişi */
@@ -335,6 +362,7 @@ const ICON_PATHS: Record<string, string[]> = {
   periods: ['M4 5h16v15H4z', 'M4 10h16', 'M9 5V3M15 5V3', 'M8 14h3M13 14h3'],
   runs: ['M12 8v4l3 2', 'M12 3a9 9 0 1 0 9 9 9 9 0 0 0-9-9z'],
   prefs: ['M4 7h10M18 7h2M4 17h2M10 17h10', 'M16 5v4M8 15v4'],
+  allocation: ['M12 12V3a9 9 0 1 0 9 9z', 'M14 3a7 7 0 0 1 7 7h-7z'],
   market: ['M3 3v18h18', 'm7 14 3-4 3 3 5-7', 'M18 6h3v3'],
   settings: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'],
 };
@@ -1602,6 +1630,84 @@ function openTransactionModal(existing: Transaction | null, reload: () => void):
  * alınıp ayrı satılan pozisyonların sonuçları farklıdır ve hangi alımın ne
  * kazandırdığı görünmelidir.
  */
+/**
+ * Dağılım: aynı portföy, farklı boyutlara göre gruplanmış.
+ *
+ * Portföyüm fon fon listeliyor; burada sorulan soru başka — para nasıl
+ * dağılmış. İkisi ayrı ekran, çünkü ölçülen veride cevapları da ayrışıyor:
+ * on fon hisse senedi şemsiyesinde ama para olarak orada yalnız %19 var.
+ */
+async function allocationView(): Promise<Node[]> {
+  const a = (await api('/api/allocation')) as Allocation;
+  const value = Number(a.total.value);
+
+  const bar = (pct: string): HTMLElement =>
+    el('div', { class: 'weight-bar' }, [
+      el('span', { style: `width:${Math.min(Number(pct), 100).toFixed(2)}%` }),
+    ]);
+
+  const groupTable = (groups: AllocationGroup[], birinci: string): HTMLElement => {
+    const rows = groups.map((g) => el('tr', {}, [
+      el('td', {}, [el('span', { class: 'fund-code' }, [g.key])]),
+      el('td', { class: 'num dim' }, [`${String(g.funds)} fon · ${String(g.lots)} lot`]),
+      el('td', { class: 'num' }, [money(g.cost)]),
+      el('td', { class: 'num' }, [money(g.value)]),
+      el('td', {}, [signed(g.gain, ' ₺')]),
+      el('td', {}, [signed(Number(g.cost) === 0 ? null
+        : String((Number(g.gain) / Number(g.cost)) * 100))]),
+      el('td', { class: 'weight-cell' }, [
+        el('span', { class: 'num' }, [pct(Number(g.weightPct), 1)]),
+        bar(g.weightPct),
+      ]),
+    ]));
+    const foot = el('tr', { class: 'total-row' }, [
+      el('td', {}, ['TOPLAM']),
+      el('td', { class: 'num dim' }, [`${String(a.total.funds)} fon · ${String(a.total.lots)} lot`]),
+      el('td', { class: 'num' }, [money(a.total.cost)]),
+      el('td', { class: 'num' }, [money(a.total.value)]),
+      el('td', {}, [signed(a.total.gain, ' ₺')]),
+      el('td', {}, [signed(Number(a.total.cost) === 0 ? null
+        : String((Number(a.total.gain) / Number(a.total.cost)) * 100))]),
+      el('td', { class: 'num' }, [pct(100, 1)]),
+    ]);
+    return table([birinci, 'Kapsam', 'Maliyet', 'Değer', 'K/Z', 'K/Z %', 'Ağırlık'],
+      [...rows, foot]);
+  };
+
+  if (a.total.lots === 0) {
+    return [el('div', { class: 'empty-state' }, ['Açık pozisyon yok.'])];
+  }
+
+  const enBuyuk = (g: AllocationGroup[]): AllocationGroup | undefined => g[0];
+
+  return [
+    el('div', { class: 'metric-grid' }, [
+      metric('Portföy Değeri', money(a.total.value),
+        `${String(a.total.funds)} fon · ${String(a.total.lots)} lot`, 'chart'),
+      metric('Kâr / Zarar', money(a.total.gain),
+        Number(a.total.cost) === 0 ? '—'
+          : pct((Number(a.total.gain) / Number(a.total.cost)) * 100), 'money'),
+      metric('En Ağır Banka', enBuyuk(a.byBank)?.key ?? '—',
+        enBuyuk(a.byBank) === undefined ? '—'
+          : `${pct(Number(enBuyuk(a.byBank)?.weightPct), 1)} · ${money(enBuyuk(a.byBank)?.value ?? null)}`,
+        'money'),
+      metric('En Ağır Kategori', enBuyuk(a.byCategory)?.key ?? '—',
+        enBuyuk(a.byCategory) === undefined ? '—'
+          : `${pct(Number(enBuyuk(a.byCategory)?.weightPct), 1)} · ${money(enBuyuk(a.byCategory)?.value ?? null)}`,
+        'fund'),
+    ]),
+    panel('Banka', `${String(a.byBank.length)} banka · ağırlığa göre`,
+      el('div', { class: 'panel-body' }, [groupTable(a.byBank, 'Banka')])),
+    panel('Kategori', `${String(a.byCategory.length)} kategori · şemsiye fon tipi`,
+      el('div', { class: 'panel-body' }, [groupTable(a.byCategory, 'Kategori')])),
+    el('p', { class: 'panel-note' }, [
+      'Ağırlık güncel değer üzerinden hesaplanır, fon sayısı üzerinden değil: bir ' +
+      'grupta çok fon bulunması oraya çok para konduğu anlamına gelmiyor. Yalnız ' +
+      'açık pozisyonlar sayılır; kapananlar Kapananlar ekranında.',
+    ]),
+  ];
+}
+
 async function closedView(): Promise<Node[]> {
   const rows = (await api('/api/closed')) as ClosedPositionRow[];
   const sum = (f: (r: ClosedPositionRow) => number): number => rows.reduce((a, r) => a + f(r), 0);
@@ -1641,7 +1747,7 @@ async function closedView(): Promise<Node[]> {
   return [
     el('div', { class: 'metric-grid' }, [
       metric('Gerçekleşen K/Z', money(String(gain)),
-        buy === 0 ? '—' : `%${((sell / buy - 1) * 100).toFixed(2)}`, 'money'),
+        buy === 0 ? '—' : pct((sell / buy - 1) * 100), 'money'),
       metric('Kapanan İşlem', String(rows.length), 'Satılmış Kayıt', 'closed', 'işlem'),
       metric('Kazançla Kapanan', String(winners), `${String(rows.length - winners)} Zararla`, 'flag'),
       metric('Toplam Satış', money(String(sell)), 'Elde Edilen Tutar', 'chart'),
@@ -1715,10 +1821,10 @@ async function periodsView(): Promise<Node[]> {
   return [
     el('div', { class: 'metric-grid' }, [
       metric('Toplam K/Z', money(String(total)),
-        months.length === 0 ? '—' : `${String(months.length)} ayın bileşiği · %${((compound - 1) * 100).toFixed(2)}`,
+        months.length === 0 ? '—' : `${String(months.length)} ayın bileşiği · ${pct((compound - 1) * 100)}`,
         'money'),
       metric('Son Ay', latest === undefined ? '—' : money(latest.gain),
-        latest === undefined ? '—' : `${latest.label}${latest.pct === null ? '' : ` · %${Number(latest.pct).toFixed(2)}`}`,
+        latest === undefined ? '—' : `${latest.label}${latest.pct === null ? '' : ` · ${pct(Number(latest.pct))}`}`,
         'chart'),
       metric(`${bench} Üstü`,
         String(months.filter((m) => m.diff !== null && Number(m.diff) >= 0).length),
@@ -1898,7 +2004,7 @@ async function portfolioView(): Promise<Node[]> {
       metric('Maliyet', money(String(cost)), `${String(rows.length)} Fon`, 'money'),
       metric('Bugünkü Değer', money(String(value)), rows[0]?.asOfDate ?? '—', 'chart'),
       metric('Kâr / Zarar', money(String(gain)),
-        cost === 0 ? '—' : `%${(((value / cost) - 1) * 100).toFixed(2)}`),
+        cost === 0 ? '—' : pct(((value / cost) - 1) * 100)),
       metric('Kârda', String(winners), `${String(rows.length - winners)} Zararda`, 'flag'),
     ]),
     panel(
@@ -1986,7 +2092,7 @@ async function watchlistView(reload: () => void): Promise<Node[]> {
       ]),
       el('td', {}, [signed(r.dailyReturnPct)]),
       el('td', { class: 'num' }, [money(r.netFlow)]),
-      el('td', { class: 'num' }, [r.taxPct === null ? '—' : `%${Number(r.taxPct).toFixed(1)}`]),
+      el('td', { class: 'num' }, [r.taxPct === null ? '—' : pct(Number(r.taxPct), 1)]),
       el('td', { class: 'num' }, [r.sellValorDays === null ? '—' : `T+${String(r.sellValorDays)}`]),
       el('td', { class: 'actions' }, [delBtn]),
     ]);
@@ -2178,6 +2284,7 @@ async function usersView(reload: () => void): Promise<Node[]> {
 const VIEWS: { id: ViewId; label: string; adminOnly: boolean; crumb: string }[] = [
   { id: 'dashboard', label: 'Panel', adminOnly: false, crumb: 'Genel' },
   { id: 'portfolio', label: 'Portföyüm', adminOnly: false, crumb: 'Genel' },
+  { id: 'allocation', label: 'Dağılım', adminOnly: false, crumb: 'Genel' },
   { id: 'closed', label: 'Kapananlar', adminOnly: false, crumb: 'Genel' },
   { id: 'periods', label: 'Dönemsel Getiri', adminOnly: false, crumb: 'Genel' },
   { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },
@@ -2272,6 +2379,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
   try {
     if (current.id === 'dashboard') bodyNodes = await dashboardView(reload);
     else if (current.id === 'portfolio') bodyNodes = await portfolioView();
+    else if (current.id === 'allocation') bodyNodes = await allocationView();
     else if (current.id === 'closed') bodyNodes = await closedView();
     else if (current.id === 'periods') bodyNodes = await periodsView();
     else if (current.id === 'market') bodyNodes = await marketView(reload);

@@ -220,6 +220,23 @@ describe('tercihlerim', () => {
   });
 });
 
+describe('dağılım ekranı', () => {
+  it('Portföyüm ile Kapananlar arasında kendi menüsü var', () => {
+    expect(main).toContain("{ id: 'allocation', label: 'Dağılım', adminOnly: false");
+  });
+
+  it('ağırlığın para üzerinden ölçüldüğü ekranda yazılı', () => {
+    expect(main).toMatch(/Ağırlık güncel değer üzerinden hesaplanır, fon sayısı üzerinden değil/);
+  });
+
+  it('yüzdeler Türkçe ondalıkla yazılır', () => {
+    // toFixed İngilizce ondalık üretiyor; aynı sütunda "%61.6" ile "%100,0"
+    // yan yana düşüyordu.
+    expect(main).toContain('function pct(');
+    expect(main).not.toMatch(/`%\$\{[^}]*toFixed/);
+  });
+});
+
 describe('menü grupları', () => {
   it('yönetim ekranları kendi başlığı altında toplanır', () => {
     // Düz listede kullanıcı ekranı ile yönetim ekranı yan yana duruyordu;
