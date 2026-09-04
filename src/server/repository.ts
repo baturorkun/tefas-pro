@@ -467,6 +467,92 @@ export interface PositionSummary {
   losers: number;
 }
 
+/**
+ * Panel'in üstünde duran portföy özeti.
+ *
+ * Toplam kazancın yüzdesi NET SERMAYEYE bölünür, maliyete değil: kazanılıp
+ * yeniden yatırılan tutar yeni sermaye değildir. Maliyete sayılırsa payda
+ * kendi kârıyla şişer ve getiri olduğundan düşük görünür — ölçülen veride fark
+ * iki puana yakın (%13,25 yerine %14,77).
+ */
+export interface PortfolioHeadline {
+  /** Açık pozisyonların güncel değeri. */
+  value: string;
+  /** Açık pozisyon kârı. */
+  openGain: string;
+  /** Kapanmış pozisyonlardan gerçekleşen kâr. */
+  realizedGain: string;
+  /** İkisinin toplamı. */
+  totalGain: string;
+  /** Cepten çıkan para: maliyet eksi gerçekleşen kâr. */
+  netCapital: string;
+  /** Toplam kazanç / net sermaye (%). Net sermaye sıfırsa null. */
+  totalPct: string | null;
+  /** Son ölçülen günün kazancı, TL. Ölçülebilir gün yoksa null. */
+  dayGain: string | null;
+  /** O günün getirisi (%). */
+  dayPct: string | null;
+  /** Kazancın ait olduğu gün. */
+  dayDate: string | null;
+}
+
+/**
+ * Panel özetini hesaplar.
+ *
+ * Açık pozisyon rakamları position_slice'tan gelir; Dağılım ve Portföyüm de
+ * aynı tanımı kullanıyor, üç ekran farklı toplam gösteremesin.
+ */
+export async function portfolioHeadline(
+  pool: pg.Pool,
+  userId: number,
+): Promise<PortfolioHeadline | null> {
+  const r = await pool.query<{ cost: string | null; value: string | null }>(
+    `SELECT sum(cost)::text AS cost, sum(value)::text AS value
+     FROM analytics.position_slice WHERE user_id = $1 AND is_open`,
+    [userId],
+  );
+  const cost = Number(r.rows[0]?.cost ?? 0);
+  const value = Number(r.rows[0]?.value ?? 0);
+
+  const c = await pool.query<{ gain: string | null }>(
+    `SELECT sum(realized_gain)::text AS gain
+     FROM analytics.closed_position WHERE user_id = $1`,
+    [userId],
+  );
+  const realized = Number(c.rows[0]?.gain ?? 0);
+
+  if (cost === 0 && value === 0 && realized === 0) return null;
+
+  // Son ölçülen gün: eksik fiyatlı günler portfolio_daily'ye zaten girmiyor.
+  const d = await pool.query<{ d: string; gain: string | null; prev: string | null }>(
+    `SELECT to_char(trade_date, 'YYYY-MM-DD') AS d, daily_gain::text AS gain,
+            prev_value::text AS prev
+     FROM analytics.portfolio_daily
+     WHERE user_id = $1 AND daily_gain IS NOT NULL
+     ORDER BY trade_date DESC LIMIT 1`,
+    [userId],
+  );
+  const son = d.rows[0];
+  const dayGain = son?.gain === undefined || son.gain === null ? null : Number(son.gain);
+  const prev = Number(son?.prev ?? 0);
+
+  const openGain = value - cost;
+  const totalGain = openGain + realized;
+  const netCapital = cost - realized;
+
+  return {
+    value: value.toFixed(2),
+    openGain: openGain.toFixed(2),
+    realizedGain: realized.toFixed(2),
+    totalGain: totalGain.toFixed(2),
+    netCapital: netCapital.toFixed(2),
+    totalPct: netCapital === 0 ? null : ((totalGain / netCapital) * 100).toFixed(6),
+    dayGain: dayGain === null ? null : dayGain.toFixed(2),
+    dayPct: dayGain === null || prev === 0 ? null : ((dayGain / prev) * 100).toFixed(6),
+    dayDate: son?.d ?? null,
+  };
+}
+
 export interface DashboardData {
   metrics: {
     watchlist: number;
@@ -479,6 +565,8 @@ export interface DashboardData {
     watchlistSold: number;
     dataDate: string | null;
     lastRun: { id: number; status: string; finishedAt: string | null } | null;
+    /** Portföyün güncel değeri ve kazancı. Pozisyon yoksa null. */
+    portfolio: PortfolioHeadline | null;
   };
   watchlistRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
   positions: {
@@ -718,6 +806,7 @@ export async function dashboard(
       watchlistSold: Number(c.watchlist_sold),
       dataDate: c.data_date,
       lastRun: run ? { id: run.id, status: run.status, finishedAt: run.finished_at } : null,
+      portfolio: await portfolioHeadline(pool, userId),
     },
     watchlistRanks: { '1w': byWindow('1w'), '1m': byWindow('1m') },
     positions: {

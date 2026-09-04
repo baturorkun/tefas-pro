@@ -101,6 +101,18 @@ interface Dashboard {
     watchlistSold?: number;
     dataDate: string | null;
     lastRun: { id: number; status: string; finishedAt: string | null } | null;
+    /** Eski bir sunucu sürümü bunu göndermeyebilir; kutular tireye düşer. */
+    portfolio?: {
+      value: string;
+      openGain: string;
+      realizedGain: string;
+      totalGain: string;
+      netCapital: string;
+      totalPct: string | null;
+      dayGain: string | null;
+      dayPct: string | null;
+      dayDate: string | null;
+    } | null;
   };
   watchlistRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
   positions: {
@@ -251,6 +263,11 @@ function money(raw: string | null): string {
   if (abs >= 1e6) return fmt(n / 1e6, 'm ₺');
   if (abs >= 1e3) return fmt(n / 1e3, 'b ₺');
   return fmt(n, '₺');
+}
+
+/** YYYY-AA-GG (veya başında onu taşıyan bir metin) → GG.AA. */
+function gunAy(iso: string | null): string {
+  return iso === null || iso.length < 10 ? '—' : `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
 }
 
 /**
@@ -960,41 +977,61 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
   const d = (await api(`/api/dashboard${onlyOwned ? '?onlyOwned=1' : ''}`)) as Dashboard;
   const m = d.metrics;
   const run = m.lastRun;
+  const p = m.portfolio ?? null;
 
   const kapsam = onlyOwned ? 'yalnız portföyüm' : 'takip edilen fonlar';
   const grid = (nodes: Node[]): HTMLElement => el('div', { class: 'chart-grid' }, nodes);
 
   return [
     el('div', { class: 'metric-grid' }, [
-      // Alt satır listenin kendi durumunu anlatır; toplanan fon sayısı
-      // collector'ın kapsamı olduğu için "Son Toplama" kutusuna taşındı.
+      // En başta: diğer üç kutu da bu güne ait. Hangi günün verisine
+      // bakıldığı bilinmeden kazanç rakamları havada kalıyor.
+      // Veri günü ile toplama zamanı tek kutuda: ikisi aynı sorunun parçası —
+      // hangi günün verisine bakıyorum ve o ne zaman geldi. Ayrı kutulardayken
+      // biri dörtlü ızgaraya sığmıyordu.
       metric(
-        'Takip Listem',
-        String(m.watchlist),
-        typeof m.watchlistSold === 'number'
-          ? `${String(m.watchlist - m.watchlistSold)} İzliyorum · ${String(m.watchlistSold)} Çıktım`
+        'Getiri Günü',
+        gunAy(m.dataDate),
+        run?.finishedAt === null || run?.finishedAt === undefined
+          ? 'Henüz Koşmadı'
+          : `toplandı ${gunAy(run.finishedAt)} ${run.finishedAt.slice(11)} · ${String(m.trackedFunds)} fon`,
+        'fund',
+      ),
+      // Panel'in üstünde artık portföyün kendisi duruyor. Takip Listem ve
+      // Açık Pozisyon sayıları kendi ekranlarında zaten görünüyordu; kutu
+      // sayısını artırmadan yerlerini bunlara bıraktılar.
+      //
+      // Bugünkü getiri yalnız grafikte bar olarak çiziliyordu, sayı olarak
+      // hiçbir yerde yazmıyordu.
+      metric(
+        'Bugünkü Getiri',
+        p === null || p.dayGain === null ? '—' : money(p.dayGain),
+        p === null || p.dayPct === null
+          ? 'Ölçülebilir gün yok'
+          // Getiri günü etiketiyle yazılır: çıplak bir tarih hangi güne ait
+          // olduğunu söylemiyordu ve kaldırılan "Son Veri" kutusunun yerini
+          // burası alıyor. Biçim Son Toplama kutusuyla aynı; aynı satırda iki
+          // ayrı biçim (2026-09-03 ile 04.09) tutarsız okunuyordu.
+          : pct(Number(p.dayPct)),
+        'chart',
+      ),
+      metric('Portföy Değeri', p === null ? '—' : money(p.value),
+        // Portföy yoksa alt satır da susar: "— / 26 fon" çelişkili okunurdu.
+        p !== null && typeof m.openLots === 'number'
+          ? `${String(m.openPositions)} fon · ${String(m.openLots)} alım kaydı`
           : undefined,
-        'watchlist',
-        'fon',
-      ),
-      // Büyük sayı fon, altında o fonları oluşturan alım kaydı: ikisi farklı
-      // ve "54" tek başına fon sayısı sanılıyordu. Alan gelmezse alt satır
-      // "undefined" yazmak yerine sade bir açıklamaya düşer — eski bir sunucu
-      // sürümü çalışıyorken arayüz bozuk görünmemeli.
-      metric(
-        'Açık Pozisyon',
-        String(m.openPositions),
-        typeof m.openLots === 'number' ? `${String(m.openLots)} Alım Kaydı` : undefined,
-        'portfolio',
-        'fon',
-      ),
-      metric('Son Veri', m.dataDate ?? '—', 'Getiri Günü', 'fund'),
-      metric(
-        'Son Toplama',
-        run?.finishedAt?.slice(11) ?? '—',
-        run ? `${String(m.trackedFunds)} Fon · #${String(run.id)}` : 'Henüz Koşmadı',
-        'transactions',
-      ),
+        'portfolio'),
+      // Yüzde net sermayeye bölünür: kazanılıp yeniden yatırılan tutar yeni
+      // sermaye değil. Maliyete bölünseydi payda kendi kârıyla şişer ve
+      // getiri olduğundan düşük görünürdü.
+      metric('Toplam Kazanç', p === null ? '—' : money(p.totalGain),
+        p === null || p.totalPct === null
+          ? '—'
+          // Kırılım kısa tutuldu: iki satıra taşıyordu ve açık/kapanan ayrımı
+          // zaten Portföyüm ile Kapananlar ekranlarında duruyor. Buradaki iş
+          // kapananların da dahil olduğunu söylemek.
+          : `${pct(Number(p.totalPct))} · ${money(p.realizedGain)} kapanan dahil`,
+        'money'),
     ]),
     watchlistToggle(!onlyOwned, (dahil) => {
       writeOnlyOwned(!dahil);
