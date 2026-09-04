@@ -220,6 +220,29 @@ describe('tercihlerim', () => {
   });
 });
 
+describe('panel özeti', () => {
+  it('bugünkü getiri sayı olarak yazar', () => {
+    // Değer yalnız grafikte bar olarak çiziliyordu, sayı olarak yoktu.
+    expect(main).toContain("metric(\n        'Bugünkü Getiri',");
+  });
+
+  it('toplam kazanç kapananları da içerir', () => {
+    expect(main).toContain("metric('Toplam Kazanç'");
+    expect(main).toMatch(/kapanan dahil/);
+  });
+
+  it('portföy yoksa alt satır da susar', () => {
+    // "— / 26 fon" çelişkili okunurdu.
+    expect(main).toContain('p !== null && typeof m.openLots');
+  });
+
+  it('panelde kutu sayısı dörtte kalır', () => {
+    const panel = main.slice(main.indexOf('async function dashboardView'));
+    const grid = panel.slice(panel.indexOf("class: 'metric-grid'"), panel.indexOf('watchlistToggle'));
+    expect(grid.match(/metric\(/g)?.length).toBe(4);
+  });
+});
+
 describe('dağılım ekranı', () => {
   it('Portföyüm ile Kapananlar arasında kendi menüsü var', () => {
     expect(main).toContain("{ id: 'allocation', label: 'Dağılım', adminOnly: false");
