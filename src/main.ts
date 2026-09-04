@@ -587,14 +587,132 @@ function confirmDelete(opts: {
   });
 }
 
-function table(headers: string[], rows: HTMLElement[]): HTMLElement {
+/**
+ * Tablo. `filters` verilirse başlıkların üstüne bir satır gelir ve her hücre
+ * kendi sütununun hizasında durur — filtre, süzdüğü sütunun hizasında
+ * olduğunda hangi alana ait olduğu söylenmeden anlaşılır.
+ */
+function table(
+  headers: string[],
+  rows: HTMLElement[],
+  filters?: (Node | null)[],
+): HTMLElement {
   if (rows.length === 0) return el('div', { class: 'empty-state' }, ['Kayıt Yok.']);
+  // Filtre satırı başlıkların ÜSTÜNDE: süzme, okumadan önce yapılan iş; sütun
+  // adlarının altına düşünce tablonun içindeymiş gibi duruyordu.
+  const head = filters === undefined ? [] : [
+    el('tr', { class: 'filter-row' }, headers.map((_, i) =>
+      el('th', {}, filters[i] == null ? [] : [filters[i]]))),
+  ];
+  head.push(el('tr', {}, headers.map((h) => el('th', {}, [h]))));
   return el('div', { class: 'table-wrap' }, [
     el('table', {}, [
-      el('thead', {}, [el('tr', {}, headers.map((h) => el('th', {}, [h])))]),
+      el('thead', {}, head),
       el('tbody', {}, rows),
     ]),
   ]);
+}
+
+/**
+ * Arama karşılaştırması için metni sadeleştirir.
+ *
+ * Türkçe küçültme "DFI" kodunu "dfı" yapıyor (noktasız ı); kullanıcı "dfi"
+ * yazınca eşleşme çıkmıyordu. Noktalı ve noktasız i tek harfe indirgeniyor ki
+ * hangisini yazarsa yazsın bulsun.
+ */
+function aramaAnahtari(text: string): string {
+  return text.toLocaleLowerCase('tr').replace(/[ıİi]/g, 'i');
+}
+
+/**
+ * Aranabilir seçim kutusu.
+ *
+ * Yerli `select` arama kutusu taşıyamıyor; 37 fon arasından üç harfi yazarak
+ * bulmak listeyi kaydırmaktan hızlı. `datalist` de arama verirdi ama açılır
+ * listesini işletim sistemi çiziyor, uygulamanın geri kalanına benzemiyor.
+ *
+ * Seçim yapıldığında yanında bir temizleme düğmesi çıkar: seçimi geri almanın
+ * yolu listeyi açıp "Tümü"yü bulmak olmamalı.
+ */
+function comboFilter(opts: {
+  label: string;
+  options: { value: string; label: string; hint?: string }[];
+  value: string;
+  onChange: (value: string) => void;
+}): HTMLElement {
+  const secili = opts.options.find((o) => o.value === opts.value);
+  const trigger = el('button', {
+    type: 'button', class: `combo-trigger${secili ? ' combo-active' : ''}`,
+    'aria-haspopup': 'listbox',
+  }, [secili?.label ?? opts.label]);
+
+  const search = el('input', {
+    class: 'combo-search', placeholder: 'Ara…', spellcheck: 'false',
+  }) as HTMLInputElement;
+  const list = el('div', { class: 'combo-list', role: 'listbox' });
+  const panel = el('div', { class: 'combo-panel' }, [search, list]);
+  const root = el('div', { class: 'combo' }, [trigger, panel]);
+
+  if (secili) {
+    const temizle = el('button', {
+      type: 'button', class: 'combo-clear', title: 'Seçimi temizle',
+      'aria-label': `${opts.label} seçimini temizle`,
+    }, [icon('close', 12)]);
+    temizle.addEventListener('click', (e) => { e.stopPropagation(); opts.onChange(''); });
+    root.append(temizle);
+  }
+
+  const ciz = (): void => {
+    const q = aramaAnahtari(search.value.trim());
+    list.replaceChildren();
+    const uyan = opts.options.filter((o) =>
+      q === '' || aramaAnahtari(`${o.value} ${o.label} ${o.hint ?? ''}`).includes(q));
+    if (uyan.length === 0) {
+      list.append(el('div', { class: 'combo-empty' }, ['Eşleşme yok.']));
+      return;
+    }
+    for (const o of uyan) {
+      const b = el('button', {
+        type: 'button',
+        class: `combo-option${o.value === opts.value ? ' combo-option-on' : ''}`,
+      }, [
+        el('span', { class: 'combo-option-value' }, [o.label]),
+        ...(o.hint === undefined ? [] : [el('span', { class: 'combo-option-hint' }, [o.hint])]),
+      ]);
+      b.addEventListener('click', () => { opts.onChange(o.value); });
+      list.append(b);
+    }
+  };
+
+  const kapat = (): void => {
+    root.classList.remove('combo-open');
+    document.removeEventListener('mousedown', disariTikla);
+  };
+  // Dışarı tıklayınca kapanır; açık kalan bir panel altındaki satırları
+  // örtüyor ve kullanıcı onu kapatmanın yolunu arıyor.
+  const disariTikla = (e: MouseEvent): void => {
+    if (!root.contains(e.target as Node)) kapat();
+  };
+  trigger.addEventListener('click', () => {
+    const acik = root.classList.toggle('combo-open');
+    if (!acik) { kapat(); return; }
+    search.value = '';
+    ciz();
+    document.addEventListener('mousedown', disariTikla);
+    search.focus();
+  });
+  search.addEventListener('input', ciz);
+  search.addEventListener('keydown', (e) => {
+    const k = e as KeyboardEvent;
+    if (k.key === 'Escape') { kapat(); trigger.focus(); }
+    // Enter ilk eşleşmeyi seçer: aramanın karşılığı bu, yoksa yazdıktan sonra
+    // fareye geçmek gerekirdi.
+    if (k.key === 'Enter') {
+      const ilk = list.querySelector('button');
+      if (ilk !== null) (ilk as HTMLButtonElement).click();
+    }
+  });
+  return root;
 }
 
 // ─── Grafik ─────────────────────────────────────────────────────────────────
@@ -1951,6 +2069,15 @@ async function periodsView(): Promise<Node[]> {
   ];
 }
 
+/**
+ * Fon Hareketleri filtresi.
+ *
+ * Modül düzeyinde tutuluyor: liste her ekleme, düzenleme ve silmeden sonra
+ * baştan yükleniyor. Durum view'ın içinde kalsaydı Fiba'da üç kayıt düzeltirken
+ * filtreyi üç kez yeniden seçmek gerekirdi.
+ */
+const txFiltre = { fundCode: '', platform: '' };
+
 async function transactionsView(reload: () => void): Promise<Node[]> {
   const rows = (await api('/api/transactions')) as Transaction[];
   const open = rows.filter((t) => t.sellDate === null);
@@ -1958,13 +2085,53 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
   const platforms = new Set(open.map((t) => t.platform));
   const last = rows.map((t) => t.tradeDate).sort().at(-1);
 
+  // Seçenekler kullanıcının kendi işlemlerinden: hiç işlemi olmayan bir fonu
+  // filtrede göstermenin anlamı yok.
+  const fonSecenekleri = [...new Map(rows.map((t) => [t.fundCode, t.fundTitle])).entries()]
+    .sort((a, b) => a[0].localeCompare(b[0], 'tr'));
+  const bankaSecenekleri = [...new Set(rows.map((t) => t.platform))].sort((a, b) =>
+    a.localeCompare(b, 'tr'));
+
+  // Bir fon veya banka listeden tamamen kalkarsa seçili filtre boşa düşer ve
+  // kullanıcı sebebi görünmeyen boş bir tabloya bakar; o durumda filtre sıfırlanır.
+  if (txFiltre.fundCode !== '' && !fonSecenekleri.some(([k]) => k === txFiltre.fundCode)) {
+    txFiltre.fundCode = '';
+  }
+  if (txFiltre.platform !== '' && !bankaSecenekleri.includes(txFiltre.platform)) {
+    txFiltre.platform = '';
+  }
+
+  // İki filtre AND ile birleşir; tek başlarına da çalışırlar.
+  const gorunen = rows.filter((t) =>
+    (txFiltre.fundCode === '' || t.fundCode === txFiltre.fundCode)
+    && (txFiltre.platform === '' || t.platform === txFiltre.platform));
+  const filtreliMi = txFiltre.fundCode !== '' || txFiltre.platform !== '';
+
+  // Filtreler sütunlarının üstünde durur. Tetikleyicide yalnız fon kodu
+  // yazılır — sütun dar ve kod zaten satırlarda da o genişlikte; fon adı
+  // listede, kodun yanında ikinci satır olarak görünür.
+  const fonFiltre = comboFilter({
+    label: 'Tümü',
+    options: fonSecenekleri.map(([kod, ad]) => ({
+      value: kod, label: kod, hint: ad ?? undefined,
+    })),
+    value: txFiltre.fundCode,
+    onChange: (v) => { txFiltre.fundCode = v; reload(); },
+  });
+  const bankaFiltre = comboFilter({
+    label: 'Tümü',
+    options: bankaSecenekleri.map((b) => ({ value: b, label: b })),
+    value: txFiltre.platform,
+    onChange: (v) => { txFiltre.platform = v; reload(); },
+  });
+
   const addBtn = el('button', { class: 'btn-primary' }, [icon('add'), 'İşlem Ekle']);
   addBtn.addEventListener('click', () => { openTransactionModal(null, reload); });
 
   // Toplam yalnız parası ölçülebilen satırlardan: getiri günü olmayan işlem
   // maliyetsiz görünüyor, onu sıfır sayıp toplama katmak yanlış olurdu.
   const bugun = new Date().toISOString().slice(0, 10);
-  const olculen = rows.filter((t) => t.cost !== null);
+  const olculen = gorunen.filter((t) => t.cost !== null);
   const tMaliyet = olculen.reduce((a, t) => a + Number(t.cost), 0);
   const tDeger = olculen.reduce((a, t) => a + Number(t.value), 0);
   const toplamSatiri = el('tr', { class: 'total-row' }, [
@@ -1982,7 +2149,7 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
     el('td', {}, []), el('td', {}, []),
   ]);
 
-  const body = rows.map((t) => {
+  const body = gorunen.map((t) => {
     const editBtn = iconButton('edit', 'Düzenle');
     const delBtn = iconButton('delete', 'Sil', 'danger');
     // Soldaki şerit satırın sonucunu söyler; Dönemsel Getiri'deki ay satırıyla
@@ -2070,18 +2237,34 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
     ]),
     panel(
       'Fon Hareketleri',
-      `${String(rows.length)} kayıt · ${String(open.length)} açık`,
+      // Filtreliyken payda da yazılır: "60 kayıt" tek başına listenin tamamı mı
+      // yoksa süzülmüş hali mi belli etmiyor. Bölü işareti "şu kadarın içinden"
+      // demeyi anlatıyor; "102 içinden" diye eklemek belirsiz kalıyordu.
+      (filtreliMi ? `${String(gorunen.length)} / ${String(rows.length)} kayıt` : `${String(rows.length)} kayıt`)
+        + ` · ${String(gorunen.filter((t) => t.sellDate === null).length)} açık`,
       el('div', { class: 'panel-body' }, [
-        // Kendi sınıfı: on bir sütunla tablo genişliyor, fon adı ve satış
-        // hücresi burada daha dar tutulur. Diğer tablolar etkilenmez.
-        el('div', { class: 'tx-table' }, [
-          table(
-            // "Fiyat" başlığı iki satırın hangisi olduğunu söylemiyordu.
-            ['Fon', 'Adet', 'Alış', 'Banka', 'Alış / Son', 'Maliyet / Değer', 'K/Z', 'K/Z %',
-              'Satış', ''],
-            [...body, toplamSatiri],
-          ),
-        ]),
+        // Kendi sınıfı: on sütunla tablo genişliyor, fon adı ve satış hücresi
+        // burada daha dar tutulur. Diğer tablolar etkilenmez.
+        // Sonuç boşken de tablo çizilir: filtreler başlık satırında duruyor,
+        // tabloyu kaldırmak seçimi geri almanın yolunu da kaldırırdı.
+        gorunen.length === 0 && !filtreliMi
+          ? el('div', { class: 'empty-state' }, ['Henüz işlem kaydı yok.'])
+          : el('div', { class: 'tx-table' }, [
+              table(
+                // "Fiyat" başlığı iki satırın hangisi olduğunu söylemiyordu.
+                ['Fon', 'Adet', 'Alış', 'Banka', 'Alış / Son', 'Maliyet / Değer', 'K/Z', 'K/Z %',
+                  'Satış', ''],
+                gorunen.length === 0
+                  ? [el('tr', {}, [el('td', { colspan: '10' }, [
+                      el('div', { class: 'empty-state' }, [
+                        'Bu filtreye uyan işlem yok. Filtreyi temizleyin.',
+                      ]),
+                    ])])]
+                  : [...body, toplamSatiri],
+                // Filtreler süzdükleri sütunun altında; diğer hücreler boş.
+                [fonFiltre, null, null, bankaFiltre, null, null, null, null, null, null],
+              ),
+            ]),
       ]),
       addBtn,
     ),
