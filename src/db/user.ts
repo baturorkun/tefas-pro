@@ -313,8 +313,21 @@ export function parseCloneArgs(argv: string[]): CloneArgs {
   return { from, to, password };
 }
 
+/**
+ * Kullanım metninde gösterilecek çağrı biçimi.
+ *
+ * Üretim imajında tsx yok — migration'lar gibi bu da `node dist/db/user.js`
+ * diye çalışıyor. Metin her zaman "pnpm db:user" deseydi sunucuda çalışmayan
+ * bir satır okutur, hata da "komut bulunamadı" olurdu; asıl sorunla ilgisi
+ * olmayan bir yere bakılırdı.
+ */
+function nasilCagrildi(): string {
+  return process.argv[1]?.endsWith('.js') === true ? 'node dist/db/user.js' : 'pnpm db:user';
+}
+
 async function main(): Promise<void> {
   const [cmd, ...rest] = process.argv.slice(2);
+  const nasil = nasilCagrildi();
   const pool = makePool();
   try {
     if (cmd === 'add') {
@@ -359,7 +372,7 @@ async function main(): Promise<void> {
       // --yes olmadan çalışmaz: geri alınamayan bir silme, yanlış yazılmış bir
       // kullanıcı adıyla tek Enter'a bakmamalı.
       if (username === undefined || !bayraklar.includes('--yes')) {
-        throw new Error('Kullanım: pnpm db:user drop <kullanıcı> --yes');
+        throw new Error(`Kullanım: ${nasil} drop <kullanıcı> --yes`);
       }
       const r = await drop(pool, username);
       console.log(
@@ -370,18 +383,18 @@ async function main(): Promise<void> {
     } else if (cmd === 'transfer') {
       const [from, to] = rest;
       if (from === undefined || to === undefined) {
-        throw new Error('Kullanım: pnpm db:user transfer <kaynak> <hedef>');
+        throw new Error(`Kullanım: ${nasil} transfer <kaynak> <hedef>`);
       }
       const r = await transfer(pool, from, to);
       console.log(`${from} → ${to}: ${String(r.transactions)} işlem, ${String(r.watchlist)} takip satırı`);
     } else {
       throw new Error(
         'Kullanım:\n' +
-          '  pnpm db:user add <kullanıcı> [--admin] [--password <parola>]\n' +
-          '  pnpm db:user passwd <kullanıcı> [--password <parola>]\n' +
-          '  pnpm db:user clone <kaynak> <hedef> [--password <parola>]\n' +
-          '  pnpm db:user drop <kullanıcı> --yes\n' +
-          '  pnpm db:user transfer <kaynak> <hedef>',
+          `  ${nasil} add <kullanıcı> [--admin] [--password <parola>]\n` +
+          `  ${nasil} passwd <kullanıcı> [--password <parola>]\n` +
+          `  ${nasil} clone <kaynak> <hedef> [--password <parola>]\n` +
+          `  ${nasil} drop <kullanıcı> --yes\n` +
+          `  ${nasil} transfer <kaynak> <hedef>`,
       );
     }
   } finally {
