@@ -177,7 +177,7 @@ interface PerformanceSeries {
 
 type ViewId =
   | 'dashboard' | 'portfolio' | 'closed' | 'periods' | 'market'
-  | 'transactions' | 'watchlist' | 'users' | 'runs' | 'settings';
+  | 'transactions' | 'watchlist' | 'prefs' | 'users' | 'runs' | 'settings';
 
 const root = document.getElementById('app');
 
@@ -329,6 +329,7 @@ const ICON_PATHS: Record<string, string[]> = {
   closed: ['M20 6 9 17l-5-5'],
   periods: ['M4 5h16v15H4z', 'M4 10h16', 'M9 5V3M15 5V3', 'M8 14h3M13 14h3'],
   runs: ['M12 8v4l3 2', 'M12 3a9 9 0 1 0 9 9 9 9 0 0 0-9-9z'],
+  prefs: ['M4 7h10M18 7h2M4 17h2M10 17h10', 'M16 5v4M8 15v4'],
   market: ['M3 3v18h18', 'm7 14 3-4 3 3 5-7', 'M18 6h3v3'],
   settings: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'],
 };
@@ -1106,6 +1107,78 @@ function bankPanel(banks: BankRow[], reload: () => void): HTMLElement {
 }
 
 /**
+ * Kullanıcının kendi tercihleri.
+ *
+ * Kendi seçimi olmayan kullanıcı genel ayardaki değeri devralır; değer kayıt
+ * anında kopyalanmaz, yoksa admin genel ayarı değiştirdiğinde hiç tercih
+ * belirtmemiş kullanıcılar eski değerde donar ve bunu fark etmezlerdi.
+ */
+async function prefsView(reload: () => void): Promise<Node[]> {
+  const { benchmark } = (await api('/api/preferences')) as {
+    benchmark: { code: string; personal: boolean; inherited: string; hasData: boolean };
+  };
+
+  const input = el('input', {
+    maxlength: '16', placeholder: benchmark.inherited, spellcheck: 'false',
+  }) as HTMLInputElement;
+  input.value = benchmark.personal ? benchmark.code : '';
+  const status = el('span', { class: 'status' });
+  const save = el('button', { class: 'btn-primary' }, [icon('add'), 'Kaydet']);
+  const reset = el('button', { class: 'btn-ghost' }, ['Genel Ayara Dön']);
+
+  const gonder = (value: string | null): void => {
+    void (async () => {
+      try {
+        status.textContent = 'Kaydediliyor…';
+        await api('/api/preferences', {
+          method: 'PUT', body: JSON.stringify({ benchmark: value }),
+        });
+        reload();
+      } catch (err) {
+        status.textContent = err instanceof Error ? err.message : 'Kaydedilemedi.';
+      }
+    })();
+  };
+  save.addEventListener('click', () => {
+    const v = input.value.trim().toUpperCase();
+    // Boş bırakmak "genel ayara dön" demektir: ayrı bir düğmeye zorlamaya
+    // gerek yok, ama düğme de duruyor çünkü niyeti açıkça söylüyor.
+    gonder(v === '' ? null : v);
+  });
+  reset.addEventListener('click', () => { gonder(null); });
+
+  return [
+    el('div', { class: 'metric-grid' }, [
+      metric('Benchmark', benchmark.code,
+        // Veri yoksa fon yeni seçilmiş demektir; toplaması sürüyor.
+        !benchmark.hasData
+          ? 'Verisi Toplanıyor'
+          : benchmark.personal ? 'Kendi Seçimin' : 'Genel Ayardan Devralındı',
+        'chart'),
+    ]),
+    panel(
+      'Benchmark',
+      benchmark.personal ? 'kişisel seçim' : `genel ayardan: ${benchmark.inherited}`,
+      el('div', { class: 'panel-body' }, [
+        el('p', { class: 'settings-note' }, [
+          'Portföyünün getirisi bu fonun getirisiyle karşılaştırılır. Dönemsel ' +
+          'Getiri ekranındaki fark sütunu bu fona göre hesaplanır.',
+        ]),
+        field('Fon Kodu', input,
+          benchmark.personal
+            ? `Genel ayar ${benchmark.inherited}. Boş bırakırsan ona dönersin.`
+            : `Şu an genel ayardan ${benchmark.inherited} devralınıyor.`),
+        el('div', { class: 'settings-actions' }, [
+          status,
+          ...(benchmark.personal ? [reset] : []),
+          save,
+        ]),
+      ]),
+    ),
+  ];
+}
+
+/**
  * Collector koşum geçmişi.
  *
  * Panel'deki "Son Toplama" kutusu yalnız son zamanlanmış koşumun saatini
@@ -1263,7 +1336,7 @@ async function settingsView(reload: () => void): Promise<Node[]> {
           'Portföyün getirisi bu fonun getirisiyle karşılaştırılır. Dönemsel ' +
           'Getiri ekranında her ay ve hafta için fark puan olarak gösterilir.',
         ]),
-        field('Fon Kodu', benchInput, 'TEFAS kodu. Getiri verisi olmayan kod kabul edilmez.'),
+        field('Fon Kodu', benchInput, 'TEFAS kodu.'),
       ]),
     ),
     bankPanel(banks, reload),
@@ -1595,6 +1668,7 @@ async function periodsView(): Promise<Node[]> {
     api('/api/benchmark'),
   ])) as [MonthlyPeriod[], { benchmark: string }];
   const bench = ayar.benchmark;
+  const benchBekliyor = months.every((m) => m.benchPct === null) && months.length > 0;
 
   // Gün ve ay olarak kısa aralık: "01.08 – 07.08". Yıl yazılmaz, satırın
   // kendisi zaten bir ayın içinde duruyor.
@@ -1665,6 +1739,11 @@ async function periodsView(): Promise<Node[]> {
       'kazanç sayılmaz. Bir ayın kazancı haftalarının toplamı, getirisi haftalarının ' +
       'bileşiğidir. Ay en fazla dört haftaya bölünür; artan günler son haftaya eklenir.',
     ]),
+    ...(benchBekliyor
+      ? [el('p', { class: 'panel-note panel-note-warn' }, [
+          `${bench} için henüz getiri verisi yok; karşılaştırma sütunu veri gelince dolar.`,
+        ])]
+      : []),
     el('p', { class: 'panel-note' }, [
       `${bench} getirisi portföyün ölçülebildiği aynı günler üzerinden zincirlenir; ` +
       'para tutulmayan günün getirisi benchmark\'a sayılmaz. Fark puan cinsindendir: ' +
@@ -2099,9 +2178,10 @@ const VIEWS: { id: ViewId; label: string; adminOnly: boolean; crumb: string }[] 
   { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },
   { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
   { id: 'watchlist', label: 'Takip Listem', adminOnly: false, crumb: 'Genel' },
-  { id: 'users', label: 'Kullanıcılar', adminOnly: true, crumb: 'Yönetim' },
-  { id: 'runs', label: 'Collector Log', adminOnly: true, crumb: 'Yönetim' },
-  { id: 'settings', label: 'Ayarlar', adminOnly: true, crumb: 'Yönetim' },
+  { id: 'prefs', label: 'Tercihlerim', adminOnly: false, crumb: 'Genel' },
+  { id: 'users', label: 'Kullanıcılar', adminOnly: true, crumb: 'Admin' },
+  { id: 'runs', label: 'Collector Log', adminOnly: true, crumb: 'Admin' },
+  { id: 'settings', label: 'Ayarlar', adminOnly: true, crumb: 'Admin' },
 ];
 
 /**
@@ -2134,18 +2214,29 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
   const visible = VIEWS.filter((v) => !v.adminOnly || me.type === 'admin');
   const current = visible.find((v) => v.id === view) ?? visible[0]!;
 
-  const nav = el(
-    'nav',
-    {},
-    visible.map((v) => {
-      const b = el('button', v.id === current.id ? { class: 'active' } : {}, [
-        icon(v.id),
-        v.label,
-      ]);
-      b.addEventListener('click', () => void appShell(me, v.id));
-      return b;
-    }),
-  );
+  const navButton = (v: (typeof VIEWS)[number]): HTMLElement => {
+    const b = el('button', v.id === current.id ? { class: 'active' } : {}, [
+      icon(v.id),
+      v.label,
+    ]);
+    b.addEventListener('click', () => void appShell(me, v.id));
+    return b;
+  };
+
+  // Menü gruplara ayrılır. Düz listede kullanıcı ekranı ile yönetim ekranı yan
+  // yana duruyordu ve hangisinin admin'e ait olduğu yalnız içeri girince,
+  // breadcrumb'dan anlaşılıyordu.
+  const groups: { label: string; items: typeof visible }[] = [];
+  for (const v of visible) {
+    const last = groups[groups.length - 1];
+    if (last !== undefined && last.label === v.crumb) last.items.push(v);
+    else groups.push({ label: v.crumb, items: [v] });
+  }
+
+  const nav = el('nav', {}, groups.flatMap((g) => [
+    el('div', { class: 'nav-group' }, [g.label]),
+    ...g.items.map(navButton),
+  ]));
 
   const logout = el('button', { class: 'sidebar-logout', type: 'button' }, [icon('logout'), 'Çıkış Yap']);
   logout.addEventListener('click', () => {
@@ -2181,6 +2272,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     else if (current.id === 'market') bodyNodes = await marketView(reload);
     else if (current.id === 'transactions') bodyNodes = await transactionsView(reload);
     else if (current.id === 'watchlist') bodyNodes = await watchlistView(reload);
+    else if (current.id === 'prefs') bodyNodes = await prefsView(reload);
     else if (current.id === 'runs') bodyNodes = await runsView();
     else if (current.id === 'settings') bodyNodes = await settingsView(reload);
     else bodyNodes = await usersView(reload);

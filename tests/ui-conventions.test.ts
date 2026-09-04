@@ -204,6 +204,41 @@ describe('dönemsel getiri tablosu', () => {
   });
 });
 
+describe('tercihlerim', () => {
+  it('herkese açık, yönetim ekranı değil', () => {
+    expect(main).toContain("{ id: 'prefs', label: 'Tercihlerim', adminOnly: false");
+  });
+
+  it('devralınan değer ile kişisel seçim ayırt edilir', () => {
+    // "TP2" yazan iki kullanıcıdan biri onu seçmiş, diğeri devralmış olabilir;
+    // genel ayar değişince yalnız ikincisi etkilenir.
+    expect(main).toContain("benchmark.personal ? 'Kendi Seçimin' : 'Genel Ayardan Devralındı'");
+  });
+
+  it('kişisel tercih temizlenebilir', () => {
+    expect(main).toContain("'Genel Ayara Dön'");
+  });
+});
+
+describe('menü grupları', () => {
+  it('yönetim ekranları kendi başlığı altında toplanır', () => {
+    // Düz listede kullanıcı ekranı ile yönetim ekranı yan yana duruyordu;
+    // hangisinin admin'e ait olduğu yalnız içeri girince anlaşılıyordu.
+    expect(main).toContain("class: 'nav-group'");
+    expect(css).toContain('.nav-group {');
+  });
+
+  it('yönetim grubunun adı Admin', () => {
+    expect(main).toContain("adminOnly: true, crumb: 'Admin' }");
+    expect(main).not.toContain("crumb: 'Yönetim'");
+  });
+
+  it('grup sırası menü sırasından gelir, ayrı bir liste tutulmaz', () => {
+    // İki liste olsaydı biri güncellenip diğeri unutulabilirdi.
+    expect(main).toContain('last.label === v.crumb');
+  });
+});
+
 describe('kabuk', () => {
   it('sürüm istemcide üretilmez, sunucudan alınır', () => {
     expect(main).toContain("api('/api/runtime')");

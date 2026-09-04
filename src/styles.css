@@ -309,6 +309,15 @@ td.actions { text-align: right; }
 .total-row td { border-top: 1px solid var(--line); font-weight: 600;
                 color: var(--text-strong); }
 
+/* Beklenen durumu anlatan not: hata değil ama dikkat çekmeli. */
+.panel-note-warn { color: var(--warn); }
+
+/* Menü grubu başlığı: düz listede kullanıcı ve yönetim ekranları ayırt
+   edilemiyordu. Tıklanmaz, yalnız sınırı gösterir. */
+.nav-group { padding: .9rem .9rem .35rem; font-size: .66rem; font-weight: 600;
+             letter-spacing: .1em; text-transform: uppercase; color: var(--muted-dim); }
+.nav-group:first-child { padding-top: .2rem; }
+
 /* Collector Log: hata metni kendi satırında, tabloya sığmıyor. */
 .run-error-row td { border-bottom: 1px solid var(--line-soft); padding-top: 0; }
 .run-error { display: block; white-space: pre-wrap; word-break: break-word;
