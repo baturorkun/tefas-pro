@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc --project tsconfig.build.json",
+    "build": "tsx scripts/write-version.ts && tsc --project tsconfig.build.json",
     "dev": "podman compose --env-file db/.env -f db/compose.yaml up -d",
     "dev:logs": "podman logs -f tefas-pro-app",
     "dev:stop": "podman compose -f db/compose.yaml down",

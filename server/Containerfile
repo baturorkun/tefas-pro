@@ -12,7 +12,14 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.json tsconfig.build.json ./
+COPY scripts ./scripts
 COPY src ./src
+# Sürüm numarası. Kaynağı requirements klasörü ama o build context'ine
+# girmiyor (.containerignore hem klasörü hem *.md dosyalarını dışarıda
+# tutuyor), bu yüzden değer dışarıdan veriliyor — GIT_COMMIT_SHA ile aynı
+# yol. Verilmezse sürüm yalnız ana sürüm görünür, derleme yine başarılı olur.
+ARG APP_REQUIREMENT=""
+ENV APP_REQUIREMENT=$APP_REQUIREMENT
 RUN pnpm build
 
 # Geliştirme aşaması: kaynak host'tan bağlanır, burada yalnız bağımlılıklar

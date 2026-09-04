@@ -130,7 +130,16 @@ jobs:
       - name: Build server image
         env:
           SLOT: ${{ steps.target.outputs.slot }}
-        run: podman build --format docker -f server/Containerfile -t "localhost/tefas-pro-server:${SLOT}" .
+        run: |
+          # Sürüm numarası requirements klasöründeki en yüksek RQ'dan gelir.
+          # Klasör imaj build context'ine girmiyor, bu yüzden burada hesaplanıp
+          # build arg olarak veriliyor. Elle tutulan bir sabit değil.
+          rq="$(ls requirements 2>/dev/null | sed -n 's/^RQ-0*\([0-9][0-9]*\).*/\1/p' \
+                | sort -n | tail -1)"
+          echo "Sürüm numarası: ${rq:-<yok>}"
+          podman build --format docker -f server/Containerfile \
+            --build-arg "APP_REQUIREMENT=${rq}" \
+            -t "localhost/tefas-pro-server:${SLOT}" .
 
       - name: Write runtime environment
         env:

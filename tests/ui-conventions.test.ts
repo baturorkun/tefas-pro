@@ -222,6 +222,33 @@ describe('tercihlerim', () => {
   });
 });
 
+describe('sürüm', () => {
+  it('kodda elle tutulan requirement sabiti yok', () => {
+    // Sabit RQ-0018'de yazılmış ve on dört requirement boyunca
+    // güncellenmemişti; aynı dosyadaki commit ve zaman ise hiç bozulmadı
+    // çünkü onları kimse yazmıyor.
+    const version = readFileSync(new URL('../src/version.ts', import.meta.url), 'utf8');
+    expect(version).not.toMatch(/CURRENT_REQUIREMENT\s*=/);
+    expect(version).not.toMatch(/CURRENT_RUN_ORDINAL\s*=/);
+    expect(version).toContain('export function highestRequirement');
+  });
+
+  it('numara derleme sırasında yazılır', () => {
+    const pkg = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
+    expect(pkg).toContain('write-version.ts && tsc');
+  });
+
+  it('imaj requirements klasörünü taşımaz, numara dışarıdan verilir', () => {
+    // .containerignore hem klasörü hem *.md dosyalarını dışarıda tutuyor;
+    // klasörü açmak yerine değer build arg olarak geliyor.
+    const cf = readFileSync(new URL('../server/Containerfile', import.meta.url), 'utf8');
+    expect(cf).not.toContain('COPY requirements');
+    expect(cf).toContain('ARG APP_REQUIREMENT');
+    const deploy = readFileSync(new URL('../.github/workflows/deploy.yml', import.meta.url), 'utf8');
+    expect(deploy).toContain('APP_REQUIREMENT=');
+  });
+});
+
 describe('performans grafiği', () => {
   it('tarih etiketi sayısı sığan kadar, sabit değil', () => {
     // Sabit sekiz etiket, sığdığı halde günleri gizliyordu; son 30 iş gününde

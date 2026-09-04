@@ -1,32 +1,70 @@
 import { execFileSync } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Uygulama sürümü.
  *
- * Biçim: `v<ana>.<requirement>.<koşu>[+<commit>][+<derleme zamanı>]`
- * Örnek: `v0.18.1+000fffb+2026-08-31-22-52`
+ * Biçim: `v<ana>.<requirement>[+<commit>][+<derleme zamanı>]`
+ * Örnek: `v0.33+7476bcb+2026-09-04-13-05`
  *
- * Ana sürüm sabittir. Ortadaki sayı requirement numarası, sondaki o
- * requirement için kaçıncı koşu olduğudur; ikisi de aşağıda elle tutulur ve
- * her requirement'ta güncellenir. Böylece çalışan bir dağıtımın hangi işten
- * geldiği tek bakışta görünür.
+ * Ana sürüm sabittir. Ortadaki sayı requirement numarasıdır ve ELLE TUTULMAZ:
+ * `pnpm build` sırasında `requirements/` klasöründeki en yüksek numaradan
+ * türetilip `dist/version.json` içine yazılır. Önceki hali koddaki bir sabitti
+ * ve on dört requirement boyunca güncellenmedi; aynı dosyadaki commit ve
+ * derleme zamanı ise hiç bozulmadı, çünkü onları kimse yazmıyor.
  *
  * Commit ve derleme zamanı derleme ortamından gelir. Yoksa sürüm yalnız
- * `v0.18.1` olarak görünür — geliştirme sırasında bu normaldir ve hata
- * sayılmaz.
+ * `v0.33` olarak görünür — geliştirmede bu normaldir.
  */
 export const BASE_MAJOR = 0;
-export const CURRENT_REQUIREMENT = 'RQ-0018';
-export const CURRENT_RUN_ORDINAL = 1;
 
-/** `RQ-0018` ve 1'den `0.18.1` üretir. */
-export function deriveVersion(requirementId: string, runOrdinal: number): string {
+/**
+ * Klasördeki en yüksek RQ numarası. Klasör okunamazsa null.
+ *
+ * Sürümün tek kaynağı burası: numara kodda elle tutulduğunda on dört
+ * requirement boyunca güncellenmemişti.
+ */
+export function highestRequirement(dir: string): number | null {
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return null;
+  }
+  let best: number | null = null;
+  for (const name of names) {
+    const m = /^RQ-0*(\d+)/i.exec(name);
+    if (m === null) continue;
+    const n = Number(m[1]);
+    if (Number.isInteger(n) && n > 0 && (best === null || n > best)) best = n;
+  }
+  return best;
+}
+
+/** `RQ-0033` biçimindeki kimlikten `0.33` üretir. */
+export function deriveVersion(requirementId: string): string {
   const match = /^RQ-0*(\d+)$/i.exec(requirementId.trim());
   if (match === null) throw new Error(`Geçersiz requirement kimliği: ${requirementId}`);
-  if (!Number.isInteger(runOrdinal) || runOrdinal < 1) {
-    throw new Error('Koşu sırası en az 1 olmalıdır.');
+  return `${String(BASE_MAJOR)}.${String(Number(match[1]))}`;
+}
+
+/**
+ * Build'in yazdığı numara. Dosya yoksa veya okunamazsa null döner ve sürüm
+ * yalnız ana sürümle görünür: eksik bir numara yüzünden uygulama çalışmamazlık
+ * etmemeli.
+ */
+export function readBuiltRequirement(file?: string): number | null {
+  const path = file ?? join(dirname(fileURLToPath(import.meta.url)), 'version.json');
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const n = (parsed as { requirement?: unknown }).requirement;
+    return typeof n === 'number' && Number.isInteger(n) && n > 0 ? n : null;
+  } catch {
+    return null;
   }
-  return `${String(BASE_MAJOR)}.${String(Number(match[1]))}.${String(runOrdinal)}`;
 }
 
 /** Derleme zamanını sürümde kullanılan `2026-08-31-22-52` biçimine çevirir. */
@@ -49,10 +87,11 @@ export function formatBuildTime(iso: string, timeZone = 'Europe/Istanbul'): stri
  */
 export function displayVersion(
   env: { commit?: string | undefined; buildTime?: string | undefined } = {},
-  requirementId: string = CURRENT_REQUIREMENT,
-  runOrdinal: number = CURRENT_RUN_ORDINAL,
+  requirement: number | null = readBuiltRequirement(),
 ): string {
-  let out = `v${deriveVersion(requirementId, runOrdinal)}`;
+  let out = requirement === null
+    ? `v${String(BASE_MAJOR)}`
+    : `v${deriveVersion(`RQ-${String(requirement)}`)}`;
   const commit = env.commit?.trim();
   if (commit !== undefined && commit !== '') out += `+${commit.slice(0, 7)}`;
   const buildTime = env.buildTime?.trim();
@@ -68,7 +107,7 @@ export function displayVersion(
  * dener.
  *
  * Dağıtımda bu iki değer derleme sırasında verilir. Geliştirmede verilmediği
- * için sürüm yalnız `v0.18.1` görünüyordu; git varken bunu göstermemek için
+ * için sürüm yalnız ana sürüm görünüyordu; git varken bunu göstermemek için
  * sebep yok. Depo yoksa ya da komut başarısız olursa sessizce atlanır.
  */
 function buildStamp(): { commit?: string; buildTime?: string } {
