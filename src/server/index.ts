@@ -48,10 +48,12 @@ import {
   dashboard,
   deleteBank,
   deleteTransaction,
+  fifoBlocker,
   findSessionUser,
   findUserByUsername,
   fundHasData,
   fundValor,
+  getTransaction,
   holidays,
   ingestRuns,
   listBanks,
@@ -64,6 +66,7 @@ import {
   portfolioSummary,
   removeFromWatchlist,
   revokeSession,
+  sellFifo,
   trackFundForUser,
   type AppUser,
   type TransactionInput,
@@ -98,9 +101,12 @@ const STATIC: Record<string, { file: string; type: string }> = {
   '/': { file: 'public/index.html', type: 'text/html; charset=utf-8' },
   '/index.html': { file: 'public/index.html', type: 'text/html; charset=utf-8' },
   '/app.js': { file: 'dist/main.js', type: 'text/javascript; charset=utf-8' },
-  // main.js bunu içe aktarıyor; listede olmazsa modül yüklenemez ve sayfa hiç
-  // açılmaz. Tablo bir izin listesi, dizin servis edilmiyor.
+  // main.js bunları içe aktarıyor; listede olmazsa modül yüklenemez ve sayfa
+  // hiç açılmaz — boş ekran, konsolda 404. Tablo bir izin listesi, dizin
+  // servis edilmiyor. Yeni bir paylaşılan modül eklenince buraya da girmeli;
+  // ui-conventions testi bunu kontrol ediyor.
   '/settlement.js': { file: 'dist/settlement.js', type: 'text/javascript; charset=utf-8' },
+  '/fifo.js': { file: 'dist/fifo.js', type: 'text/javascript; charset=utf-8' },
   '/styles.css': { file: 'src/styles.css', type: 'text/css; charset=utf-8' },
 };
 
@@ -489,6 +495,27 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         return;
       }
 
+      // FIFO satış: kullanıcı satır seçmez, adet girer. Kimlik yolundan önce
+      // eşleşmeli, yoksa "sell" bir kimlik sanılır.
+      if (path === '/api/transactions/sell' && method === 'POST') {
+        const b = asRecord(await readJson(req));
+        try {
+          const sonuc = await sellFifo(pool, user.id, {
+            fundCode: reqString(b, 'fundCode').toUpperCase(),
+            platform: reqString(b, 'platform'),
+            units: reqNumber(b, 'units'),
+            sellDate: reqDate(b, 'sellDate'),
+            sellOrderDate: optDate(b, 'sellOrderDate'),
+          });
+          sendJson(res, 200, sonuc);
+        } catch (err) {
+          sendJson(res, 400, {
+            error: err instanceof Error ? err.message : 'Satış kaydedilemedi.',
+          });
+        }
+        return;
+      }
+
       const txId = matchPath('/api/transactions/:id', path);
       if (txId !== null) {
         const id = Number(txId);
@@ -500,6 +527,26 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
           const input = readTransactionInput(asRecord(await readJson(req)));
           await ensureFundKnown(pool, client, input.fundCode);
           await trackFundForUser(pool, user.id, input.fundCode);
+          // Satış tarihi eklenen kayıt, o fon ve bankadaki en eski açık kayıt
+          // değilse reddedilir. Yalnız açıktan kapalıya geçişte bakılır: zaten
+          // satılmış bir kaydın tarihini düzeltmek engellenmemeli.
+          if (input.sellDate !== null) {
+            const mevcut = await getTransaction(pool, user.id, id);
+            if (mevcut !== null && mevcut.sellDate === null) {
+              const onceki = await fifoBlocker(
+                pool, user.id, id, input.fundCode, input.platform, input.tradeDate,
+              );
+              if (onceki !== null) {
+                sendJson(res, 400, {
+                  error: `İlk alınan ilk satılır. ${input.fundCode} · ${input.platform} için `
+                    + `önce ${onceki.tradeDate} tarihli `
+                    + `${Number(onceki.units).toLocaleString('tr-TR')} paylık alım satılmalı. `
+                    + 'Kısmi satış için "Sat" düğmesini kullanın.',
+                });
+                return;
+              }
+            }
+          }
           const updated = await updateTransaction(pool, user.id, id, input);
           if (!updated) {
             sendJson(res, 404, { error: 'İşlem bulunamadı.' });

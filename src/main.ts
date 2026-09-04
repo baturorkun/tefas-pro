@@ -33,6 +33,8 @@ interface Transaction {
   gainPct: string | null;
   buyPrice: string | null;
   nowPrice: string | null;
+  splitRole: 'parent' | 'remainder' | null;
+  splitTotal: string | null;
 }
 
 interface WatchlistRow {
@@ -404,6 +406,9 @@ const ICON_PATHS: Record<string, string[]> = {
   add: ['M12 5v14M5 12h14'],
   logout: ['M15 17l5-5-5-5', 'M20 12H9', 'M12 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6'],
   close: ['M6 6l12 12M18 6 6 18'],
+  // Aşağı ok: satış paylardan çıkış. Yukarı bakarken "artır" gibi okunuyordu,
+  // üstelik yanındaki "Alış Ekle" artı işaretiyle aynı yöne bakıyordu.
+  sell: ['M12 5v14', 'm5 12 7 7 7-7'],
   fund: ['M4 19h16', 'M7 19V9M12 19V5M17 19v-7'],
   money: ['M12 3v18', 'M16 7.5A3.5 3.5 0 0 0 12.5 5h-1a3 3 0 0 0 0 6h1a3 3 0 0 1 0 6h-1A3.5 3.5 0 0 1 8 16.5'],
   chart: ['M4 19h16', 'm5 15 4-5 3 3 6-8'],
@@ -639,6 +644,12 @@ function comboFilter(opts: {
   options: { value: string; label: string; hint?: string }[];
   value: string;
   onChange: (value: string) => void;
+  /**
+   * Seçimi temizleyen çarpı. Filtrede gerekli — süzmeyi geri almanın yolu bu.
+   * Zorunlu bir alanda ise anlamsız: boş bir değere dönülemiyorsa düğme
+   * basıldığında hiçbir şey yapmaz, yani ölü bir düğme olur.
+   */
+  clearable?: boolean;
 }): HTMLElement {
   const secili = opts.options.find((o) => o.value === opts.value);
   const trigger = el('button', {
@@ -653,7 +664,7 @@ function comboFilter(opts: {
   const panel = el('div', { class: 'combo-panel' }, [search, list]);
   const root = el('div', { class: 'combo' }, [trigger, panel]);
 
-  if (secili) {
+  if (secili && opts.clearable !== false) {
     const temizle = el('button', {
       type: 'button', class: 'combo-clear', title: 'Seçimi temizle',
       'aria-label': `${opts.label} seçimini temizle`,
@@ -717,6 +728,7 @@ function comboFilter(opts: {
 
 // ─── Grafik ─────────────────────────────────────────────────────────────────
 
+import { planFifoSale } from './fifo.js';
 import { orderFromSettlement, settlementFromOrder } from './settlement.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -1657,6 +1669,89 @@ function passwordScreen(message?: string): void {
 // ─── Portföy görünümü ───────────────────────────────────────────────────────
 
 /**
+ * Formu tek gönderime kilitler.
+ *
+ * İstek uçarken düğme açık kalıyor ve pencere ancak cevap dönünce kapanıyordu.
+ * Aradaki boşlukta ikinci bir tıklama ikinci bir kayıt açıyor: 50.000 satmak
+ * isteyip 100.000 satmış oluyorsun ve iki kayıt da geçerli göründüğü için fark
+ * etmiyorsun. Sunucu bunu ayıramaz — iki istek de meşru, sıra da doğru işliyor;
+ * çift gönderimi olanaksız kılmak gönderen tarafın işi.
+ *
+ * Kilit yalnız uçuş boyunca: hata dönerse düğme geri açılır, yoksa düzeltip
+ * yeniden denemek imkânsız olurdu.
+ */
+function tekGonderim(
+  form: HTMLElement,
+  submit: HTMLButtonElement,
+  status: HTMLElement,
+  gonder: () => Promise<void>,
+  hataMetni: string,
+): void {
+  let ucusta = false;
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (ucusta) return;
+    ucusta = true;
+    submit.disabled = true;
+    void (async () => {
+      try {
+        status.textContent = 'Kaydediliyor…';
+        await gonder();
+      } catch (err) {
+        ucusta = false;
+        submit.disabled = false;
+        status.textContent = err instanceof Error ? err.message : hataMetni;
+      }
+    })();
+  });
+}
+
+/**
+ * Sayı girdisini gerçekten sayıya kapatır.
+ *
+ * `type="number"` bilimsel gösterimi kabul ediyor: "e", "+" ve "-" yazılabiliyor.
+ * Yazıldığı anda girdi geçersiz sayılıyor ve `value` boş dönüyor — ekranda "e"
+ * duruyor ama okuyan taraf boş görüyor, bu yüzden satış penceresinde alım
+ * listesi sebepsiz kayboluyordu. Yapıştırmada da aynı yoldan girebiliyor.
+ */
+function sadeceSayi(input: HTMLInputElement): void {
+  input.addEventListener('keydown', (e) => {
+    if (['e', 'E', '+', '-'].includes(e.key)) e.preventDefault();
+  });
+  input.addEventListener('paste', (e) => {
+    const metin = e.clipboardData?.getData('text') ?? '';
+    if (/[^\d.,\s]/.test(metin)) e.preventDefault();
+  });
+}
+
+/**
+ * İki tarih birbirini tamamlar: hangisi doldurulursa diğeri valöre göre
+ * hesaplanır. Kullanıcı elle yazdığını ezmemek için yalnız boş olan alan
+ * doldurulur.
+ *
+ * Valör günü ve tatil listesi fon seçildikten sonra sunucudan geliyor; bu
+ * yüzden değer olarak değil okuyucu olarak alınır. Alanlar bağlandığında
+ * ikisi de henüz bilinmiyor olabilir.
+ */
+function linkValorDates(
+  order: HTMLInputElement,
+  settle: HTMLInputElement,
+  days: () => number | null,
+  holidays: () => string[],
+): void {
+  order.addEventListener('change', () => {
+    const d = days();
+    if (d === null || order.value === '') return;
+    try { settle.value = settlementFromOrder(order.value, d, holidays()); } catch { /* elle girilsin */ }
+  });
+  settle.addEventListener('change', () => {
+    const d = days();
+    if (d === null || settle.value === '' || order.value !== '') return;
+    try { order.value = orderFromSettlement(settle.value, d, holidays()); } catch { /* elle girilsin */ }
+  });
+}
+
+/**
  * İşlem formu. Gövdeyi ve kaydet düğmesini ayrı döndürür: pencerede gövde
  * ortada, eylemler altta sabit bir şeritte durur.
  */
@@ -1675,7 +1770,10 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
   };
   if (existing) {
     f.fundCode.value = existing.fundCode;
-    f.units.value = existing.units;
+    // Kolon numeric(24,6): veritabanı "9911.000000" döndürüyor ve alan onu
+    // olduğu gibi basıyordu. Fon payı kesirli olabildiği için haneler duruyor
+    // ama gereksiz sıfırlar atılır: 9911.000000 → 9911, 12.345600 → 12.3456.
+    f.units.value = String(Number(existing.units));
     f.buyOrderDate.value = existing.buyOrderDate ?? '';
     f.tradeDate.value = existing.tradeDate;
     f.sellOrderDate.value = existing.sellOrderDate ?? '';
@@ -1739,35 +1837,15 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
     sellValorNote.textContent = note(valor?.sell);
   };
 
-  /**
-   * İki tarih birbirini tamamlar: hangisi doldurulursa diğeri valöre göre
-   * hesaplanır. Kullanıcı elle yazdığını ezmemek için yalnız boş olan alan
-   * doldurulur.
-   */
-  const link = (
-    order: HTMLInputElement,
-    settle: HTMLInputElement,
-    days: () => number | null,
-  ): void => {
-    order.addEventListener('change', () => {
-      const d = days();
-      if (d === null || order.value === '') return;
-      try { settle.value = settlementFromOrder(order.value, d, holidayList); } catch { /* elle girilsin */ }
-    });
-    settle.addEventListener('change', () => {
-      const d = days();
-      if (d === null || settle.value === '' || order.value !== '') return;
-      try { order.value = orderFromSettlement(settle.value, d, holidayList); } catch { /* elle girilsin */ }
-    });
-  };
-  link(f.buyOrderDate, f.tradeDate, () => valor?.buy ?? null);
-  link(f.sellOrderDate, f.sellDate, () => valor?.sell ?? null);
+  sadeceSayi(f.units);
+  linkValorDates(f.buyOrderDate, f.tradeDate, () => valor?.buy ?? null, () => holidayList);
+  linkValorDates(f.sellOrderDate, f.sellDate, () => valor?.sell ?? null, () => holidayList);
   f.fundCode.addEventListener('change', loadSettlement);
   loadSettlement();
 
   const status = el('span', { class: 'status' });
   const submit = el('button', { type: 'submit', class: 'btn-primary' }, [
-    existing ? 'Güncelle' : 'İşlem Ekle',
+    existing ? 'Güncelle' : 'Alış Ekle',
   ]) as HTMLButtonElement;
   const form = el('form', { class: 'modal-form-grid', id: 'tx-form' }, [
     field('Fon Kodu', f.fundCode, 'TEFAS kodu, üç harf.'),
@@ -1776,47 +1854,279 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
     field('Emir Tarihi', f.buyOrderDate, 'İsteğe bağlı; girilirse alış tarihi hesaplanır.'),
     field('Alış Tarihi', f.tradeDate, 'Emrin fiyatlandığı gün.'),
     field('Banka', f.platform, bankHint),
-    el('div', { class: 'form-section' }, [el('span', {}, ['Satış']), sellValorNote]),
-    field('Satış Emir Tarihi', f.sellOrderDate, 'İsteğe bağlı; girilirse satış tarihi hesaplanır.'),
-    field('Satış Tarihi', f.sellDate, 'Boş bırakılırsa pozisyon açık kalır.'),
+    // Satış alanları yalnız SATILMIŞ kaydı düzenlerken çıkar.
+    //
+    // Satış artık kendi eylemi: adet giriliyor ve paylar en eski alımdan
+    // düşülüyor. Açık bir kayda buradan satış tarihi yazmak o sırayı atlamanın
+    // yolu olurdu — alan hiç bulunmayınca kural savunulacak bir şey değil,
+    // yapının kendisi oluyor.
+    //
+    // Satılmış kayıtta duruyor, çünkü yanlış girilmiş bir tarihi düzeltmenin
+    // veya alanı boşaltıp satışı geri almanın başka yolu yok.
+    ...(existing !== null && existing.sellDate !== null
+      ? [
+          el('div', { class: 'form-section' }, [el('span', {}, ['Satış']), sellValorNote]),
+          field('Satış Emir Tarihi', f.sellOrderDate,
+            'İsteğe bağlı; girilirse satış tarihi hesaplanır.'),
+          field('Satış Tarihi', f.sellDate, 'Boşaltılırsa pozisyon yeniden açılır.'),
+        ]
+      : []),
     status,
   ]);
   submit.setAttribute('form', 'tx-form');
 
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    void (async () => {
-      const payload = {
-        fundCode: f.fundCode.value,
-        platform: f.platform.value,
-        tradeDate: f.tradeDate.value,
-        units: f.units.value,
-        buyOrderDate: f.buyOrderDate.value || null,
-        sellOrderDate: f.sellOrderDate.value || null,
-        sellDate: f.sellDate.value || null,
-      };
-      try {
-        status.textContent = 'Kaydediliyor…';
-        await api(
-          existing ? `/api/transactions/${String(existing.id)}` : '/api/transactions',
-          { method: existing ? 'PUT' : 'POST', body: JSON.stringify(payload) },
-        );
-        onDone();
-      } catch (err) {
-        status.textContent = err instanceof Error ? err.message : 'Kaydedilemedi.';
-      }
-    })();
-  });
+  tekGonderim(form, submit, status, async () => {
+    const payload = {
+      fundCode: f.fundCode.value,
+      platform: f.platform.value,
+      tradeDate: f.tradeDate.value,
+      units: f.units.value,
+      buyOrderDate: f.buyOrderDate.value || null,
+      sellOrderDate: f.sellOrderDate.value || null,
+      sellDate: f.sellDate.value || null,
+    };
+    await api(
+      existing ? `/api/transactions/${String(existing.id)}` : '/api/transactions',
+      { method: existing ? 'PUT' : 'POST', body: JSON.stringify(payload) },
+    );
+    onDone();
+  }, 'Kaydedilemedi.');
   return { body: form, submit };
 }
 
 /** İşlem formunu pencerede açar; kaydedince pencere kapanır ve liste yenilenir. */
+/**
+ * Satış penceresi.
+ *
+ * Girdi alım kaydı değil havuz: fon + banka seçilir, adet girilir. Bankada da
+ * böyle çalışıyor — "THF'den 50.000 pay sat" deniyor, hangi alımdan çıkacağı
+ * bizim defterimizin işi. Paylar en eski alımdan başlayarak düşülür ve plan
+ * adet yazılırken gösterilir, böylece bölünen kayıt sürpriz olmaz.
+ */
+function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void): void {
+  const anahtarlar = [...havuzlar.keys()].sort((a, b) => a.localeCompare(b, 'tr'));
+  // Seçim boş başlar. Alfabetik ilk havuzla açılsaydı pencere "AFS'nin
+  // tamamını sat" diye kurulu gelirdi; yanlış tarihe basmak yeterdi.
+  let secili = '';
+  // Sunucudaki sıranın aynısı: alış tarihi, eşitlikte kimlik.
+  const lotlar = (): Transaction[] => [...(havuzlar.get(secili) ?? [])].sort((a, b) =>
+    (a.tradeDate < b.tradeDate ? -1 : a.tradeDate > b.tradeDate ? 1 : a.id - b.id));
+  const toplam = (k: string): number =>
+    (havuzlar.get(k) ?? []).reduce((a, t) => a + Number(t.units), 0);
+  const units = el('input', {
+    type: 'number', step: 'any', min: '1', required: 'true',
+  }) as HTMLInputElement;
+  const sellDate = el('input', { type: 'date', required: 'true' }) as HTMLInputElement;
+  const orderDate = el('input', { type: 'date' }) as HTMLInputElement;
+  const status = el('span', { class: 'status' });
+
+  const havuzAlani = el('div', { class: 'field' });
+  const havuzCiz = (): void => {
+    havuzAlani.replaceChildren(
+      el('label', {}, ['Fon · Banka']),
+      comboFilter({
+        label: 'Seçin',
+        options: anahtarlar.map((k) => ({
+          value: k,
+          label: k.replace('·', ' · '),
+          hint: `${toplam(k).toLocaleString('tr-TR')} pay`,
+        })),
+        value: secili,
+        clearable: false,
+        onChange: (v) => {
+          secili = v;
+          // Havuz değişince adet sıfırlanır: önceki havuzun sayısı yenisinde
+          // anlamsız, hatta fazla olabilir.
+          units.value = '';
+          units.max = String(toplam(v));
+          submit.disabled = true;
+          havuzCiz();
+          valorYukle();
+          planCiz();
+        },
+      }),
+      el('span', { class: 'field-hint' }, [secili === ''
+        ? 'Satılacak fon ve bankayı seçin.'
+        : `Havuzda ${toplam(secili).toLocaleString('tr-TR')} pay var.`]),
+    );
+  };
+
+  // Valör: işlem formundaki davranışın aynısı. Emir tarihi girilince satış
+  // tarihi hesaplanır, satış tarihi girilince emir tarihi geriye çözülür.
+  // Havuz değişince yeniden yükleniyor — valör fona bağlı. Cevap gelene kadar
+  // null kalır ve kullanıcı iki tarihi de elle yazabilir.
+  let holidayList: string[] = [];
+  let sellValor: number | null = null;
+  const valorNote = el('span', { class: 'section-note' }, ['']);
+  linkValorDates(orderDate, sellDate, () => sellValor, () => holidayList);
+  const valorYukle = (): void => {
+    const kod = secili.split('·')[0] ?? '';
+    sellValor = null;
+    valorNote.textContent = '';
+    void (async () => {
+      try {
+        const r = (await api(`/api/settlement?fundCode=${encodeURIComponent(kod)}`)) as {
+          holidays: string[];
+          valor: { buy: number; sell: number } | null;
+        };
+        // Yavaş cevap arada değişen havuzun valörünü ezmesin.
+        if ((secili.split('·')[0] ?? '') !== kod) return;
+        holidayList = r.holidays;
+        sellValor = r.valor?.sell ?? null;
+        if (sellValor !== null) valorNote.textContent = `T+${String(sellValor)} iş günü`;
+      } catch {
+        sellValor = null;
+      }
+    })();
+  };
+
+  /**
+   * Satışın hangi alımlardan çıkacağı, adet yazılırken gösterilir.
+   *
+   * Sonradan tabloda görülünce anlaşılmıyordu: 50.000 satınca ortaya 20.728 ve
+   * 14.386 çıkıyor, ikisi de kullanıcının yazmadığı sayılar. Aynı hesabı önden
+   * göstermek "bu sayılar nereden geldi" sorusunu ortadan kaldırıyor. Hesap
+   * sunucuyla aynı fonksiyondan geliyor, ayrışamaz.
+   */
+  /**
+   * Alım listesi: hem seçici hem önizleme.
+   *
+   * Satıra basmak adedi o alıma kadar toplar — FIFO zaten oradan geçeceği için
+   * "şuraya kadar sat" demek tek anlamlı seçim. Gösterim her zaman adetten
+   * türetiliyor: elle sayı yazınca liste kendini ona göre çizer, ekranda geride
+   * kalmış bir seçim kalmaz.
+   */
+  const plan = el('div', { class: 'fifo-plan' });
+  const say = (n: number): string => n.toLocaleString('tr-TR', { maximumFractionDigits: 6 });
+  const planCiz = (): void => {
+    plan.replaceChildren();
+    if (secili === '') return;
+    const adet = Number(units.value);
+    const liste = lotlar();
+
+    let adimlar: { id: number; sell: number; keep: number }[] = [];
+    if (units.value.trim() !== '' && adet > 0) {
+      try {
+        adimlar = planFifoSale(liste.map((t) => ({ id: t.id, units: Number(t.units) })), adet);
+      } catch {
+        return; // Havuzdan fazla adet: hata kaydederken söylenecek.
+      }
+    }
+    // Satıra kadarki birikim: o satır seçilince adet bu olur, iptal edilince
+    // bir önceki satırın birikimine dönülür. FIFO sırası yüzünden ortadaki bir
+    // alımı tek başına çıkarmak mümkün değil; iptal "buradan aşağısını bırak".
+    let birikim = 0;
+    for (const lot of liste) {
+      const oncekiBirikim = birikim;
+      birikim += Number(lot.units);
+      const hedef = birikim;
+      const adim = adimlar.find((a) => a.id === lot.id);
+      const durum = adim === undefined
+        ? 'Seç'
+        : adim.keep > 0
+          ? `${say(adim.sell)} satılır · ${say(adim.keep)} açık kalır`
+          : 'tamamı satılır';
+      const cls = adim === undefined ? 'fifo-idle' : adim.keep > 0 ? 'fifo-part' : 'fifo-full';
+
+      // Satır düğme değil, role taşıyan bir kutu: içine iptal düğmesi girecek
+      // ve düğme içinde düğme geçersiz HTML.
+      const satir = el('div', {
+        class: `fifo-row ${cls}`, role: 'button', tabindex: '0',
+        title: adim === undefined ? 'Bu alıma kadar sat' : 'Adedi bu alıma kadar getir',
+      }, [
+        el('span', { class: 'fifo-when' }, [gunAd(lot.tradeDate)]),
+        el('span', { class: 'fifo-units' }, [say(Number(lot.units))]),
+        el('span', { class: 'fifo-note' }, [durum]),
+      ]);
+      const sec = (): void => {
+        units.value = String(hedef);
+        submit.disabled = false;
+        planCiz();
+      };
+      satir.addEventListener('click', sec);
+      satir.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sec(); }
+      });
+
+      // İptal yalnız seçili satırlarda: seçilmemiş bir satırda geri alınacak
+      // bir şey yok.
+      if (adim !== undefined) {
+        const iptal = el('button', {
+          // Etiket "bu satırı çıkar" demiyor: FIFO sırası yüzünden bu alım
+          // bırakılınca sonrakiler de bırakılıyor. Düğme yaptığından azını
+          // söylerse üç satır birden gidince sürpriz olur.
+          type: 'button', class: 'fifo-undo', title: 'Buradan itibaren seçimi kaldır',
+          'aria-label': `${gunAd(lot.tradeDate)} ve sonrasını seçimden çıkar`,
+        }, [icon('close', 12)]);
+        iptal.addEventListener('click', (e) => {
+          e.stopPropagation();
+          units.value = oncekiBirikim > 0 ? String(oncekiBirikim) : '';
+          submit.disabled = !(oncekiBirikim > 0);
+          planCiz();
+        });
+        satir.append(iptal);
+      } else {
+        // Izgara sütunu boş da olsa dursun; yoksa satırlar kayıyor.
+        satir.append(el('span', { class: 'fifo-undo-gap' }));
+      }
+      plan.append(satir);
+    }
+  };
+  sadeceSayi(units);
+  units.addEventListener('input', () => {
+    // Havuzdan fazlası yazılamaz. Sınırsız bırakıldığında planFifoSale hata
+    // atıyor, liste boşalıyor ve kullanıcı neyi yanlış yaptığını göremiyordu;
+    // sayıyı sınırda tutmak hatayı en baştan olanaksız kılıyor.
+    const ust = toplam(secili);
+    if (secili !== '' && Number(units.value) > ust) units.value = String(ust);
+    submit.disabled = secili === '' || !(Number(units.value) > 0);
+    planCiz();
+  });
+  havuzCiz();
+
+  const submit = el('button', {
+    type: 'submit', class: 'btn-primary', disabled: 'true',
+  }, ['Sat']) as HTMLButtonElement;
+  const form = el('form', { class: 'modal-form-grid', id: 'sell-form' }, [
+    havuzAlani,
+    el('p', { class: 'settings-note' }, [
+      'Paylar en eski alımdan düşülür; ilk alım bitmeden sonrakine geçilmez. '
+      + 'Satıra basınca adet o alıma kadar toplanır.',
+    ]),
+    plan,
+    field('Adet', units, 'Satır seçebilir ya da elle yazabilirsiniz.'),
+    el('div', { class: 'form-section' }, [el('span', {}, ['Satış']), valorNote]),
+    field('Satış Emir Tarihi', orderDate, 'İsteğe bağlı; girilirse satış tarihi hesaplanır.'),
+    field('Satış Tarihi', sellDate, 'Satışın gerçekleştiği gün.'),
+    status,
+  ]);
+  submit.setAttribute('form', 'sell-form');
+
+  let close = (): void => {};
+  tekGonderim(form, submit, status, async () => {
+    await api('/api/transactions/sell', {
+      method: 'POST',
+      body: JSON.stringify({
+        fundCode: secili.split('·')[0] ?? '', platform: secili.split('·')[1] ?? '',
+        units: Number(units.value), sellDate: sellDate.value,
+        sellOrderDate: orderDate.value || null,
+      }),
+    });
+    close();
+    reload();
+  }, 'Satılamadı.');
+
+  const cancel = el('button', { class: 'btn-ghost', type: 'button' }, ['Vazgeç']);
+  close = openModal('Satış Ekle', 'Fon ve bankadaki açık paylardan düşülür', form, [cancel, submit]);
+  cancel.addEventListener('click', () => { close(); });
+}
+
 function openTransactionModal(existing: Transaction | null, reload: () => void): void {
   let close = (): void => {};
   const { body, submit } = transactionForm(existing, () => { close(); reload(); });
   const cancel = el('button', { class: 'btn-ghost', type: 'button' }, ['Vazgeç']);
   close = openModal(
-    existing === null ? 'İşlem Ekle' : 'İşlemi Düzenle',
+    existing === null ? 'Alış Ekle' : 'İşlemi Düzenle',
     existing === null ? 'Yeni alış kaydı' : `${existing.fundCode} · ${existing.tradeDate}`,
     body,
     [cancel, submit],
@@ -2125,8 +2435,24 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
     onChange: (v) => { txFiltre.platform = v; reload(); },
   });
 
-  const addBtn = el('button', { class: 'btn-primary' }, [icon('add'), 'İşlem Ekle']);
+  // Alış ve satış aynı yerde duruyor: biri tablodan biri başlıktan girilseydi
+  // aynı işin iki yarısı iki ayrı yere dağılırdı. Ad da düzeldi — "İşlem Ekle"
+  // yalnız alım ekliyordu ama genel bir ad taşıyordu.
+  const addBtn = el('button', { class: 'btn-primary' }, [icon('add'), 'Alış Ekle']);
   addBtn.addEventListener('click', () => { openTransactionModal(null, reload); });
+
+  // Açık havuzlar: satılabilecek her fon+banka bir seçenek. Havuz yoksa düğme
+  // hiç çizilmez; boş bir listeye açılan pencere yanıltıcı olurdu.
+  const havuzlar = new Map<string, Transaction[]>();
+  for (const t of rows) {
+    if (t.sellDate !== null) continue;
+    const k = `${t.fundCode}·${t.platform}`;
+    havuzlar.set(k, [...(havuzlar.get(k) ?? []), t]);
+  }
+  const sellBtn = havuzlar.size === 0
+    ? null
+    : el('button', { class: 'btn-ghost' }, [icon('sell'), 'Satış Ekle']);
+  sellBtn?.addEventListener('click', () => { openSellModal(havuzlar, reload); });
 
   // Toplam yalnız parası ölçülebilen satırlardan: getiri günü olmayan işlem
   // maliyetsiz görünüyor, onu sıfır sayıp toplama katmak yanlış olurdu.
@@ -2152,6 +2478,13 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
   const body = gorunen.map((t) => {
     const editBtn = iconButton('edit', 'Düzenle');
     const delBtn = iconButton('delete', 'Sil', 'danger');
+    // Satış düğmesi burada değil, panel başlığında.
+    //
+    // Satış bir alım kaydına ait değil: fon ve bankadaki bütün açık paylardan,
+    // en eskiden başlayarak çıkıyor. Satıra iliştirildiğinde 01.09'un düğmesine
+    // basıp 24.08'in satıldığını görmek gerekiyordu; yalnız en eski satıra
+    // koymak da "havuzdan satıyorsak neden tek satırda?" sorusunu bırakıyordu.
+    // Tablodan çıkınca arayüz olanı söylüyor: havuz seçiliyor, satır değil.
     // Soldaki şerit satırın sonucunu söyler; Dönemsel Getiri'deki ay satırıyla
     // aynı dil. Gerçekleşmiş satış soluk yazılır: kapanmış bir kayıt artık
     // takip edilecek bir şey değil, listede yer tutuyor.
@@ -2166,6 +2499,23 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
       // ama sütunun yarısını yiyor ve satırı iki katına çıkarıyordu.
       el('td', { title: t.fundTitle ?? t.fundCode }, [
         el('span', { class: 'fund-code' }, [t.fundCode]),
+        // Kısmi satışta bölünen kayıt: kullanıcının yazmadığı bir satırın
+        // nereden geldiği görünmeli.
+        // Kısmi satışın iki parçası ayrı etiket taşır: kullanıcının girdiği
+        // kayıt küçüldü ("Bölündü"), makinenin açtığı satır ise onun artığı
+        // ("Kalan"). Aynı etiket ikisinde de dururken hangisinin nereden
+        // geldiği okunmuyordu.
+        ...(t.splitRole === null ? [] : [(() => {
+          const asil = t.splitTotal === null
+            ? ''
+            : `${Number(t.splitTotal).toLocaleString('tr-TR')} paylık alımın `;
+          return el('span', {
+            class: `split-mark split-${t.splitRole}`,
+            title: t.splitRole === 'parent'
+              ? `${asil}satılan parçası; geri kalanı ayrı satırda açık duruyor`
+              : `${asil}satılmayan parçası; kalanı bu satırda açık duruyor`,
+          }, [t.splitRole === 'parent' ? 'Bölündü' : 'Kalan']);
+        })()]),
       ]),
       el('td', { class: 'num' }, [Number(t.units).toLocaleString('tr-TR')]),
       el('td', { class: 'num' }, [t.tradeDate]),
@@ -2266,7 +2616,7 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
               ),
             ]),
       ]),
-      addBtn,
+      el('div', { class: 'panel-actions' }, sellBtn === null ? [addBtn] : [sellBtn, addBtn]),
     ),
   ];
 }
@@ -2361,21 +2711,13 @@ function watchlistForm(onDone: () => void): { body: HTMLElement; submit: HTMLBut
     status,
   ]);
   submit.setAttribute('form', 'watch-form');
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    void (async () => {
-      try {
-        status.textContent = 'Ekleniyor…';
-        await api('/api/watchlist', {
-          method: 'POST',
-          body: JSON.stringify({ fundCode: fundCode.value, note: note.value }),
-        });
-        onDone();
-      } catch (err) {
-        status.textContent = err instanceof Error ? err.message : 'Eklenemedi.';
-      }
-    })();
-  });
+  tekGonderim(form, submit, status, async () => {
+    await api('/api/watchlist', {
+      method: 'POST',
+      body: JSON.stringify({ fundCode: fundCode.value, note: note.value }),
+    });
+    onDone();
+  }, 'Eklenemedi.');
   return { body: form, submit };
 }
 
@@ -2523,34 +2865,26 @@ function userForm(existing: UserRow | null, onDone: () => void): {
   ]);
   submit.setAttribute('form', 'user-form');
 
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    void (async () => {
-      try {
-        status.textContent = 'Kaydediliyor…';
-        if (existing === null) {
-          await api('/api/admin/users', {
-            method: 'POST',
-            body: JSON.stringify({
-              username: uname.value, password: upass.value, type: utype.value,
-            }),
-          });
-        } else {
-          const patch: Record<string, unknown> = {
-            type: utype.value, isActive: uactive.checked,
-          };
-          // Boş parola "değiştirme" demektir; sunucuya boş dize göndermeyiz.
-          if (upass.value !== '') patch['password'] = upass.value;
-          await api(`/api/admin/users/${String(existing.id)}`, {
-            method: 'PATCH', body: JSON.stringify(patch),
-          });
-        }
-        onDone();
-      } catch (err) {
-        status.textContent = err instanceof Error ? err.message : 'Kaydedilemedi.';
-      }
-    })();
-  });
+  tekGonderim(form, submit, status, async () => {
+    if (existing === null) {
+      await api('/api/admin/users', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: uname.value, password: upass.value, type: utype.value,
+        }),
+      });
+    } else {
+      const patch: Record<string, unknown> = {
+        type: utype.value, isActive: uactive.checked,
+      };
+      // Boş parola "değiştirme" demektir; sunucuya boş dize göndermeyiz.
+      if (upass.value !== '') patch['password'] = upass.value;
+      await api(`/api/admin/users/${String(existing.id)}`, {
+        method: 'PATCH', body: JSON.stringify(patch),
+      });
+    }
+    onDone();
+  }, 'Kaydedilemedi.');
   return { body: form, submit };
 }
 
@@ -2613,11 +2947,11 @@ async function usersView(reload: () => void): Promise<Node[]> {
 const VIEWS: { id: ViewId; label: string; adminOnly: boolean; crumb: string }[] = [
   { id: 'dashboard', label: 'Panel', adminOnly: false, crumb: 'Genel' },
   { id: 'portfolio', label: 'Portföyüm', adminOnly: false, crumb: 'Genel' },
+  { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
   { id: 'allocation', label: 'Dağılım', adminOnly: false, crumb: 'Genel' },
   { id: 'closed', label: 'Kapananlar', adminOnly: false, crumb: 'Genel' },
   { id: 'periods', label: 'Dönemsel Getiri', adminOnly: false, crumb: 'Genel' },
   { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },
-  { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
   { id: 'watchlist', label: 'Takip Listem', adminOnly: false, crumb: 'Genel' },
   { id: 'prefs', label: 'Tercihlerim', adminOnly: false, crumb: 'Genel' },
   { id: 'users', label: 'Kullanıcılar', adminOnly: true, crumb: 'Admin' },

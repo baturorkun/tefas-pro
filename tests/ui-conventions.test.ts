@@ -128,7 +128,7 @@ describe('form görünümü', () => {
 
   it('alan yardımcı metin taşıyabilir', () => {
     expect(main).toMatch(/function field\([^)]*hint\?: string/);
-    expect(main).toContain("'Boş bırakılırsa pozisyon açık kalır.'");
+    expect(main).toContain("'Emrin fiyatlandığı gün.'");
   });
 
   it('iptal düğmesi çerçevelidir', () => {
@@ -377,6 +377,216 @@ describe('fon hareketleri', () => {
   it('toplam satırında yüzde yazmaz', () => {
     // O sütun toplam değil oran; payda brüt alım olurdu ve şişik çıkardı.
     expect(main).toMatch(/Yüzde yok: bu sütun toplam değil oran/);
+  });
+});
+
+describe('FIFO satış', () => {
+  it('satışta adet sorulur, satır seçilmez', () => {
+    expect(main).toContain('function openSellModal');
+    expect(main).toContain("field('Adet', units");
+    expect(main).toContain("api('/api/transactions/sell'");
+  });
+
+  it('pencere kurulu gelmez: havuz seçili değil, satış düğmesi kapalı', () => {
+    // Alfabetik ilk havuzla ve tam adetle açılsaydı "AFS'nin tamamını sat"
+    // hazır olurdu; yanlış tarihe basmak yeterdi.
+    const sell = main.slice(main.indexOf('function openSellModal'),
+                            main.indexOf('function openTransactionModal'));
+    expect(sell).toMatch(/let secili = '';/);
+    expect(sell).toContain("disabled: 'true'");
+    expect(sell).toContain('submit.disabled = false;');
+    // Boş adet artık "hepsi" demek değil: satır seçilerek ya da elle yazılarak
+    // bir sayı girilmeden satış açılmıyor.
+    expect(sell).toContain("submit.disabled = secili === '' || !(Number(units.value) > 0);");
+  });
+
+  it('satış tabloda değil panel başlığında girilir', () => {
+    // Satış bir alım kaydına ait değil, havuza yapılıyor. Satıra iliştirilince
+    // 01.09'un düğmesi 24.08'i satıyordu; yalnız en eski satıra koymak da
+    // "havuzdan satıyorsak neden tek satırda?" sorusunu bırakıyordu.
+    const gövde = main.slice(main.indexOf('const body = gorunen.map'),
+                             main.indexOf('async function portfolioView'));
+    expect(gövde).not.toContain("iconButton('sell'");
+    expect(main).toContain("'Satış Ekle'");
+    expect(main).toContain("openSellModal(havuzlar, reload)");
+  });
+
+  it('alış ve satış aynı yerde, simetrik adlarla', () => {
+    // Biri tablodan biri başlıktan girilseydi aynı işin iki yarısı iki ayrı
+    // yere dağılırdı. "İşlem Ekle" adı da yalnız alım eklerken geneldi.
+    expect(main).toContain("'Alış Ekle'");
+    expect(main).not.toContain("'İşlem Ekle'"); // pencere başlığı ve düğme dahil
+    expect(main).toContain("class: 'panel-actions'");
+    expect(css).toContain('.panel-actions');
+  });
+
+  it('havuzu boşaltan çarpı çizilmez', () => {
+    // Satış bir havuza yapılır; seçimsiz duruma dönmenin anlamı yok. Çarpı
+    // yine de çizilseydi basıldığında hiçbir şey yapmayan bir düğme olurdu.
+    expect(main).toContain('clearable?: boolean;');
+    expect(main).toContain('if (secili && opts.clearable !== false)');
+    const sell = main.slice(main.indexOf('function openSellModal'),
+                            main.indexOf('function openTransactionModal'));
+    expect(sell).toContain('clearable: false,');
+  });
+
+  it('havuz seçimi aranabilir listeden, açık adediyle', () => {
+    const sell = main.slice(main.indexOf('function openSellModal'),
+                            main.indexOf('function openTransactionModal'));
+    expect(sell).toContain('comboFilter(');
+    expect(sell).toMatch(/hint: `\$\{toplam\(k\)/);
+    // Havuz değişince valör de değişir: fon başkaysa T+n başka.
+    expect(sell).toContain('valorYukle();');
+  });
+
+  it('açık kayıtta satış alanı yok', () => {
+    // Satış kendi eylemi; açık kayda buradan tarih yazmak FIFO sırasını
+    // atlamanın yolu olurdu. Alan bulunmayınca kural savunulacak bir şey
+    // değil, yapının kendisi.
+    expect(main).toContain("existing !== null && existing.sellDate !== null");
+  });
+
+  it('satılmış kaydın tarihi düzeltilebilir', () => {
+    // Yanlış girilmiş tarihi düzeltmenin veya satışı geri almanın başka yolu
+    // yok.
+    expect(main).toMatch(/Boşaltılırsa pozisyon yeniden açılır/);
+  });
+
+  it('sunucu tarafında da atlama engellenir', () => {
+    // Arayüzde alan olmasa da doğrudan API'ye istek atılabilir.
+    const idx = readFileSync(new URL('../src/server/index.ts', import.meta.url), 'utf8');
+    expect(idx).toContain('fifoBlocker(');
+    expect(idx).toMatch(/İlk alınan ilk satılır/);
+  });
+
+  it('bölünmüş kayıt listede belli olur', () => {
+    // Kullanıcının yazmadığı bir satırın nereden geldiği görünmeli.
+    expect(css).toContain('.split-mark');
+    // İki parça ayrı etiket: biri kullanıcının girdiği küçülmüş kayıt, diğeri
+    // makinenin açtığı artık. Tek etiketle hangisinin ne olduğu okunmuyordu.
+    expect(main).toContain("t.splitRole === 'parent' ? 'Bölündü' : 'Kalan'");
+    expect(css).toContain('.split-parent');
+    expect(css).toContain('.split-remainder');
+    // "20.728" görüp "35.114 nereye gitti?" diye sorulmasını engelleyen bilgi.
+    expect(main).toMatch(/paylık alımın /);
+  });
+
+  it('kuralın nasıl işlediği pencerede yazar', () => {
+    expect(main).toMatch(/ilk alım bitmeden sonrakine/);
+  });
+
+  it('alım listesi hem seçici hem önizleme', () => {
+    // 50.000 satınca ortaya 20.728 ve 14.386 çıkıyor; ikisi de kullanıcının
+    // yazmadığı sayılar. Liste bunu önden gösteriyor; satıra basmak da adedi
+    // o alıma kadar topluyor, böylece sayıyı kullanıcı hesaplamıyor.
+    const sell = main.slice(main.indexOf('function openSellModal'),
+                            main.indexOf('function openTransactionModal'));
+    expect(sell).toContain("class: 'fifo-plan'");
+    expect(sell).toMatch(/açık kalır/);
+    expect(sell).toContain("'Seç'");
+    expect(sell).toContain("'Bu alıma kadar sat'");
+    expect(sell).toContain('units.value = String(hedef)');
+    expect(css).toContain('.fifo-part');
+    // Satır tıklanabilir: tarayıcı varsayılanları sıfırlanmazsa metin ortalanır.
+    expect(css).toMatch(/\.fifo-row \{[^}]*text-align: left/);
+    // Düğme içinde düğme geçersiz HTML; satır role taşıyan bir kutu olmalı.
+    expect(sell).toContain("role: 'button', tabindex: '0'");
+    expect(sell).toMatch(/e\.key === 'Enter' \|\| e\.key === ' '/);
+  });
+
+  it('seçilen satır geri alınabilir', () => {
+    const sell = main.slice(main.indexOf('function openSellModal'),
+                            main.indexOf('function openTransactionModal'));
+    expect(sell).toContain("class: 'fifo-undo'");
+    // Etiket yaptığının tamamını söylemeli: sonraki alımlar da bırakılıyor.
+    expect(sell).toContain("title: 'Buradan itibaren seçimi kaldır'");
+    // FIFO sırası yüzünden ortadaki alım tek başına çıkarılamaz; iptal bir
+    // önceki birikime döner.
+    expect(sell).toContain('units.value = oncekiBirikim > 0 ? String(oncekiBirikim)');
+    expect(sell).toContain('e.stopPropagation();');
+    expect(css).toContain('.fifo-undo');
+  });
+
+  it('çift gönderim engellenir', () => {
+    // Gerçekten oldu: tek satış denemesinde iki satış kaydı açıldı, 50.000
+    // yerine 100.000 satıldı. Sunucu ayıramaz — iki istek de meşru; çift
+    // gönderimi olanaksız kılmak gönderen tarafın işi.
+    expect(main).toContain('function tekGonderim');
+    expect(main).toMatch(/if \(ucusta\) return;\s*\n\s*ucusta = true;\s*\n\s*submit\.disabled = true;/);
+    // Hatadan sonra yeniden denenebilmeli, yoksa düzeltmek imkânsız olurdu.
+    expect(main).toMatch(/ucusta = false;\s*\n\s*submit\.disabled = false;/);
+    // Kayıt açan bütün formlar aynı kilidi kullanmalı; biri dışarıda kalırsa
+    // aynı açık orada sürer. Giriş ve parola ekranları hariç: onlarda ikinci
+    // istek yeni bir kayıt açmıyor.
+    expect(main.match(/tekGonderim\(form, submit, status,/g)?.length).toBe(4);
+    // Tek meşru submit dinleyicisi yardımcının kendisi; başka yerde kalmamalı.
+    const disarisi = main.replace(
+      main.slice(main.indexOf('function tekGonderim'), main.indexOf('function sadeceSayi')), '');
+    expect(disarisi).not.toMatch(/form\.addEventListener\('submit'/);
+  });
+
+  it('adet alanına harf girilemez', () => {
+    // type=number "e" kabul ediyor; yazılınca value boş dönüyor ve alım
+    // listesi sebepsiz kayboluyordu. İki formda da aynı koruma.
+    expect(main).toContain('function sadeceSayi');
+    expect(main).toContain('sadeceSayi(units);');
+    expect(main).toContain('sadeceSayi(f.units);');
+    expect(main).toMatch(/\['e', 'E', '\+', '-'\]\.includes\(e\.key\)/);
+    // Yapıştırma da aynı yoldan giriyor.
+    expect(main).toContain("input.addEventListener('paste'");
+  });
+
+  it('havuzdan fazla adet yazılamaz', () => {
+    // Sınırsızken planFifoSale hata atıyor, liste boşalıyor ve kullanıcı neyi
+    // yanlış yaptığını göremiyordu.
+    const sell = main.slice(main.indexOf('function openSellModal'),
+                            main.indexOf('function openTransactionModal'));
+    expect(sell).toContain('if (secili !== \'\' && Number(units.value) > ust) units.value = String(ust);');
+    expect(sell).toContain('units.max = String(toplam(v));');
+    expect(sell).toContain("min: '1'");
+  });
+
+  it('gösterim adetten türetilir, ayrı seçim durumu tutulmaz', () => {
+    // İki kaynak olsaydı elle yazılan sayı ile vurgulu satırlar ayrışır,
+    // ekranda geride kalmış bir seçim kalırdı.
+    const sell = main.slice(main.indexOf('function openSellModal'),
+                            main.indexOf('function openTransactionModal'));
+    expect(sell).not.toMatch(/let secililer|const secililer/);
+    expect(sell).toContain('const adim = adimlar.find((a) => a.id === lot.id);');
+  });
+
+  it('arayüzün içe aktardığı her modül servis ediliyor', () => {
+    // Bu liste bir izin listesi: eksik kalan modül 404 döner, sayfa hiç
+    // açılmaz. Hata görsel değil, boş ekran — testin yakalaması gerekiyor.
+    const server = readFileSync(new URL('../src/server/index.ts', import.meta.url), 'utf8');
+    const yollar = [...main.matchAll(/^import .* from '\.\/([\w-]+)\.js';$/gm)]
+      .map((m) => m[1] ?? '');
+    expect(yollar.length).toBeGreaterThan(1);
+    for (const y of yollar) {
+      expect(server, `${y}.js STATIC listesinde yok`).toContain(`'/${y}.js':`);
+    }
+  });
+
+  it('önizleme ile satış aynı hesabı kullanır', () => {
+    // İki ayrı FIFO uygulaması olsaydı önizleme ile sonuç sessizce ayrışırdı.
+    const fifo = readFileSync(new URL('../src/fifo.ts', import.meta.url), 'utf8');
+    expect(fifo).toContain('export function planFifoSale');
+    expect(fifo).not.toContain("from 'pg'");
+    expect(main).toContain("import { planFifoSale } from './fifo.js'");
+    const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
+    expect(repo).toContain("from '../fifo.js'");
+    expect(repo).not.toContain('export function planFifoSale');
+  });
+
+  it('satış penceresinde de valör hesabı çalışır', () => {
+    // İşlem formunda emir tarihi girilince satış tarihi hesaplanıyordu; satış
+    // kendi penceresine taşınınca bu davranış geride kalmıştı. Aynı yardımcıyı
+    // kullanmak iki yerin ayrışmasını engelliyor.
+    expect(main).toContain('function linkValorDates');
+    const sell = main.slice(main.indexOf('function openSellModal'),
+                            main.indexOf('function openTransactionModal'));
+    expect(sell).toContain('linkValorDates(orderDate, sellDate');
+    expect(sell).toContain("api(`/api/settlement?fundCode=");
   });
 });
 

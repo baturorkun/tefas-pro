@@ -32,6 +32,16 @@ printf 'PASS: sync help from-remote kullanımını belgeliyor\n'
 [[ "${help_output}" != *"to-remote"* ]] || fail "help ters yönü önermemeli"
 grep -q 'to-remote' "${SYNC}" && fail "betikte ters yön bulunmamalı"
 grep -qE 'psql[^|]*\$\{?REMOTE' "${SYNC}" && fail "uzak veritabanına yazan çağrı bulunmamalı"
+# Local şema restore'dan önce tamamen düşürülmeli. Yalnız dump'ın --clean
+# adımına güvenmek yetmiyor: o yalnız uzakta var olan nesneler için DROP
+# üretiyor. Henüz deploy edilmemiş bir migration'ın eklediği kısıt restore'u
+# kırıyordu — split_from_id kendine referans veren foreign key, birincil anahtar
+# indeksine bağlı.
+grep -q 'DROP SCHEMA IF EXISTS public CASCADE' "${SYNC}" \
+  || fail "restore öncesi local şema düşürülmeli"
+grep -q 'CREATE SCHEMA public' "${SYNC}" || fail "şema yeniden oluşturulmalı"
+printf 'PASS: restore öncesi local şema tamamen temizleniyor\n'
+
 printf 'PASS: ters yön (local -> remote) hiç uygulanmamış\n'
 
 run_expect_fail "hedefsiz çağrı" "hedefi gerektirir" from-remote
