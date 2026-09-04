@@ -994,7 +994,10 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
         gunAy(m.dataDate),
         run?.finishedAt === null || run?.finishedAt === undefined
           ? 'Henüz Koşmadı'
-          : `toplandı ${gunAy(run.finishedAt)} ${run.finishedAt.slice(11)} · ${String(m.trackedFunds)} fon`,
+          // Toplama günü veri günüyle aynıysa tarih tekrarlanmaz: üstte zaten
+          // yazıyor. Ayrıldıklarında yazılır, çünkü o zaman "hangi gün
+          // toplandı" ayrı bir bilgi olur.
+          : `toplandı ${gunAy(run.finishedAt) === gunAy(m.dataDate) ? '' : `${gunAy(run.finishedAt)} `}${run.finishedAt.slice(11)} · ${String(m.trackedFunds)} fon`,
         'fund',
       ),
       // Panel'in üstünde artık portföyün kendisi duruyor. Takip Listem ve
