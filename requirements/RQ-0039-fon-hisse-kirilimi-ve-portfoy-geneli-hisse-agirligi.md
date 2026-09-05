@@ -74,7 +74,24 @@ Fon çakışması: iki fonun portföyü büyük ölçüde aynıysa iki yönetim 
 ödenip tek pozisyon taşınıyor demektir. Bu, hisse listesine bakarak
 görülmeyen ama listeden hesaplanabilen bir bilgi ve doğrudan aksiyon üretiyor.
 
-Sektör kırılımı bedava geliyor: `sektorAdi` alanı zaten yanıtta.
+Yön değişimi: `eskiAgirlik` ve `fark` alanları fonların pozisyonu artırıp
+azaltmadığını söylüyor. "Fonlar geçen ay ASELS'i azaltmış" bilgisi kâr değil
+ama karar için değerli ve veri zaten yanıtta — ek maliyeti yok.
+
+Sektör kırılımı da bedava geliyor: `sektorAdi` alanı yanıtta.
+
+## Kâr dağıtımı bu RQ'da yok
+
+"ASELS'ten ne kazandık" bu veriden çıkmıyor. Fonun kârını hisselere dağıtmak
+için hissenin fiyat değişimi gerekiyor; bizde fon NAV'ı var, hisse fiyatı yok.
+Hesaplanabilir hali `ağırlık × hissenin dönem getirisi × fon değeri` olurdu ve
+bu bir yaklaşım kalırdı: ağırlıklar aylık, fon ay içinde alıp satıyor. Fon
+ASELS'i ayın ortasında satmışsa biz hâlâ tutuyormuş gibi hesaplardık.
+
+Aynı sebeple "üç gün üst üste %8 düşen hisse" alarmı da burada değil: günlük
+hisse fiyatı gerekiyor. Ölçek de küçük değil — KHA tek başına 74 hisse
+tutuyor, 39 fonda birleşik birkaç yüz hisse eder. Toplu bir fiyat ucu var mı
+araştırılmalı. Ayrı RQ.
 
 ## Kapsam
 
@@ -100,4 +117,6 @@ RQ-0038'deki kuralın aynısı.
 - Kalem verisi olmayan fonların tutarı kapsam dışı olarak yazılır, sessizce
   düşmez.
 - Sektör kırılımı da raporlanır; veri zaten geliyor.
+- Fonların bir önceki aya göre pozisyonu artırıp azalttığı gösterilir.
+- Hisse fiyatı toplanmaz ve kâr dağıtımı yapılmaz; ikisi de ayrı RQ.
 - Fon çakışması gösterilir: aynı hisseyi taşıyan fonlar ve örtüşme oranı.
