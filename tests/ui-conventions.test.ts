@@ -759,3 +759,59 @@ describe('işlem notu', () => {
     expect(http).toContain("return kirpik === '' ? null : kirpik;");
   });
 });
+
+describe('fon içeriği', () => {
+  it('varlık türü kendi paneli, kategoriyle karışmaz', () => {
+    // Kategori fonun TEFAS şemsiye tipi — etiketi. Bu, fonun içinde gerçekte
+    // ne olduğu: "hisse şemsiyesi"ndeki fonun parası repoda durabiliyor.
+    expect(main).toContain("function varlikPaneli");
+    expect(main).toContain("'Varlık Türü'");
+    expect(main).toContain("'Kategori'");
+  });
+
+  it('ağırlıkların tarihi yazılır', () => {
+    // Gizlenirse rakam bugünün kesin dağılımı sanılır; ağırlıklar fonun
+    // açıkladığı son güne ait, değer bugüne.
+    expect(main).toMatch(/ağırlıklarıyla/);
+    expect(main).toMatch(/ağırlıkları`/);
+  });
+
+  it('kapsanmayan tutar ve borçlanma söylenir', () => {
+    // Kırılıma girmeyen fon sessizce atlansaydı yüzdeler doğru görünür ama
+    // portföyün bir kısmı hiçbir yerde sayılmazdı.
+    expect(main).toContain('kırılıma girmedi');
+    expect(main).toContain('panel-note-warn');
+    // Negatif ağırlık gerçek: fon repo ile borçlanmış (ölçülen veride PBR %-69).
+    expect(main).toContain('repo ile ');
+    expect(css).toContain('.weight-bar span.neg');
+  });
+
+  it('kırılım ölçeklenmez', () => {
+    const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
+    // Ağırlıklar %100'ü aşabiliyor; ölçeklemek uydurulan bir yüzdeyi ölçülen
+    // gibi gösterirdi. Fark ekranda söyleniyor.
+    expect(repo).toContain('export function buildAssetAllocation');
+    const fn = repo.slice(repo.indexOf('export function buildAssetAllocation'),
+                          repo.indexOf('/**\n * Açık pozisyonların banka'));
+    expect(fn).not.toMatch(/normalize|ölçekle|scaleTo100/i);
+    expect(main).toContain('yuvarlanmış');
+  });
+
+  it('maliyet ve kâr/zarar varlık kırılımında yok', () => {
+    // Ağırlıklar bugüne ait; geçmişteki maliyete uygulamak "bu sınıfa şu kadar
+    // para koydun" diye yanlış bir rakam üretirdi.
+    const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
+    const fn = repo.slice(repo.indexOf('export function buildAssetAllocation'),
+                          repo.indexOf('/**\n * Açık pozisyonların banka'));
+    expect(fn).not.toContain('cost');
+    expect(fn).not.toContain('gain');
+  });
+
+  it('fon içeriği satırın altında açılır, ayrı istek atmaz', () => {
+    expect(main).toContain("class: 'expandable'");
+    expect(css).toContain('.expand-row.open');
+    expect(main).toContain("class: 'asset-list'");
+    // Veri portföy yanıtına gömülü: her açılışta istek beklemek olurdu.
+    expect(main).not.toMatch(/api\(`\/api\/funds\//);
+  });
+});

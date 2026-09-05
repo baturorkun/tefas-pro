@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAllocation, type PositionSlice } from '../src/server/repository.js';
+import {
+  buildAllocation, buildAssetAllocation,
+  type AssetWeight, type PositionSlice,
+} from '../src/server/repository.js';
 
 const dilim = (
   fundCode: string, platform: string, umbrellaType: string | null,
@@ -100,5 +103,79 @@ describe('buildAllocation', () => {
   it('değeri sıfır olan portföyde ağırlık sıfır olur', () => {
     const { byBank } = buildAllocation([dilim('AAA', 'Fiba', 'Hisse', 100, 0)]);
     expect(byBank[0]?.weightPct).toBe('0.0000');
+  });
+});
+
+describe('buildAssetAllocation', () => {
+  const d = (fundCode: string, platform: string, value: number): PositionSlice => ({
+    fundCode, platform, umbrellaType: null, cost: (value * 0.9).toFixed(2), value: value.toFixed(2),
+  });
+  const agirlik = (fundCode: string, assetClass: string, weightPct: string): AssetWeight =>
+    ({ fundCode, assetClass, weightPct });
+
+  it('fonu ağırlıklarına göre sınıflara böler', () => {
+    // "Hisse fonu" diye alınan fonun tamamı hisse değil; ancak bölerek görünür.
+    const a = buildAssetAllocation(
+      [d('THF', 'Nkolay', 1000)],
+      [agirlik('THF', 'Hisse Senedi', '88.23'), agirlik('THF', 'Ters-Repo', '11.77')],
+    );
+    expect(a.groups.map((g) => [g.key, g.value])).toEqual([
+      ['Hisse Senedi', '882.30'],
+      ['Ters-Repo', '117.70'],
+    ]);
+    expect(a.groups.map((g) => g.weightPct)).toEqual(['88.2300', '11.7700']);
+  });
+
+  it('aynı fonun farklı bankalardaki değerlerini toplar', () => {
+    // Ağırlık fona ait, pozisyona değil.
+    const a = buildAssetAllocation(
+      [d('THF', 'Nkolay', 600), d('THF', 'Fiba', 400)],
+      [agirlik('THF', 'Hisse Senedi', '100')],
+    );
+    expect(a.groups[0]?.value).toBe('1000.00');
+    expect(a.groups[0]?.funds).toBe(1);
+  });
+
+  it('değere göre sıralar, fon sayısına göre değil', () => {
+    // On küçük fon bir sınıfta olabilir ama para başka yerdedir.
+    const a = buildAssetAllocation(
+      [d('A', 'X', 100), d('B', 'X', 100), d('C', 'X', 5000)],
+      [agirlik('A', 'Tahvil', '100'), agirlik('B', 'Tahvil', '100'),
+       agirlik('C', 'Hisse Senedi', '100')],
+    );
+    expect(a.groups[0]?.key).toBe('Hisse Senedi');
+    expect(a.groups[1]?.funds).toBe(2);
+  });
+
+  it('kırılımı bilinmeyen fon sessizce düşmez', () => {
+    // Sessizce atlansaydı yüzdeler doğru görünür ama portföyün bir kısmı
+    // hiçbir yerde sayılmazdı.
+    const a = buildAssetAllocation(
+      [d('THF', 'Nkolay', 1000), d('YOK', 'Nkolay', 400)],
+      [agirlik('THF', 'Hisse Senedi', '100')],
+    );
+    expect(a.unknownValue).toBe('400.00');
+    expect(a.unknownFunds).toEqual(['YOK']);
+    expect(a.classified).toBe('1000.00');
+  });
+
+  it('yüzdeler sınıflandırılan toplam üzerinden, %100 eder', () => {
+    // Ölçülen veride üç fonun ağırlıkları yuvarlama yüzünden 100'ü aşıyor.
+    // Portföy değerine bölseydi sütun %100,45 diye toplanır, hata sanılırdı.
+    const a = buildAssetAllocation(
+      [d('IJC', 'Nkolay', 1000)],
+      [agirlik('IJC', 'Hisse Senedi', '60.45'), agirlik('IJC', 'Tahvil', '40')],
+    );
+    const toplam = a.groups.reduce((t, g) => t + Number(g.weightPct), 0);
+    expect(toplam).toBeCloseTo(100, 6);
+    // Ölçekleme yok: TL değerleri ham ağırlıkla hesaplanır.
+    expect(a.classified).toBe('1004.50');
+  });
+
+  it('ağırlığı olmayan portföyde boş döner, çökmez', () => {
+    const a = buildAssetAllocation([], []);
+    expect(a.groups).toEqual([]);
+    expect(a.classified).toBe('0.00');
+    expect(a.unknownValue).toBe('0.00');
   });
 });

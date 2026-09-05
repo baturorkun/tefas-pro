@@ -88,6 +88,8 @@ interface PortfolioRow {
   returnPct: string;
   navDate: string | null;
   asOfDate: string | null;
+  /** Fonun son açıkladığı varlık kırılımı; ağırlığa göre sıralı. */
+  assets: { assetClass: string; weightPct: string; asOfDate: string }[];
 }
 
 interface PositionSummary {
@@ -145,10 +147,25 @@ interface AllocationGroup {
   weightPct: string;
 }
 
+interface AssetGroup {
+  key: string;
+  funds: number;
+  value: string;
+  weightPct: string;
+}
+
 interface Allocation {
   total: { funds: number; lots: number; cost: string; value: string; gain: string };
   byBank: AllocationGroup[];
   byCategory: AllocationGroup[];
+  byAsset: {
+    groups: AssetGroup[];
+    classified: string;
+    unknownValue: string;
+    unknownFunds: string[];
+  };
+  assetAsOfFrom: string | null;
+  assetAsOfTo: string | null;
 }
 
 interface ClosedPositionRow {
@@ -2196,6 +2213,103 @@ function openTransactionModal(existing: Transaction | null, reload: () => void):
  * dağılmış. İkisi ayrı ekran, çünkü ölçülen veride cevapları da ayrışıyor:
  * on fon hisse senedi şemsiyesinde ama para olarak orada yalnız %19 var.
  */
+/**
+ * Varlık türü kırılımı paneli.
+ *
+ * Banka ve kategori tablolarından ayrı bir tablo çünkü sütunları farklı:
+ * maliyet ve kâr/zarar yok. Ağırlıklar bugüne ait; geçmişteki maliyete
+ * uygulamak "bu sınıfa şu kadar para koydun" diye yanlış bir rakam verirdi.
+ *
+ * Kategori paneliyle karıştırılmamalı: o, fonun TEFAS şemsiye tipi — fonun
+ * etiketi. Bu, fonun içinde gerçekte ne olduğu. "Hisse senedi şemsiyesi"ndeki
+ * bir fonun parasının bir kısmı repoda duruyor olabilir.
+ */
+function varlikPaneli(a: Allocation): HTMLElement {
+  // Negatif ağırlık gerçek: fon repo ile borçlanınca o kalem eksi çıkıyor
+  // (ölçülen veride PBR'nin reposu %-69). Çubuk eksiye inemez, o yüzden sıfır
+  // genişlikte ama kırmızı kalır — çubuğun hiç olmaması "veri yok" gibi
+  // okunurdu.
+  const bar = (pct2: string): HTMLElement => {
+    const n = Number(pct2);
+    return el('div', { class: 'weight-bar' }, [
+      el('span', {
+        class: n < 0 ? 'neg' : '',
+        style: `width:${Math.min(Math.max(n, 0), 100).toFixed(2)}%`,
+      }),
+    ]);
+  };
+  const rows = a.byAsset.groups.map((g) => el('tr', {}, [
+    el('td', {}, [g.key]),
+    el('td', { class: 'num dim' }, [`${String(g.funds)} fon`]),
+    el('td', { class: 'num' }, [money(g.value)]),
+    el('td', { class: 'weight-cell' }, [
+      el('span', { class: 'num' }, [pct(Number(g.weightPct), 1)]),
+      bar(g.weightPct),
+    ]),
+  ]));
+  const foot = el('tr', { class: 'total-row' }, [
+    el('td', {}, ['TOPLAM']),
+    el('td', { class: 'num dim' }, [`${String(a.byAsset.groups.length)} tür`]),
+    el('td', { class: 'num' }, [money(a.byAsset.classified)]),
+    el('td', { class: 'num' }, [pct(100, 1)]),
+  ]);
+
+  // Tarih gizlenirse rakam bugünün kesin dağılımı sanılır. Fonlar dağılımlarını
+  // farklı günlerde açıklıyor, o yüzden tek tarih değil aralık yazılıyor.
+  const tarih = a.assetAsOfFrom === null
+    ? 'ağırlık verisi yok'
+    : a.assetAsOfFrom === a.assetAsOfTo
+      ? `${gunAd(a.assetAsOfFrom)} ağırlıklarıyla`
+      : `${gunAd(a.assetAsOfFrom)} – ${gunAd(a.assetAsOfTo)} ağırlıklarıyla`;
+
+  // Kapsanmayan tutar sessizce düşmez: yüzdeler doğru görünürken portföyün bir
+  // kısmı hiçbir yerde sayılmamış olurdu.
+  const kapsamDisi = Number(a.byAsset.unknownValue) > 0
+    ? [el('p', { class: 'panel-note warn' }, [
+        `${money(a.byAsset.unknownValue)} kırılıma girmedi: `
+        + `${a.byAsset.unknownFunds.join(', ')} için ağırlık verisi yok.`,
+      ])]
+    : [];
+
+  // Sınıflandırılan toplam ile portföy değeri arasındaki fark yuvarlamadan
+  // gelir (ölçülen veride üç fonun ağırlıkları %100,01–100,45). Ölçekleyip
+  // gizlemek uydurulan bir yüzdeyi ölçülen gibi gösterirdi.
+  const fark = Number(a.byAsset.classified) + Number(a.byAsset.unknownValue)
+    - Number(a.total.value);
+  const yuvarlama = Math.abs(fark) >= 1
+    ? [el('p', { class: 'panel-note' }, [
+        `Sınıf toplamı portföy değerinden ${money(String(Math.abs(fark)))} `
+        + `${fark > 0 ? 'fazla' : 'eksik'}: fonların açıkladığı ağırlıklar `
+        + 'yuvarlanmış. Ölçeklenmedi, olduğu gibi gösteriliyor.',
+      ])]
+    : [];
+
+  // Negatif kalem varsa sebebi yazılır: eksi bir ağırlık ilk bakışta veri
+  // hatası gibi duruyor, oysa fonun borçlandığını söylüyor ve diğer kalemlerin
+  // neden %100'ü aştığını da açıklıyor.
+  const negatif = a.byAsset.groups.filter((g) => Number(g.value) < 0);
+  const borclanma = negatif.length === 0
+    ? []
+    : [el('p', { class: 'panel-note' }, [
+        `${negatif.map((g) => g.key).join(', ')} eksi görünüyor: fon repo ile `
+        + 'borçlanmış. Kaldıraç demek — diğer kalemler bu yüzden portföyün '
+        + 'tamamından fazlasını gösterebilir.',
+      ])];
+
+  return panel(
+    'Varlık Türü',
+    `${String(a.byAsset.groups.length)} tür · ${tarih}`,
+    el('div', { class: 'panel-body' }, [
+      a.byAsset.groups.length === 0
+        ? el('div', { class: 'empty-state' }, ['Fon içeriği verisi yok.'])
+        : table(['Varlık Türü', 'Kapsam', 'Değer', 'Ağırlık'], [...rows, foot]),
+      ...kapsamDisi,
+      ...borclanma,
+      ...yuvarlama,
+    ]),
+  );
+}
+
 async function allocationView(): Promise<Node[]> {
   const a = (await api('/api/allocation')) as Allocation;
   const value = Number(a.total.value);
@@ -2259,6 +2373,7 @@ async function allocationView(): Promise<Node[]> {
       el('div', { class: 'panel-body' }, [groupTable(a.byBank, 'Banka')])),
     panel('Kategori', `${String(a.byCategory.length)} kategori · şemsiye fon tipi`,
       el('div', { class: 'panel-body' }, [groupTable(a.byCategory, 'Kategori')])),
+    varlikPaneli(a),
     el('p', { class: 'panel-note' }, [
       'Ağırlık güncel değer üzerinden hesaplanır, fon sayısı üzerinden değil: bir ' +
       'grupta çok fon bulunması oraya çok para konduğu anlamına gelmiyor. Yalnız ' +
@@ -2694,11 +2809,18 @@ async function portfolioView(): Promise<Node[]> {
       minimumFractionDigits: digits, maximumFractionDigits: digits,
     });
 
-  const body = rows.map((r) => {
+  // Fonun içeriği satırın altında açılır: ayrı ekran açmak "THF neye yatırıyor"
+  // sorusu için fazla, tabloya sütun eklemek ise imkânsız — kırılım fon başına
+  // değişken sayıda kalem.
+  const body: HTMLElement[] = [];
+  for (const r of rows) {
     // NAV günü veri gününden eskiyse fiyat getirilerle taşınmıştır. Taşınmış
     // bir fiyat ölçülmüş gibi görünmemeli; hücre bunu söyler.
     const carried = r.navDate !== null && r.asOfDate !== null && r.navDate < r.asOfDate;
-    return el('tr', {}, [
+    const acilir = r.assets.length > 0;
+    const satir = el('tr', acilir
+      ? { class: 'expandable', role: 'button', tabindex: '0', title: 'Fon içeriğini aç' }
+      : {}, [
       el('td', {}, [
         el('span', { class: 'fund-code' }, [r.fundCode]),
         el('span', { class: 'fund-title' }, [r.title ?? '']),
@@ -2721,7 +2843,36 @@ async function portfolioView(): Promise<Node[]> {
       el('td', {}, [signed(r.gain, ' ₺')]),
       el('td', {}, [signed(r.returnPct, '')]),
     ]);
-  });
+    body.push(satir);
+    if (!acilir) continue;
+
+    // İçerik satırı baştan çizilir, görünürlüğü sınıfla açılır: her açılışta
+    // yeniden kurmak açılıp kapanınca kayma yaratıyordu.
+    const ilk = r.assets[0];
+    const icerik = el('tr', { class: 'expand-row' }, [
+      el('td', { colspan: '10' }, [
+        el('div', { class: 'asset-list' }, [
+          ...r.assets.map((x) => el('div', { class: 'asset-item' }, [
+            el('span', { class: 'asset-name' }, [x.assetClass]),
+            el('span', { class: 'asset-pct' }, [pct(Number(x.weightPct), 2)]),
+          ])),
+          el('span', { class: 'asset-date' }, [
+            ilk === undefined ? '' : `${gunAd(ilk.asOfDate)} ağırlıkları`,
+          ]),
+        ]),
+      ]),
+    ]);
+    body.push(icerik);
+    const ac = (): void => {
+      const acik = icerik.classList.toggle('open');
+      satir.classList.toggle('open', acik);
+      satir.title = acik ? 'Fon içeriğini kapat' : 'Fon içeriğini aç';
+    };
+    satir.addEventListener('click', ac);
+    satir.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ac(); }
+    });
+  }
 
   const foot = el('tr', { class: 'total-row' }, [
     el('td', {}, [`TOPLAM (${String(rows.length)})`]),

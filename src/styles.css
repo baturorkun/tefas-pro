@@ -756,3 +756,28 @@ textarea:focus  { outline: none; border-color: var(--accent);
 
 /* Panel başlığındaki eylemler: alış ve satış yan yana, aynı boyda. */
 .panel-actions { display: flex; gap: 8px; align-items: center; }
+
+/* Negatif ağırlık: fon repo ile borçlanmış. Çubuk sıfır genişlikte kalır,
+   renk durumu söyler — boş bir hücre "veri yok" gibi okunurdu. */
+.weight-bar span.neg { background: var(--danger); }
+
+/* Portföyüm'de fon içeriği: satır tıklanınca altında açılır.
+   Ayrı ekran açmak "THF neye yatırıyor" için fazla, tabloya sütun eklemek
+   imkânsız — kırılım fon başına değişken sayıda kalem. */
+.expandable { cursor: pointer; }
+.expandable:hover { background: var(--panel-hover); }
+.expandable.open { background: var(--panel-hover); }
+.expand-row { display: none; }
+.expand-row.open { display: table-row; }
+.expand-row > td { background: var(--bg-raised); padding: 10px 14px 12px; }
+.asset-list { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.asset-item {
+  display: inline-flex; gap: 7px; align-items: baseline;
+  padding: 3px 10px; border-radius: var(--radius-pill);
+  background: var(--panel); border: 1px solid var(--line-soft);
+  font-size: .76rem;
+}
+.asset-name { color: var(--text); }
+.asset-pct  { color: var(--accent); font-family: var(--mono); font-size: .72rem; }
+/* Tarih en sonda ve soluk: ağırlıklar bugüne ait değil, o gün açıklanmış. */
+.asset-date { color: var(--muted-dim); font-size: .7rem; margin-left: 4px; }

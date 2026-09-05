@@ -559,6 +559,8 @@ export interface PortfolioRow {
   /** NAV'ın kaydedildiği gün. Veri gününden eskiyse fiyat taşınmıştır. */
   navDate: string | null;
   asOfDate: string | null;
+  /** Fonun son açıkladığı varlık kırılımı; ağırlığa göre sıralı. */
+  assets: { assetClass: string; weightPct: string; asOfDate: string }[];
 }
 
 /**
@@ -569,6 +571,40 @@ export interface PortfolioRow {
  *
  * Kapanmış pozisyonlar burada yok; artık pozisyon değiller.
  */
+/**
+ * Portföydeki fonların son varlık kırılımı, fon koduna göre gruplu.
+ *
+ * Portföy yanıtına gömülür, ayrı uç açılmaz: satır açılınca istek atmak her
+ * açılışta bekleme demek olurdu ve veri zaten küçük — fon başına birkaç kalem.
+ */
+export async function fundAssetBreakdown(
+  pool: pg.Pool, userId: number,
+): Promise<Map<string, { assetClass: string; weightPct: string; asOfDate: string }[]>> {
+  const r = await pool.query<{
+    fund_code: string; asset_class: string; weight_pct: string; as_of_date: string;
+  }>(
+    `WITH son AS (
+       SELECT DISTINCT ON (a.fund_code) a.fund_code, a.as_of_date
+         FROM fact_fund_allocation a
+         JOIN analytics.position_slice p
+           ON p.fund_code = a.fund_code AND p.user_id = $1 AND p.is_open
+        ORDER BY a.fund_code, a.as_of_date DESC)
+     SELECT a.fund_code, a.asset_class, a.weight_pct::text,
+            to_char(a.as_of_date, 'YYYY-MM-DD') AS as_of_date
+       FROM fact_fund_allocation a
+       JOIN son s ON s.fund_code = a.fund_code AND s.as_of_date = a.as_of_date
+      ORDER BY a.fund_code, a.weight_pct DESC`,
+    [userId],
+  );
+  const m = new Map<string, { assetClass: string; weightPct: string; asOfDate: string }[]>();
+  for (const x of r.rows) {
+    m.set(x.fund_code, [...(m.get(x.fund_code) ?? []), {
+      assetClass: x.asset_class, weightPct: x.weight_pct, asOfDate: x.as_of_date,
+    }]);
+  }
+  return m;
+}
+
 export async function portfolioSummary(pool: pg.Pool, userId: number): Promise<PortfolioRow[]> {
   const r = await pool.query(
     `SELECT p.fund_code AS "fundCode", p.title,
@@ -588,7 +624,11 @@ export async function portfolioSummary(pool: pg.Pool, userId: number): Promise<P
      ORDER BY p.value DESC NULLS LAST`,
     [userId],
   );
-  return r.rows as PortfolioRow[];
+  const kirilim = await fundAssetBreakdown(pool, userId);
+  return r.rows.map((x) => ({
+    ...(x as PortfolioRow),
+    assets: kirilim.get((x as PortfolioRow).fundCode) ?? [],
+  }));
 }
 
 // ─── Dashboard ──────────────────────────────────────────────────────────────
@@ -1345,6 +1385,10 @@ export interface Allocation {
   total: { funds: number; lots: number; cost: string; value: string; gain: string };
   byBank: AllocationGroup[];
   byCategory: AllocationGroup[];
+  byAsset: AssetAllocation;
+  /** Ağırlıkların ait olduğu en eski ve en yeni tarih; ekranda yazılır. */
+  assetAsOfFrom: string | null;
+  assetAsOfTo: string | null;
 }
 
 /** Kategorisi boş fon burada toplanır; sessizce düşürmek dağılımı eksik gösterirdi. */
@@ -1386,8 +1430,109 @@ function groupBy(
     .sort((a, b) => Number(b.value) - Number(a.value));
 }
 
-/** Açık pozisyonların banka ve kategori kırılımı. */
-export function buildAllocation(slices: readonly PositionSlice[]): Allocation {
+export interface AssetWeight {
+  fundCode: string;
+  assetClass: string;
+  /** Yüzde: 88.23 gibi. */
+  weightPct: string;
+}
+
+export interface AssetGroup {
+  key: string;
+  /** Bu sınıfa katkı veren farklı fon sayısı. */
+  funds: number;
+  value: string;
+  weightPct: string;
+}
+
+export interface AssetAllocation {
+  groups: AssetGroup[];
+  /** Sınıflara dağıtılan toplam. Yuvarlama yüzünden portföy değerinden az
+   *  farklı olabilir; ekran ikisini de gösterir. */
+  classified: string;
+  /** Kırılımı bilinmeyen fonların değeri — sessizce düşürülmez. */
+  unknownValue: string;
+  unknownFunds: string[];
+}
+
+/**
+ * Portföyün varlık türü kırılımı: her fonun değeri kendi ağırlıklarıyla
+ * çarpılıp sınıflara dağıtılır.
+ *
+ * `groupBy` burada kullanılamaz. Orada bir dilim tek gruba giriyor; burada bir
+ * fon birden çok sınıfa bölünüyor — "hisse fonu" diye alınan THF'nin %11,8'i
+ * hisse değil ve bu ancak bölerek görünüyor.
+ *
+ * Maliyet ve kâr/zarar hesaplanmaz. Ağırlıklar bugüne ait; geçmişteki maliyete
+ * uygulamak "bu sınıfa şu kadar para koydun" diye yanlış bir rakam üretirdi.
+ * Fonun kendi kârının hangi kalemden geldiği de bu veriden bilinemiyor.
+ *
+ * Ağırlıklar %100'e tamamlanmayabilir (ölçülen veride üç fon yuvarlama
+ * yüzünden 100,01–100,45 arası). Ölçeklenmez: uydurulan bir yüzde ölçülen bir
+ * yüzde gibi görünürdü. Fark `classified` ile portföy değeri arasında kalır.
+ */
+export function buildAssetAllocation(
+  slices: readonly PositionSlice[],
+  weights: readonly AssetWeight[],
+): AssetAllocation {
+  const byFund = new Map<string, AssetWeight[]>();
+  for (const w of weights) {
+    byFund.set(w.fundCode, [...(byFund.get(w.fundCode) ?? []), w]);
+  }
+  // Fon başına değer: aynı fon birkaç bankada olabilir, ağırlık fona ait.
+  const fundValue = new Map<string, number>();
+  for (const s of slices) {
+    fundValue.set(s.fundCode, (fundValue.get(s.fundCode) ?? 0) + Number(s.value));
+  }
+
+  const buckets = new Map<string, { funds: Set<string>; value: number }>();
+  let classified = 0;
+  let unknownValue = 0;
+  const unknownFunds: string[] = [];
+  for (const [fund, value] of fundValue) {
+    const w = byFund.get(fund);
+    if (w === undefined || w.length === 0) {
+      unknownValue += value;
+      unknownFunds.push(fund);
+      continue;
+    }
+    for (const x of w) {
+      const pay = value * (Number(x.weightPct) / 100);
+      const b = buckets.get(x.assetClass) ?? { funds: new Set<string>(), value: 0 };
+      b.funds.add(fund);
+      b.value += pay;
+      buckets.set(x.assetClass, b);
+      classified += pay;
+    }
+  }
+
+  return {
+    // Yüzde sınıflandırılan toplam üzerinden: portföy değerine bölseydi
+    // yuvarlama artığı yüzünden sütun %100,05 diye toplanır ve hata gibi
+    // görünürdü. Artık `classified` ile portföy değeri arasında duruyor.
+    groups: [...buckets.entries()]
+      .map(([key, b]) => ({
+        key,
+        funds: b.funds.size,
+        value: b.value.toFixed(2),
+        weightPct: classified === 0 ? '0.0000' : ((b.value / classified) * 100).toFixed(4),
+      }))
+      .sort((a, b) => Number(b.value) - Number(a.value)),
+    classified: classified.toFixed(2),
+    unknownValue: unknownValue.toFixed(2),
+    unknownFunds: unknownFunds.sort((a, b) => a.localeCompare(b, 'tr')),
+  };
+}
+
+/**
+ * Açık pozisyonların banka ve kategori kırılımı.
+ *
+ * Varlık türü kırılımı ayrı: o ağırlık verisi de gerektiriyor ve bir fon
+ * birden çok sınıfa bölündüğü için başka bir toplama kuralı var.
+ */
+export function buildAllocation(
+  slices: readonly PositionSlice[],
+): Omit<Allocation, 'byAsset' | 'assetAsOfFrom' | 'assetAsOfTo'> {
   const cost = slices.reduce((a, s) => a + Number(s.cost), 0);
   const value = slices.reduce((a, s) => a + Number(s.value), 0);
   return {
@@ -1403,6 +1548,41 @@ export function buildAllocation(slices: readonly PositionSlice[]): Allocation {
   };
 }
 
+/**
+ * Fon başına en son açıklanan varlık ağırlıkları.
+ *
+ * Fon başına en yeni tarih alınır, tüm fonlar için tek bir tarih değil:
+ * fonlar dağılımlarını farklı günlerde açıklıyor ve ortak tarihe zorlamak
+ * geç açıklayan fonu kırılımdan tamamen düşürürdü.
+ */
+export async function assetWeights(
+  pool: pg.Pool, userId: number,
+): Promise<{ weights: AssetWeight[]; from: string | null; to: string | null }> {
+  const r = await pool.query<{
+    fund_code: string; asset_class: string; weight_pct: string; as_of_date: string;
+  }>(
+    `WITH son AS (
+       SELECT DISTINCT ON (a.fund_code) a.fund_code, a.as_of_date
+         FROM fact_fund_allocation a
+         JOIN analytics.position_slice p
+           ON p.fund_code = a.fund_code AND p.user_id = $1 AND p.is_open
+        ORDER BY a.fund_code, a.as_of_date DESC)
+     SELECT a.fund_code, a.asset_class, a.weight_pct::text,
+            to_char(a.as_of_date, 'YYYY-MM-DD') AS as_of_date
+       FROM fact_fund_allocation a
+       JOIN son s ON s.fund_code = a.fund_code AND s.as_of_date = a.as_of_date`,
+    [userId],
+  );
+  const tarihler = r.rows.map((x) => x.as_of_date).sort();
+  return {
+    weights: r.rows.map((x) => ({
+      fundCode: x.fund_code, assetClass: x.asset_class, weightPct: x.weight_pct,
+    })),
+    from: tarihler[0] ?? null,
+    to: tarihler[tarihler.length - 1] ?? null,
+  };
+}
+
 export async function allocation(pool: pg.Pool, userId: number): Promise<Allocation> {
   const r = await pool.query<{
     fund_code: string; platform: string; umbrella_type: string | null;
@@ -1413,12 +1593,17 @@ export async function allocation(pool: pg.Pool, userId: number): Promise<Allocat
      WHERE user_id = $1 AND is_open`,
     [userId],
   );
-  return buildAllocation(
-    r.rows.map((x) => ({
-      fundCode: x.fund_code, platform: x.platform, umbrellaType: x.umbrella_type,
-      cost: x.cost, value: x.value,
-    })),
-  );
+  const slices = r.rows.map((x) => ({
+    fundCode: x.fund_code, platform: x.platform, umbrellaType: x.umbrella_type,
+    cost: x.cost, value: x.value,
+  }));
+  const w = await assetWeights(pool, userId);
+  return {
+    ...buildAllocation(slices),
+    byAsset: buildAssetAllocation(slices, w.weights),
+    assetAsOfFrom: w.from,
+    assetAsOfTo: w.to,
+  };
 }
 
 // ── Collector koşumları ──────────────────────────────────────────────────────
