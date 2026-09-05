@@ -14,10 +14,90 @@ githubIssueUrl: "https://github.com/baturorkun/tefas-pro/issues/77"
 githubIssueIid: 77
 repositoryProvider: github
 ---
-# RQ-0039 - Fon hisse kirilimi ve portfoy geneli hisse agirligi
+# RQ-0039 - Fon hisse kırılımı ve portföy geneli hisse ağırlığı
 
-<!-- Describe the requirement here. -->
+Fonların hangi hisseleri tuttuğu bilinmiyor. Asıl soru tek fon değil toplam:
+beş ayrı fon aldın diye çeşitlendirdiğini sanıyorsun ama beşi de aynı hisseyi
+tutuyorsa aslında tek hisseye yüklenmişsin. Bu ancak fonların içi açılıp
+toplanınca görünüyor.
+
+RQ-0038 varlık **türü** kırılımını getirdi ("paranın %36,4'ü hisse"). Bu RQ bir
+kat daha aşağı iniyor: o hissenin hangi hisseler olduğu.
+
+## Kaynak: fvt.com.tr, araştırıldı ve doğrulandı
+
+TEFAS kalem düzeyinde veri yayımlamıyor. Fintables'ın `info` ucunda da yok —
+yalnız varlık sınıfı var, RQ-0038 onu kullanıyor.
+
+fvt.com.tr'de var ve düzgün bir JSON API'si mevcut:
+
+    GET https://fvt.com.tr/api/funds/{KOD}/distribution
+    Başlık: x-device-id: <rastgele 16 hex>
+
+Token veya oturum gerekmiyor; `x-device-id` tek özel başlık. `/api/app-token`
+diye bir uç var ama bu çağrı için gerekmiyor — doğrulandı.
+
+KHA için ölçülen yanıt: 74 kalem, her biri `hisseKodu`, `agirlik`, `sirketAdi`,
+`sektorAdi`, `eskiAgirlik`, `fark`. `meta.aciklamaTarihi` ve `oncekiAy/oncekiYil`
+alanları var.
+
+Fiyat alanları (`fiyat`, `fiyatCanli`, `degisim`, `oran`) alınmayacak: hisse
+fiyatı takip etmiyoruz ve fonun getirisi zaten NAV'dan geliyor. Aldığımız veri
+ne kadar dar olursa kaynağa bağımlılık o kadar az.
+
+## Veri aylık, günlük değil
+
+Bu tasarımı belirleyen kısıt. `meta` alanı Ağustos portföyünün 2 Eylül'de
+açıklandığını söylüyor. Ölçülen fark:
+
+    fvt   KHA hisse ağırlıkları toplamı   %90,50   (Ağustos sonu)
+    biz   KHA "Hisse Senedi" sınıfı       %81,43   (4 Eylül, günlük)
+
+Dokuz puanlık fark hata değil, zaman farkı — fon bir ay içinde hisse oranını
+düşürmüş. Sonuç: hisse listesi bir aya kadar eski olabilir ve rapor bunu
+söylemek zorunda. "Şu an THYAO'dasın" demek yanlış olur; "Ağustos sonunda
+THYAO'daydın" doğru.
+
+## Ölçeklenmez
+
+RQ-0038'deki kuralın aynısı. Ay sonu ağırlıklarını bugünkü hisse sınıfı
+oranına oturtmak sayıyı tutarlı gösterirdi ama uydurulmuş bir kesinlik olurdu.
+Ham ağırlık kullanılır, fark ekranda söylenir.
+
+## Ne raporlanır
+
+Toplu ağırlık: her hisse için TL karşılığı, portföydeki payı ve kaç fon
+üzerinden geldiği. "THYAO 214.300 ₺ · %8,4 · 6 fon" — RQ-0038'deki varlık türü
+tablosunun bir kat aşağısı, aynı biçim.
+
+Fon çakışması: iki fonun portföyü büyük ölçüde aynıysa iki yönetim ücreti
+ödenip tek pozisyon taşınıyor demektir. Bu, hisse listesine bakarak
+görülmeyen ama listeden hesaplanabilen bir bilgi ve doğrudan aksiyon üretiyor.
+
+Sektör kırılımı bedava geliyor: `sektorAdi` alanı zaten yanıtta.
+
+## Kapsam
+
+Yalnız hisse tutan fonlar kalem düzeyinde veri veriyor. Para piyasası ve
+tahvil fonlarında bu uç boş dönebilir; rapor kapsanmayan tutarı söylemeli —
+RQ-0038'deki kuralın aynısı.
 
 ## Acceptance Criteria
 
-<!-- Add one acceptance criterion per bullet. -->
+- Fon başına hisse kırılımı toplanır ve saklanır: hisse kodu, şirket adı,
+  sektör, ağırlık, önceki ay ağırlığı ve fark.
+- Fiyat ve getiri alanları alınmaz.
+- Açıklama tarihi kayıtla birlikte saklanır; hangi aya ait olduğu kaybolmaz.
+- Toplama collector'a bağlanır; ayrı bir elle çalıştırma gerektirmez.
+- İstekler `x-device-id` başlığıyla ve mevcut throttle kuralıyla atılır; fon
+  başına tek istek.
+- Kalem düzeyinde veri vermeyen fon hata sayılmaz; koşum bu yüzden düşmez.
+- Portföy geneli hisse ağırlığı raporlanır: hisse başına TL, portföydeki pay
+  ve kaç fondan geldiği.
+- Ağırlıkların hangi tarihe ait olduğu raporda yazılır ve aylık olduğu
+  belirtilir.
+- Ağırlıklar bugünkü hisse sınıfı oranına ölçeklenmez; fark söylenir.
+- Kalem verisi olmayan fonların tutarı kapsam dışı olarak yazılır, sessizce
+  düşmez.
+- Sektör kırılımı da raporlanır; veri zaten geliyor.
+- Fon çakışması gösterilir: aynı hisseyi taşıyan fonlar ve örtüşme oranı.
