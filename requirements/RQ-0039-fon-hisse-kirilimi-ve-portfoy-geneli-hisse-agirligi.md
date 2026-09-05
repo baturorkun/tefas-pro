@@ -133,6 +133,47 @@ başlangıç ama tanımı netleştirmek gerekiyor: hissenin kendi düşüşü m�
 kullanıcının o hisseye maruziyetinin kaybı mı? %8 düşen ama portföyde %0,3
 ağırlıklı bir hisse için alarm gürültüdür. Ayrı RQ.
 
+## Ekran: "Hisseler"
+
+Menüde Dağılım'ın altında, kendi ekranı. Dağılım'da zaten üç panel var (Banka,
+Kategori, Varlık Türü); hisse, sektör ve çakışmayı da oraya koymak altı
+panellik bir ekran yapardı. Ayrıca hisse düzeyinde bakmak ayrı bir iş:
+"portföyüm nasıl dağılmış" değil, "hangi hisselerdeyim, ne yapmalıyım".
+
+    HİSSELER                          Ağustos sonu ağırlıklarıyla · aylık
+    [Hisse] [Sektör]                            ara: [ASELS       ]
+
+    Hisse  Şirket        Sektör     Değer      Ağırlık  Fon   1A
+    ASELS  Aselsan       Savunma   214.300 ₺   %5,7  ▓▓▓  4  +9,8%
+    THYAO  Türk Hava Y.  Ulaştırma 187.400 ₺   %5,0  ▓▓   6  −2,1%
+    TOPLAM 287 hisse               2.140.900 ₺  %56,8
+
+Satır açılınca hisseden fona geçiş görünür — ayrı ekran değil, aynı tablonun
+açılır satırı:
+
+    ASELS ▼
+       THF  %6,1  307.930 ₺  portföyümde
+       KHA  %4,6  118.400 ₺  portföyümde
+       DFI  %3,2       —     takip listemde, pozisyon yok
+       geçen aya göre: THF azaltmış (−0,4), KHA artırmış (+1,2)
+
+Kullanım şu: bir hisse hareketlendi, hangi fonu artıracağını buradan
+buluyorsun. Pozisyonu olmayan takip listesi fonları da görünüyor çünkü cevap
+orada olabilir.
+
+Hisse ⇄ Sektör geçişi aynı tabloda bir düğme: aynı veri, iki gruplama, ayrı
+panel gerekmiyor.
+
+Çakışma ayrı panel:
+
+    THF ⇄ KHA   18 ortak hisse   %34 örtüşme   ikisi de portföyünde
+
+Portföyüm'ün açılır satırına da hisseler eklenir; RQ-0038'de varlık türleri
+konmuştu, altına ilk on hisse ve "64 hisse daha".
+
+Toplam ağırlığın %100 olmaması normaldir ve söylenmelidir: portföyün gerisi
+tahvil, repo, mevduat — hisse zaten değil.
+
 ## Kapsam
 
 Yalnız hisse tutan fonlar kalem düzeyinde veri veriyor. Para piyasası ve
@@ -160,7 +201,8 @@ RQ-0038'deki kuralın aynısı.
 - Ağırlıklar bugünkü hisse sınıfı oranına ölçeklenmez; fark söylenir.
 - Kalem verisi olmayan fonların tutarı kapsam dışı olarak yazılır, sessizce
   düşmez.
-- Sektör kırılımı da raporlanır; veri zaten geliyor.
+- Sektör kırılımı aynı tabloda bir geçişle gösterilir; ayrı panel açılmaz.
+- Hisse toplamının portföyün tamamı olmadığı ekranda belirtilir.
 - Fonların bir önceki aya göre pozisyonu artırıp azalttığı gösterilir.
 - Hisse kodundan fonlara arama yapılabilir: o hisseyi taşıyan fonlar,
   ağırlıkları ve kullanıcının o fondaki pozisyonu listelenir.
