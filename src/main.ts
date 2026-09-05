@@ -2041,20 +2041,25 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
       birikim += Number(lot.units);
       const hedef = birikim;
       const adim = adimlar.find((a) => a.id === lot.id);
-      // Kısmi satışta gerçekleşen kâr/zarar satırdakinden az: sütun lotun
-      // tamamını gösteriyor. Fark yalnız bu satırda oluşuyor — tam satılan lot
-      // kârının tamamını, dokunulmayan hiçbirini gerçekleştirir — o yüzden
-      // rakam tam buraya yazılıyor. Yoksa satırlar toplama uymuyor görünürdü.
-      const parcaKz = adim === undefined || adim.keep === 0 || lot.gain === null
-        ? null
-        : Number(lot.gain) * (adim.sell / Number(lot.units));
       const durum = adim === undefined
         ? 'Seç'
         : adim.keep > 0
-          ? `${say(adim.sell)} satılır`
-            + `${parcaKz === null ? '' : ` (${signedText(String(parcaKz), ' ₺')})`}`
-            + ` · ${say(adim.keep)} açık kalır`
+          ? `${say(adim.sell)} satılır · ${say(adim.keep)} açık kalır`
           : 'tamamı satılır';
+
+      // Kâr/zarar satırdaki adede göre: kısmi satışta lotun tamamı satılmadığı
+      // için gerçekleşen kısım da az. Seçilmemiş satırda lotun tamamı yazar —
+      // "bu satırı seçersen bu kadarı gerçekleşir" demek, sınır durumu aynı
+      // kural. Sütun her satırda tek şey söylüyor ve toplamı ayrı bir satırda
+      // tekrarlamaya gerek kalmıyor.
+      //
+      // Oran değişmiyor: satılan adet hem tutarı hem maliyeti aynı çarpanla
+      // ölçekliyor, yüzde sadeleşiyor.
+      const kzTutar = lot.gain === null
+        ? null
+        : adim === undefined
+          ? Number(lot.gain)
+          : Number(lot.gain) * (adim.sell / Number(lot.units));
       const cls = adim === undefined ? 'fifo-idle' : adim.keep > 0 ? 'fifo-part' : 'fifo-full';
 
       // Satır düğme değil, role taşıyan bir kutu: içine iptal düğmesi girecek
@@ -2066,15 +2071,12 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
         el('span', { class: 'fifo-when' }, [gunAd(lot.tradeDate)]),
         el('span', { class: 'fifo-units' }, [say(Number(lot.units))]),
         el('span', { class: 'fifo-note' }, [durum]),
-        // Kâr/zarar en sağda ve karara girmiyor: satışın ne yapacağı soldaki
-        // adet ve durum sütunlarında yazıyor, bu ikisi yalnız "hangi alım ne
-        // durumda" diye bakınca lazım oluyor. Araya girseydi asıl bilgiyle
-        // yan yana durup onunla karışırdı.
-        //
-        // Değer lotun tamamına ait, ne kadarını sattığından bağımsız. Seçime
-        // göre değişseydi adet yazarken sayılar oynardı.
+        // Kâr/zarar en sağda: satışın ne yapacağı soldaki adet ve durum
+        // sütunlarında yazıyor, bu ikisi yalnız "bu alım ne kazandırıyor" diye
+        // bakınca lazım. Araya girseydi asıl bilgiyle yan yana durup onunla
+        // karışırdı.
         el('span', { class: 'fifo-gain' }, [
-          lot.gain === null ? '—' : signed(lot.gain, ' ₺'),
+          kzTutar === null ? '—' : signed(String(kzTutar), ' ₺'),
         ]),
         // Yüzde işareti değerin sonunda: bu listede sütun başlığı yok, birimi
         // söyleyen başka bir şey de yok. Tablodaki kural tersi — orada başlık
