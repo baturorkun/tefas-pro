@@ -1524,6 +1524,287 @@ export function buildAssetAllocation(
   };
 }
 
+export interface FundStockRow {
+  stockCode: string;
+  company: string | null;
+  sector: string | null;
+  weightPct: string;
+  prevWeightPct: string | null;
+  weightChange: string | null;
+  return1w: string | null;
+  return1m: string | null;
+}
+
+export interface FundDetail {
+  fundCode: string;
+  title: string | null;
+  /** Kullanıcının bu fondaki açık değeri; pozisyon yoksa "0.00". */
+  value: string;
+  /** Varlık türü kırılımı (RQ-0038) ve ait olduğu tarih. */
+  assets: { assetClass: string; weightPct: string }[];
+  assetsAsOf: string | null;
+  /** Hisse kırılımı ve ait olduğu tarih; ikisi farklı günlere ait olabilir. */
+  stocks: FundStockRow[];
+  stocksAsOf: string | null;
+}
+
+/**
+ * Tek fonun içeriği: varlık türü kırılımı ve hisseleri.
+ *
+ * İki kırılımın tarihleri ayrı tutulur ve ayrı gösterilir: varlık türü
+ * Fintables'tan günlük geliyor, hisse kırılımı fvt'den aylık. Tek tarih
+ * yazmak birini olduğundan taze gösterirdi.
+ */
+export async function fundDetail(
+  pool: pg.Pool, userId: number, fundCode: string,
+): Promise<FundDetail | null> {
+  const kod = fundCode.toUpperCase();
+  const f = await pool.query<{ title: string | null; value: string }>(
+    `SELECT d.title,
+            coalesce((SELECT sum(p.value) FROM analytics.position_slice p
+                       WHERE p.user_id = $2 AND p.is_open AND p.fund_code = d.fund_code), 0)::text
+              AS value
+       FROM dim_fund d WHERE d.fund_code = $1`,
+    [kod, userId],
+  );
+  const row = f.rows[0];
+  if (row === undefined) return null;
+
+  const varlik = await pool.query<{ asset_class: string; weight_pct: string; as_of_date: string }>(
+    // ORDER BY tablo sütununa nitelenerek yazılır. Çıplak `weight_pct`
+    // yazılınca PostgreSQL çıktı sütununu seçiyor — o da `::text` olduğu için
+    // sıralama sayısal değil sözlüksel oluyordu: "5.62" > "55.41" > "24.46".
+    // Ölçüldü: PNU'nun en ağır kalemi Ters-Repo %55,41 iken Hazine Bonosu
+    // %5,62 en üstte görünüyordu.
+    `SELECT a.asset_class, a.weight_pct::text, to_char(a.as_of_date, 'YYYY-MM-DD') AS as_of_date
+       FROM fact_fund_allocation a
+      WHERE a.fund_code = $1
+        AND a.as_of_date = (SELECT max(as_of_date) FROM fact_fund_allocation WHERE fund_code = $1)
+      ORDER BY a.weight_pct DESC`,
+    [kod],
+  );
+
+  const hisse = await pool.query<{
+    stock_code: string; company: string | null; sector: string | null;
+    weight_pct: string; prev_weight_pct: string | null; weight_change: string | null;
+    as_of_date: string; return_1w: string | null; return_1m: string | null;
+  }>(
+    `WITH son_fiyat AS (
+       SELECT DISTINCT ON (stock_code) stock_code, close, trade_date
+         FROM fact_stock_daily ORDER BY stock_code, trade_date DESC)
+     SELECT h.stock_code, h.company, h.sector, h.weight_pct::text,
+            h.prev_weight_pct::text, h.weight_change::text,
+            to_char(h.as_of_date, 'YYYY-MM-DD') AS as_of_date,
+            CASE WHEN w.close > 0
+                 THEN round((s.close / w.close - 1) * 100, 4)::text END AS return_1w,
+            CASE WHEN m.close > 0
+                 THEN round((s.close / m.close - 1) * 100, 4)::text END AS return_1m
+       FROM fund_stock_holding h
+       LEFT JOIN son_fiyat s ON s.stock_code = h.stock_code
+       LEFT JOIN LATERAL (
+         SELECT close FROM fact_stock_daily d
+          WHERE d.stock_code = h.stock_code AND s.trade_date IS NOT NULL
+            AND d.trade_date <= s.trade_date - INTERVAL '7 days'
+          ORDER BY d.trade_date DESC LIMIT 1) w ON true
+       LEFT JOIN LATERAL (
+         SELECT close FROM fact_stock_daily d
+          WHERE d.stock_code = h.stock_code AND s.trade_date IS NOT NULL
+            AND d.trade_date <= s.trade_date - INTERVAL '30 days'
+          ORDER BY d.trade_date DESC LIMIT 1) m ON true
+      WHERE h.fund_code = $1
+        AND h.as_of_date = (SELECT max(as_of_date) FROM fund_stock_holding WHERE fund_code = $1)
+      ORDER BY h.weight_pct DESC`,
+    [kod],
+  );
+
+  return {
+    fundCode: kod,
+    title: row.title,
+    value: row.value,
+    assets: varlik.rows.map((x) => ({ assetClass: x.asset_class, weightPct: x.weight_pct })),
+    assetsAsOf: varlik.rows[0]?.as_of_date ?? null,
+    stocks: hisse.rows.map((x) => ({
+      stockCode: x.stock_code, company: x.company, sector: x.sector,
+      weightPct: x.weight_pct, prevWeightPct: x.prev_weight_pct,
+      weightChange: x.weight_change, return1w: x.return_1w, return1m: x.return_1m,
+    })),
+    stocksAsOf: hisse.rows[0]?.as_of_date ?? null,
+  };
+}
+
+export interface StockFundRow {
+  fundCode: string;
+  title: string | null;
+  weightPct: string;
+  /** Kullanıcının o fondaki değerinden bu hisseye düşen pay. */
+  value: string;
+  /** Pozisyon var mı; yoksa fon yalnız takip listesinde. */
+  owned: boolean;
+  /** Fonun bir önceki ay açıkladığı ağırlık. */
+  prevWeightPct: string | null;
+  weightChange: string | null;
+  /** Bu fonun açıklama tarihi. Fonlar aynı ayda açıklamıyor. */
+  asOfDate: string;
+}
+
+export interface StockRow {
+  stockCode: string;
+  company: string | null;
+  sector: string | null;
+  /** Portföyden bu hisseye düşen toplam TL. */
+  value: string;
+  /** Portföy değerine oranı. */
+  weightPct: string;
+  funds: StockFundRow[];
+  /** Son bir haftalık fiyat getirisi; pencere başı kapanışı yoksa null. */
+  return1w: string | null;
+  /** Son bir aylık fiyat getirisi; fiyat yoksa null. */
+  return1m: string | null;
+}
+
+export interface StockAllocation {
+  stocks: StockRow[];
+  /** Hisselere düşen toplam. Portföyün gerisi tahvil, repo, mevduat. */
+  classified: string;
+  portfolioValue: string;
+  asOfFrom: string | null;
+  asOfTo: string | null;
+  /** Kırılımı olmayan fonlar; tutarları hisse toplamına girmiyor. */
+  unknownFunds: string[];
+}
+
+/**
+ * Portföyün hisse kırılımı: her fonun değeri kendi hisse ağırlıklarıyla
+ * çarpılıp hisselere dağıtılır, sonra hisse bazında toplanır.
+ *
+ * Asıl soru tek fon değil toplam: beş ayrı fon alıp çeşitlendirdiğini
+ * sanırken beşi de aynı hisseyi tutuyor olabilir. Bu ancak fonların içi
+ * açılıp toplanınca görünüyor.
+ *
+ * Takip listesindeki pozisyonsuz fonlar da listelenir — değeri sıfır ama
+ * "hangi fonu alayım" sorusunun cevabı orada olabilir.
+ *
+ * RQ-0038'deki kural burada da geçerli: ağırlıklar ölçeklenmez. Üstelik
+ * burada fark daha büyük — hisse ağırlıkları AY SONUNA ait, değer bugüne.
+ */
+export async function stockAllocation(
+  pool: pg.Pool, userId: number,
+): Promise<StockAllocation> {
+  const r = await pool.query<{
+    stock_code: string; company: string | null; sector: string | null;
+    fund_code: string; title: string | null; weight_pct: string;
+    prev_weight_pct: string | null; weight_change: string | null;
+    fund_value: string | null;
+    as_of_date: string; return_1w: string | null; return_1m: string | null;
+  }>(
+    `WITH son AS (
+       SELECT DISTINCT ON (fund_code) fund_code, as_of_date
+         FROM fund_stock_holding ORDER BY fund_code, as_of_date DESC),
+     deger AS (
+       SELECT t.fund_code, coalesce(sum(p.value), 0) AS value
+         FROM analytics.tracked_fund t
+         LEFT JOIN analytics.position_slice p
+           ON p.fund_code = t.fund_code AND p.user_id = $1 AND p.is_open
+        GROUP BY t.fund_code),
+     -- Getiri pencereleri son kapanıştan geriye bakar. Takvim günü kullanılır,
+     -- iş günü değil: "son bir hafta" tatile denk gelse de aynı şeyi ifade
+     -- etsin. Pencerenin başındaki kapanış yoksa o getiri null kalır;
+     -- elimizdeki en eski güne göre hesaplamak "1 hafta" diye yanlış
+     -- etiketlenmiş bir sayı üretirdi.
+     son_fiyat AS (
+       SELECT DISTINCT ON (stock_code) stock_code, close, trade_date
+         FROM fact_stock_daily ORDER BY stock_code, trade_date DESC),
+     fiyat AS (
+       SELECT s.stock_code,
+              CASE WHEN h.close > 0
+                   THEN round((s.close / h.close - 1) * 100, 4)::text END AS return_1w,
+              CASE WHEN a.close > 0
+                   THEN round((s.close / a.close - 1) * 100, 4)::text END AS return_1m
+         FROM son_fiyat s
+         LEFT JOIN LATERAL (
+           SELECT close FROM fact_stock_daily d
+            WHERE d.stock_code = s.stock_code
+              AND d.trade_date <= s.trade_date - INTERVAL '7 days'
+            ORDER BY d.trade_date DESC LIMIT 1) h ON true
+         LEFT JOIN LATERAL (
+           SELECT close FROM fact_stock_daily d
+            WHERE d.stock_code = s.stock_code
+              AND d.trade_date <= s.trade_date - INTERVAL '30 days'
+            ORDER BY d.trade_date DESC LIMIT 1) a ON true)
+     SELECT h.stock_code, h.company, h.sector, h.fund_code, f.title,
+            h.weight_pct::text, h.prev_weight_pct::text, h.weight_change::text,
+            d.value::text AS fund_value,
+            to_char(h.as_of_date, 'YYYY-MM-DD') AS as_of_date,
+            p.return_1w, p.return_1m
+       FROM fund_stock_holding h
+       JOIN son s ON s.fund_code = h.fund_code AND s.as_of_date = h.as_of_date
+       JOIN deger d ON d.fund_code = h.fund_code
+       LEFT JOIN dim_fund f ON f.fund_code = h.fund_code
+       LEFT JOIN fiyat p ON p.stock_code = h.stock_code`,
+    [userId],
+  );
+
+  const toplam = await pool.query<{ value: string }>(
+    `SELECT coalesce(sum(value), 0)::text AS value FROM analytics.position_slice
+      WHERE user_id = $1 AND is_open`,
+    [userId],
+  );
+  const portfolioValue = Number(toplam.rows[0]?.value ?? 0);
+
+  const bucket = new Map<string, {
+    company: string | null; sector: string | null; value: number;
+    funds: StockFundRow[]; return1w: string | null; return1m: string | null;
+  }>();
+  const tarihler = new Set<string>();
+  for (const x of r.rows) {
+    tarihler.add(x.as_of_date);
+    const deger = Number(x.fund_value ?? 0) * (Number(x.weight_pct) / 100);
+    const b = bucket.get(x.stock_code)
+      ?? {
+        company: x.company, sector: x.sector, value: 0, funds: [],
+        return1w: x.return_1w, return1m: x.return_1m,
+      };
+    b.value += deger;
+    b.funds.push({
+      fundCode: x.fund_code, title: x.title, weightPct: x.weight_pct,
+      value: deger.toFixed(2), owned: Number(x.fund_value ?? 0) > 0,
+      prevWeightPct: x.prev_weight_pct, weightChange: x.weight_change,
+      asOfDate: x.as_of_date,
+    });
+    bucket.set(x.stock_code, b);
+  }
+
+  const kirilimiOlan = new Set(r.rows.map((x) => x.fund_code));
+  const eksik = await pool.query<{ fund_code: string }>(
+    `SELECT DISTINCT p.fund_code FROM analytics.position_slice p
+      WHERE p.user_id = $1 AND p.is_open`,
+    [userId],
+  );
+
+  const stocks = [...bucket.entries()]
+    .map(([stockCode, b]) => ({
+      stockCode, company: b.company, sector: b.sector,
+      value: b.value.toFixed(2),
+      weightPct: portfolioValue === 0 ? '0.0000'
+        : ((b.value / portfolioValue) * 100).toFixed(4),
+      funds: b.funds.sort((x, y) => Number(y.value) - Number(x.value)),
+      return1w: b.return1w,
+      return1m: b.return1m,
+    }))
+    .sort((a, b) => Number(b.value) - Number(a.value));
+
+  const siraliTarih = [...tarihler].sort();
+  return {
+    stocks,
+    classified: stocks.reduce((t, x) => t + Number(x.value), 0).toFixed(2),
+    portfolioValue: portfolioValue.toFixed(2),
+    asOfFrom: siraliTarih[0] ?? null,
+    asOfTo: siraliTarih[siraliTarih.length - 1] ?? null,
+    unknownFunds: eksik.rows.map((x) => x.fund_code)
+      .filter((f) => !kirilimiOlan.has(f)).sort((a, b) => a.localeCompare(b, 'tr')),
+  };
+}
+
 /**
  * Açık pozisyonların banka ve kategori kırılımı.
  *

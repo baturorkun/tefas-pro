@@ -137,6 +137,58 @@ interface Dashboard {
   investorRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
 }
 
+interface FundStockRow {
+  stockCode: string;
+  company: string | null;
+  sector: string | null;
+  weightPct: string;
+  prevWeightPct: string | null;
+  weightChange: string | null;
+  return1w: string | null;
+  return1m: string | null;
+}
+
+interface FundDetail {
+  fundCode: string;
+  title: string | null;
+  value: string;
+  assets: { assetClass: string; weightPct: string }[];
+  assetsAsOf: string | null;
+  stocks: FundStockRow[];
+  stocksAsOf: string | null;
+}
+
+interface StockFundRow {
+  fundCode: string;
+  title: string | null;
+  weightPct: string;
+  value: string;
+  owned: boolean;
+  prevWeightPct: string | null;
+  weightChange: string | null;
+  asOfDate: string;
+}
+
+interface StockRow {
+  stockCode: string;
+  company: string | null;
+  sector: string | null;
+  value: string;
+  weightPct: string;
+  funds: StockFundRow[];
+  return1w: string | null;
+  return1m: string | null;
+}
+
+interface StockAllocation {
+  stocks: StockRow[];
+  classified: string;
+  portfolioValue: string;
+  asOfFrom: string | null;
+  asOfTo: string | null;
+  unknownFunds: string[];
+}
+
 interface AllocationGroup {
   key: string;
   funds: number;
@@ -231,7 +283,7 @@ interface PerformanceSeries {
 
 type ViewId =
   | 'dashboard' | 'portfolio' | 'closed' | 'periods' | 'market'
-  | 'allocation' | 'transactions' | 'watchlist' | 'prefs' | 'users' | 'runs' | 'settings';
+  | 'allocation' | 'stocks' | 'transactions' | 'watchlist' | 'prefs' | 'users' | 'runs' | 'settings';
 
 const root = document.getElementById('app');
 
@@ -278,6 +330,22 @@ function errorBox(message: string): HTMLElement {
  * Kısaltmalar tek harf: b bin, m milyon. Milyar mr kalır, çünkü m
  * milyona ayrılmış.
  */
+/**
+ * Kısaltılmış tutar, tam değeri ipucunda.
+ *
+ * "129,17 b ₺" sütunu dar tutuyor ama kaç lira olduğu okunmuyordu — soruldu.
+ * Üzerine gelince tam rakam çıkıyor; sütun genişlemiyor.
+ */
+function moneyCell(raw: string | null): HTMLElement {
+  const kisa = money(raw);
+  if (raw === null || raw === '' || !Number.isFinite(Number(raw))) {
+    return el('span', {}, [kisa]);
+  }
+  return el('span', {
+    title: `${Number(raw).toLocaleString('tr-TR', { maximumFractionDigits: 2 })} ₺`,
+  }, [kisa]);
+}
+
 function money(raw: string | null): string {
   if (raw === null || raw === '') return '—';
   const n = Number(raw);
@@ -433,6 +501,12 @@ const ICON_PATHS: Record<string, string[]> = {
   // Aşağı ok: satış paylardan çıkış. Yukarı bakarken "artır" gibi okunuyordu,
   // üstelik yanındaki "Alış Ekle" artı işaretiyle aynı yöne bakıyordu.
   sell: ['M12 5v14', 'm5 12 7 7 7-7'],
+  // Büyüteç: satırın detayını açan düğme. Tanımsız bir ad verilince icon()
+  // boş bir svg üretiyor ve düğme boş kutu olarak çiziliyordu.
+  search: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z', 'm16.5 16.5 3.5 3.5'],
+  // Hisseler ekranının menü ikonu: ad ICON_PATHS'te yoksa nav düğmesi de boş
+  // kutu gösteriyordu.
+  stocks: ['M4 19h16', 'm5 16 4-6 3 4 3-7 4 5'],
   fund: ['M4 19h16', 'M7 19V9M12 19V5M17 19v-7'],
   money: ['M12 3v18', 'M16 7.5A3.5 3.5 0 0 0 12.5 5h-1a3 3 0 0 0 0 6h1a3 3 0 0 1 0 6h-1A3.5 3.5 0 0 1 8 16.5'],
   chart: ['M4 19h16', 'm5 15 4-5 3 3 6-8'],
@@ -476,9 +550,14 @@ function iconButton(name: string, label: string, kind = ''): HTMLButtonElement {
  *
  * Escape ve zemine tıklama kapatır; kapatmak kaydetmez.
  */
-function openModal(title: string, subtitle: string | null, body: Node, footer: Node[]): () => void {
+function openModal(
+  title: string, subtitle: string | null, body: Node, footer: Node[],
+  // Geniş pencere: fon içeriği 7 sütunlu ve 80 satıra kadar çıkan bir tablo,
+  // form genişliğinde okunmuyor.
+  size: 'form' | 'wide' = 'form',
+): () => void {
   const closeBtn = iconButton('close', 'Kapat');
-  const card = el('div', { class: 'modal-card modal-form' }, [
+  const card = el('div', { class: `modal-card modal-${size}` }, [
     el('div', { class: 'modal-head' }, [
       el('div', {}, [
         el('h3', { class: 'modal-title' }, [title]),
@@ -1209,15 +1288,17 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
       // Bugünkü getiri yalnız grafikte bar olarak çiziliyordu, sayı olarak
       // hiçbir yerde yazmıyordu.
       metric(
-        'Bugünkü Getiri',
+        // "Bugünkü" değil: hafta sonu ve tatilde son ölçülen gün geçmişte
+        // kalıyor ve kutu yine de dolu görünüyordu.
+        'Günlük Getiri',
         p === null || p.dayGain === null ? '—' : money(p.dayGain),
         p === null || p.dayPct === null
           ? 'Ölçülebilir gün yok'
-          // Getiri günü etiketiyle yazılır: çıplak bir tarih hangi güne ait
-          // olduğunu söylemiyordu ve kaldırılan "Son Veri" kutusunun yerini
-          // burası alıyor. Biçim Son Toplama kutusuyla aynı; aynı satırda iki
-          // ayrı biçim (2026-09-03 ile 04.09) tutarsız okunuyordu.
-          : pct(Number(p.dayPct)),
+          // Tarih yazılır: hafta sonu ya da tatil ertesi bakan kullanıcı
+          // "bugünkü" derken hangi günü gördüğünü bilmiyordu. Rakam son
+          // ÖLÇÜLEBİLİR güne ait — fiyatı eksik günler portfolio_daily'ye
+          // girmiyor — ve o gün bugün olmayabilir.
+          : `${pct(Number(p.dayPct))}${p.dayDate === null ? '' : ` · ${gunAd(p.dayDate)}`}`,
         'chart',
       ),
       metric('Portföy Değeri', p === null ? '—' : money(p.value),
@@ -2382,6 +2463,475 @@ async function allocationView(): Promise<Node[]> {
   ];
 }
 
+/**
+ * Fon detay sayfası: bir fonun içinde ne olduğu.
+ *
+ * Uygulamada bugüne dek fon detayı yoktu — fon kodu beş ekranda geçiyor ama
+ * hiçbirinde açılamıyordu. Hisse listesinin doğal yeri burası: bir fonda 80
+ * kaleme kadar çıkabiliyor ve bu Portföyüm'ün açılır satırına sığmıyor.
+ *
+ * Hangi fonun açıldığı modül düzeyinde tutulur; yönlendirme parametre
+ * taşımıyor (`appShell(me, view)`) ve Fon Hareketleri filtrelerinde de aynı
+ * desen kullanılıyor.
+ */
+/**
+ * Hisse satırının alt yazısı: şirket adı ve sektör.
+ *
+ * İkisi de boşsa hisse BIST'te değil. Kaynak yalnız BIST hisselerine şirket
+ * adı ve sektör veriyor; ölçülen veride 686 hissenin 201'i böyle ve bunların
+ * 180'inde fiyat da yok — kodları da yabancı borsalardan (7201 Nissan, 6752
+ * Panasonic, ADBE). Boş bırakmak "veri eksik" gibi okunuyordu, oysa hissenin
+ * nerede işlem gördüğünü söylüyor.
+ */
+function hisseAltYazi(company: string | null, sector: string | null): string {
+  const parcalar = [company, sector].filter((v) => v !== null && v !== '');
+  return parcalar.length === 0 ? 'yabancı borsa' : parcalar.join(' · ');
+}
+
+/**
+ * Fon içeriği penceresi.
+ *
+ * Ayrı ekran değil pencere: kullanıcı listeden birkaç fona arka arkaya
+ * bakıyor ve ekran değiştirmek listedeki kaydırma yerini kaybettiriyordu.
+ * Pencere açıkken liste arkada olduğu yerde duruyor.
+ *
+ * Geniş pencere kullanılıyor — 7 sütunlu, 80 satıra kadar çıkan bir tablo
+ * form genişliğinde okunmuyor.
+ */
+/**
+ * Fon penceresinde hisse mi sektör mü gösteriliyor.
+ *
+ * Sektör ayrı panel olarak en alta konunca görünmüyordu: hisse tablosu 82
+ * satır ve kimse altına inmiyor. Sekme başlıkta duruyor.
+ */
+let fonSekme: 'stock' | 'sector' = 'stock';
+
+async function openFundModal(fundCode: string): Promise<void> {
+  const kod = fundCode.toUpperCase();
+  let d: FundDetail;
+  try {
+    d = (await api(`/api/funds/${encodeURIComponent(kod)}`)) as FundDetail;
+  } catch (err) {
+    const kapat = el('button', { class: 'btn-ghost', type: 'button' }, ['Kapat']);
+    const k = openModal(kod, null,
+      el('div', { class: 'empty-state' }, [
+        err instanceof Error ? err.message : 'Fon içeriği alınamadı.',
+      ]), [kapat]);
+    kapat.addEventListener('click', k);
+    return;
+  }
+
+  const bar = (p: string): HTMLElement =>
+    el('div', { class: 'weight-bar' }, [
+      el('span', {
+        class: Number(p) < 0 ? 'neg' : '',
+        style: `width:${Math.min(Math.max(Number(p), 0), 100).toFixed(2)}%`,
+      }),
+    ]);
+
+  // Rozet değil tablo: rozetler yan yana dizilince ağırlıklar hizasız kalıyor
+  // ve büyüğü küçüğünden ayırt edilemiyordu. Altındaki hisse tablosuyla aynı
+  // biçim, aynı okuma alışkanlığı.
+  const varlikSatir = d.assets.map((a) => el('tr', {}, [
+    el('td', {}, [a.assetClass]),
+    el('td', { class: 'weight-cell' }, [
+      el('span', { class: 'num' }, [pct(Number(a.weightPct), 2)]),
+      bar(a.weightPct),
+    ]),
+  ]));
+
+  // Sektör kendi sütununda genişliğin dörtte birini yiyordu ve satır başına
+  // bir kez okunan bir bilgi. Şirket adının yanına alınınca sütun kalktı,
+  // pencere daraldı.
+  const rows = d.stocks.map((x) => el('tr', {}, [
+    el('td', {}, [
+      el('span', { class: 'fund-code' }, [x.stockCode]),
+      el('span', { class: 'fund-title' }, [hisseAltYazi(x.company, x.sector)]),
+    ]),
+    el('td', { class: 'weight-cell' }, [
+      el('span', { class: 'num' }, [pct(Number(x.weightPct), 2)]),
+      bar(x.weightPct),
+    ]),
+    // Fonun bu hisseyi geçen aya göre artırıp azalttığı. Kâr değil ama
+    // "fon da bu hisseye giriyor" bilgisi karar için değerli.
+    el('td', { class: 'num dim' }, [
+      x.prevWeightPct === null ? '—' : pct(Number(x.prevWeightPct), 2),
+    ]),
+    el('td', {}, [signed(x.weightChange, '')]),
+    el('td', {}, [signed(x.return1w, '%')]),
+    el('td', {}, [signed(x.return1m, '%')]),
+  ]));
+
+  const toplamAgirlik = d.stocks.reduce((t, x) => t + Number(x.weightPct), 0);
+  // Fonun günlük varlık kırılımındaki hisse payı. Kalem toplamıyla aynı şey
+  // değil: biri günlük, diğeri ay sonu açıklaması.
+  let close: () => void = () => {};
+  // Sekme değişince pencere yeniden kurulur: içerik zaten elde, yeni istek
+  // atılmıyor.
+  const fonSekmeBtn = (id: 'stock' | 'sector', etiket: string, sayi: number): HTMLElement => {
+    const b = el('button', {
+      type: 'button', class: `tab-btn${fonSekme === id ? ' tab-on' : ''}`,
+    }, [etiket, el('span', { class: 'tab-count' }, [String(sayi)])]);
+    b.addEventListener('click', () => {
+      fonSekme = id;
+      close();
+      void openFundModal(kod);
+    });
+    return b;
+  };
+
+  // Kırılım ağırlığa göre sıralı geliyor; ilk satır en ağırı.
+  const enAgirVarlik = d.assets[0];
+  const enAgir = d.stocks[0];
+
+  // Sektör dağılımı hisselerden türer, ayrı veri gerekmiyor. Fonun 82 hisseyi
+  // nereye yaydığını tek tek satırlardan çıkarmak mümkün değil: "Finansal
+  // Kiralama %41" ile "82 hisseye dağılmış" bambaşka iki portföy anlatıyor.
+  //
+  // Ağırlıklar fonun tamamına ait, hisse dilimine değil; yüzdeler kendi
+  // aralarında %100 etmez ve etmemeli — gerisi tahvil, repo, mevduat.
+  const sektorler = (() => {
+    const m = new Map<string, { weight: number; count: number }>();
+    for (const x of d.stocks) {
+      const k = x.sector ?? 'Yabancı borsa';
+      const b = m.get(k) ?? { weight: 0, count: 0 };
+      b.weight += Number(x.weightPct);
+      b.count += 1;
+      m.set(k, b);
+    }
+    return [...m.entries()].map(([key, b]) => ({ key, ...b }))
+      .sort((a, b) => b.weight - a.weight);
+  })();
+
+  const govde = el('div', { class: 'fund-modal' }, [
+    el('div', { class: 'metric-grid' }, [
+      metric('Portföyümdeki Değer', Number(d.value) === 0 ? '—' : money(d.value),
+        Number(d.value) === 0 ? 'pozisyon yok' : 'açık pozisyon', 'money'),
+      // Sabit "Hisse Senedi" değil en ağır tür: para piyasası fonunda o kutu
+      // tire gösterip yer kaplıyordu. Hisse fonunda zaten aynı sayıyı veriyor.
+      //
+      // Değer GÜNLÜK varlık kırılımından, alttaki hisse tablosunun toplamından
+      // değil. İkisi farklı tarihlere ait: aylık açıklamadaki hisselerin
+      // toplamı %97,8 derken günlük kırılım %88,23 diyordu ve yan yana
+      // durunca çelişki gibi görünüyordu. Hangisinin ne zamana ait olduğu
+      // kartın altında yazıyor.
+      metric('En Ağır Varlık', enAgirVarlik?.assetClass ?? '—',
+        enAgirVarlik === undefined
+          ? 'varlık kırılımı yok'
+          : `${pct(Number(enAgirVarlik.weightPct), 2)} · ${gunAd(d.assetsAsOf)} günlük`,
+        'portfolio'),
+      metric('Hisse Sayısı', String(d.stocks.length),
+        d.stocksAsOf === null ? 'kırılım yok' : `${gunAd(d.stocksAsOf)} · aylık`, 'chart'),
+      // En ağır kalem: fonun ne kadar yoğunlaştığını tek bakışta söylüyor.
+      // 82 hisseye yayılmış bir fonla tek hisseye %20 yüklenmiş bir fon
+      // listede aynı görünüyor, burada ayrışıyor.
+      metric('En Ağır Hisse', enAgir?.stockCode ?? '—',
+        enAgir === undefined ? '—'
+          : `${pct(Number(enAgir.weightPct), 2)} · ${enAgir.company ?? 'yabancı borsa'}`,
+        'money'),
+    ]),
+    ...(d.assets.length === 0 ? [] : [panel(
+      'Varlık Türü',
+      d.assetsAsOf === null ? 'tarih yok' : `${gunAd(d.assetsAsOf)} · günlük`,
+      el('div', { class: 'panel-body' }, [
+        table(['Varlık Türü', 'Ağırlık'], varlikSatir),
+      ]),
+    )]),
+    panel(
+      fonSekme === 'sector' ? 'Sektör' : 'Hisseler',
+      d.stocksAsOf === null
+        ? 'kırılım yok'
+        : fonSekme === 'sector'
+          ? `${String(sektorler.length)} sektör · hisselerden türetildi`
+          : `${String(d.stocks.length)} hisse · ${gunAd(d.stocksAsOf)} açıklaması · aylık`,
+      el('div', { class: 'panel-body' }, [
+        d.stocks.length === 0
+          ? el('div', { class: 'empty-state' }, [
+              'Bu fon için hisse kırılımı yok. Para piyasası ve tahvil fonları '
+              + 'hisse tutmuyor.',
+            ])
+          : fonSekme === 'sector'
+            ? table(['Sektör', 'Kapsam', 'Ağırlık'], sektorler.map((g) => el('tr', {}, [
+                el('td', {}, [g.key]),
+                el('td', { class: 'num dim' }, [`${String(g.count)} hisse`]),
+                el('td', { class: 'weight-cell' }, [
+                  el('span', { class: 'num' }, [pct(g.weight, 2)]),
+                  bar(String(g.weight)),
+                ]),
+              ])))
+            : table(['Hisse', 'Ağırlık', 'Önceki Ay', 'Fark', '1 Hafta', '1 Ay'], rows),
+        // İki kırılımın tarihi ayrı: varlık türü günlük, hisse aylık. Tek
+        // tarih yazmak birini olduğundan taze gösterirdi.
+        ...(d.stocks.length === 0 ? [] : [el('p', { class: 'panel-note' }, [
+          `Ağırlıklar fonun ${gunAd(d.stocksAsOf)} açıklamasından; toplamı `
+          + `${pct(toplamAgirlik, 1)}. Üstteki hisse oranı ${gunAd(d.assetsAsOf)} `
+          + 'günlük kırılımından geliyor, ikisi farklı tarihlere ait ve fon '
+          + 'aradaki günlerde alıp satmış olabilir.',
+        ])]),
+      ]),
+      d.stocks.length === 0 ? undefined : el('div', { class: 'tabs' }, [
+        fonSekmeBtn('stock', 'Hisse', d.stocks.length),
+        fonSekmeBtn('sector', 'Sektör', sektorler.length),
+      ]),
+    ),
+  ]);
+
+  const kapat = el('button', { class: 'btn-ghost', type: 'button' }, ['Kapat']);
+  close = openModal(
+    d.fundCode,
+    d.title ?? null,
+    govde,
+    [kapat],
+    'wide',
+  );
+  kapat.addEventListener('click', close);
+}
+
+/**
+ * Hisseler ekranı: portföyün hisse kırılımı.
+ *
+ * Dağılım ekranından farkı ölçek: orası portföy düzeyinde ("param nasıl
+ * dağılmış"), burası fonların içi açılıp toplanmış hâli ("hangi hisselerdeyim").
+ * Beş ayrı fon alıp çeşitlendirdiğini sanırken beşinin de aynı hisseyi tuttuğu
+ * ancak burada görünüyor.
+ */
+let hisseAramasi = '';
+/**
+ * Hisse mi sektör mü gösteriliyor.
+ *
+ * İkisi alt alta çizilince ekran çok uzuyordu: 686 hisse ve 28 sektör. Sekme
+ * olunca ekran kısa kalıyor ve seçim ekran yeniden çizilince de korunuyor.
+ */
+let hisseSekme: 'stock' | 'sector' = 'stock';
+
+/**
+ * Ekranı yeniden çizer. Modül düzeyinde tutulan arama ve gruplama seçimi
+ * korunduğu için sonraki çizim aynı yerden devam eder — Fon Hareketleri
+ * filtrelerindeki desenin aynısı.
+ */
+let stocksReload: () => void = () => {};
+/** Görünüm değiştirir; kabuk her kurulduğunda güncel oturuma bağlanır. */
+let gotoView: (v: ViewId) => void = () => {};
+const reloadStocks = (): void => { stocksReload(); };
+
+async function stocksView(): Promise<Node[]> {
+  const d = (await api('/api/stocks')) as StockAllocation;
+  const toplam = Number(d.portfolioValue);
+
+  // Tarih aralığı: fonlar portföylerini farklı günlerde açıklıyor. Tek tarih
+  // yazmak, en eski açıklamayı olduğundan taze göstermek olurdu.
+  const tarih = d.asOfFrom === null
+    ? 'ağırlık verisi yok'
+    : d.asOfFrom === d.asOfTo
+      ? `${gunAd(d.asOfFrom)} ağırlıklarıyla`
+      : `${gunAd(d.asOfFrom)} – ${gunAd(d.asOfTo)} ağırlıklarıyla`;
+
+  const bar = (p: string): HTMLElement =>
+    el('div', { class: 'weight-bar' }, [
+      el('span', { style: `width:${Math.min(Math.max(Number(p), 0), 100).toFixed(2)}%` }),
+    ]);
+
+  // Sektör gruplaması aynı veriden türer: hisseler sektöre toplanır. Ayrı bir
+  // uç ya da panel gerekmiyor.
+  const sektorler = (): { key: string; value: number; count: number }[] => {
+    const m = new Map<string, { value: number; kodlar: Set<string> }>();
+    for (const x of d.stocks) {
+      // Sektörü olmayanlar BIST dışı; "Bilinmiyor" demek veri eksikmiş gibi
+      // okunuyordu.
+      const k = x.sector ?? 'Yabancı borsa';
+      const b = m.get(k) ?? { value: 0, kodlar: new Set<string>() };
+      b.value += Number(x.value);
+      b.kodlar.add(x.stockCode);
+      m.set(k, b);
+    }
+    return [...m.entries()]
+      .map(([key, b]) => ({ key, value: b.value, count: b.kodlar.size }))
+      .sort((a, b) => b.value - a.value);
+  };
+
+  const sektorListesi = sektorler();
+  const anahtar = aramaAnahtari(hisseAramasi.trim());
+  const gorunen = anahtar === ''
+    ? d.stocks
+    : d.stocks.filter((x) =>
+      aramaAnahtari(`${x.stockCode} ${x.company ?? ''} ${x.sector ?? ''}`).includes(anahtar));
+
+  const arama = el('input', {
+    class: 'combo-search', placeholder: 'Hisse ara…', spellcheck: 'false',
+  }) as HTMLInputElement;
+  arama.value = hisseAramasi;
+  let zaman = 0;
+  arama.addEventListener('input', () => {
+    hisseAramasi = arama.value;
+    window.clearTimeout(zaman);
+    // Her tuşta yeniden çizmek 686 satırlık listede yazmayı tutukluyordu.
+    zaman = window.setTimeout(() => { void reloadStocks(); }, 180);
+  });
+
+  const sekme = (id: 'stock' | 'sector', etiket: string, sayi: number): HTMLElement => {
+    const b = el('button', {
+      type: 'button', class: `tab-btn${hisseSekme === id ? ' tab-on' : ''}`,
+    }, [etiket, el('span', { class: 'tab-count' }, [String(sayi)])]);
+    b.addEventListener('click', () => { hisseSekme = id; void reloadStocks(); });
+    return b;
+  };
+
+  const govde: HTMLElement[] = [];
+  if (hisseSekme === 'sector') {
+    govde.push(table(['Sektör', 'Kapsam', 'Değer', 'Ağırlık'],
+      sektorListesi.map((g) => el('tr', {}, [
+        el('td', {}, [g.key]),
+        el('td', { class: 'num dim' }, [`${String(g.count)} hisse`]),
+        el('td', { class: 'num' }, [money(g.value.toFixed(2))]),
+        el('td', { class: 'weight-cell' }, [
+          el('span', { class: 'num' }, [pct(toplam === 0 ? 0 : (g.value / toplam) * 100, 2)]),
+          bar(toplam === 0 ? '0' : String((g.value / toplam) * 100)),
+        ]),
+      ]))));
+  } else {
+    const body: HTMLElement[] = [];
+    for (const x of gorunen.slice(0, 200)) {
+      const acDugme = iconButton('search', 'Hangi fonlardan geldiğini aç');
+      const satir = el('tr', {
+        class: 'expandable', role: 'button', tabindex: '0',
+        title: 'Hangi fonlardan geldiğini aç',
+      }, [
+        el('td', {}, [
+          el('span', { class: 'fund-code' }, [x.stockCode]),
+          el('span', { class: 'fund-title' }, [hisseAltYazi(x.company, x.sector)]),
+        ]),
+        el('td', { class: 'num' }, [moneyCell(x.value)]),
+        el('td', { class: 'weight-cell' }, [
+          el('span', { class: 'num' }, [pct(Number(x.weightPct), 2)]),
+          bar(x.weightPct),
+        ]),
+        el('td', { class: 'num dim' }, [`${String(x.funds.length)} fon`]),
+        el('td', {}, [signed(x.return1w, '%')]),
+        el('td', {}, [signed(x.return1m, '%')]),
+        // Açma düğmesi: satırın kendisi de tıklanabilir ama bunu kimse tahmin
+        // etmiyor — görünür bir düğme olmadan özellik yok sayılıyor.
+        el('td', { class: 'actions' }, [acDugme]),
+      ]);
+
+      // Hisseden fona: ayrı ekran değil, aynı tablonun açılır satırı. Kullanım
+      // şu — bir hisse hareketlendi, hangi fonu artıracağını buradan buluyorsun.
+      const icerik = el('tr', { class: 'expand-row' }, [
+        el('td', { colspan: '7' }, [
+          el('div', { class: 'stock-funds' }, [
+            // Başlık satırı: sütunlar yalnız rakamdan ibaret olunca hangisinin
+            // ne olduğu okunmuyordu. Tarih de burada çünkü fonlar aynı ayda
+            // açıklamıyor — ölçülen veride PBR ve PHE 4 Ağustos, diğerleri
+            // 1-2 Eylül. Yan yana durup aynı döneme aitmiş gibi görünüyorlardı.
+            el('div', { class: 'stock-fund stock-fund-head' }, [
+              el('span', {}, ['Fon']),
+              el('span', {}, ['Ağırlık']),
+              el('span', {}, ['Değer']),
+              el('span', {}, ['Durum']),
+              // Fark ayrı sütun: iki yüzdenin çıkarması ama rengi yönü tek
+              // bakışta veriyor — yeşil artırmış, kırmızı azaltmış demek.
+              // Çıkarmayı okuyanın yapması gerekmemeli.
+              el('span', {}, ['Önceki Ay']),
+              el('span', {}, ['Fark']),
+              el('span', {}, ['Açıklama']),
+            ]),
+            ...x.funds.map((f) => el('div', {
+              class: `stock-fund${f.owned ? '' : ' stock-fund-watch'}`,
+            }, [
+            (() => {
+              // Fon koduna tıklayınca o fonun sayfası açılır: "bu hisse
+              // DFI'da varmış, DFI başka ne tutuyor" sorusunun yolu bu.
+              const b = el('button', { type: 'button', class: 'link-code' }, [f.fundCode]);
+              b.addEventListener('click', (e) => {
+                e.stopPropagation();
+                void openFundModal(f.fundCode);
+              });
+              return b;
+            })(),
+            el('span', { class: 'num' }, [pct(Number(f.weightPct), 2)]),
+            el('span', { class: 'num' }, [f.owned ? money(f.value) : '—']),
+            el('span', { class: 'dim' }, [
+              f.owned ? 'portföyümde' : 'takipte, pozisyon yok',
+            ]),
+            // Yön: fon geçen aya göre artırmış mı azaltmış mı. Kâr değil ama
+            // "fon da bu hisseye giriyor" bilgisi karar için değerli.
+              el('span', { class: 'num dim' }, [
+                f.prevWeightPct === null ? '—' : pct(Number(f.prevWeightPct), 2),
+              ]),
+              el('span', {}, [f.weightChange === null ? '' : signed(f.weightChange, '')]),
+              el('span', { class: 'dim' }, [gunAd(f.asOfDate)]),
+            ])),
+          ]),
+        ]),
+      ]);
+      body.push(satir, icerik);
+      const ac = (): void => {
+        const acik = icerik.classList.toggle('open');
+        satir.classList.toggle('open', acik);
+        acDugme.title = acik ? 'Kapat' : 'Hangi fonlardan geldiğini aç';
+      };
+      acDugme.addEventListener('click', (e) => { e.stopPropagation(); ac(); });
+      satir.addEventListener('click', ac);
+      satir.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ac(); }
+      });
+    }
+    if (body.length === 0) {
+      govde.push(el('div', { class: 'empty-state' }, ['Bu aramaya uyan hisse yok.']));
+    } else {
+      govde.push(table(
+        ['Hisse', 'Değer', 'Ağırlık', 'Kapsam', '1 Hafta', '1 Ay', ''], body));
+    }
+    // 200 satır sınırı: 686 hisse tek seferde çizilince tablo tutukluyor ve
+    // kimse altıncı yüzü okumuyor. Arama zaten var.
+    if (gorunen.length > 200) {
+      govde.push(el('p', { class: 'panel-note' }, [
+        `${String(gorunen.length)} hisseden ilk 200'ü gösteriliyor; aramayla daralt.`,
+      ]));
+    }
+  }
+
+  const oran = toplam === 0 ? 0 : (Number(d.classified) / toplam) * 100;
+  return [
+    el('div', { class: 'metric-grid' }, [
+      metric('Hisse Sayısı', String(d.stocks.length), 'farklı hisse', 'fund'),
+      metric('Hisseye Düşen', money(d.classified), `portföyün ${pct(oran, 1)}'i`, 'chart'),
+      metric('En Ağır Hisse', d.stocks[0]?.stockCode ?? '—',
+        d.stocks[0] === undefined ? '—'
+          : `${pct(Number(d.stocks[0].weightPct), 2)} · ${String(d.stocks[0].funds.length)} fon`,
+        'money'),
+      metric('Ağırlık Tarihi', d.asOfTo === null ? '—' : gunAd(d.asOfTo), 'aylık açıklama',
+        'transactions'),
+    ]),
+    panel(
+      'Hisseler',
+      `${String(d.stocks.length)} hisse · ${tarih}`,
+      el('div', { class: 'panel-body' }, [
+        ...govde,
+        // Portföyün gerisi tahvil, repo, mevduat — hisse zaten değil. Bunu
+        // yazmazsak %59,6 eksik bir hesap gibi görünür.
+        el('p', { class: 'panel-note' }, [
+          `Hisselere düşen ${money(d.classified)}, portföyün ${pct(oran, 1)}'i. `
+          + 'Gerisi tahvil, repo, mevduat gibi kalemler — hisse değil. '
+          + 'Ağırlıklar fonların ay sonu açıklamasından; bir aya kadar eski olabilir.',
+        ]),
+        ...(d.unknownFunds.length === 0 ? [] : [
+          el('p', { class: 'panel-note panel-note-warn' }, [
+            `${d.unknownFunds.join(', ')} için hisse kırılımı yok; bu fonların `
+            + 'tutarı yukarıdaki toplama girmiyor.',
+          ]),
+        ]),
+      ]),
+      el('div', { class: 'panel-actions' }, [
+        el('div', { class: 'tabs' }, [
+          sekme('stock', 'Hisse', d.stocks.length),
+          sekme('sector', 'Sektör', sektorListesi.length),
+        ]),
+        ...(hisseSekme === 'stock' ? [arama] : []),
+      ]),
+    ),
+  ];
+}
+
 async function closedView(): Promise<Node[]> {
   const rows = (await api('/api/closed')) as ClosedPositionRow[];
   const sum = (f: (r: ClosedPositionRow) => number): number => rows.reduce((a, r) => a + f(r), 0);
@@ -2809,18 +3359,17 @@ async function portfolioView(): Promise<Node[]> {
       minimumFractionDigits: digits, maximumFractionDigits: digits,
     });
 
-  // Fonun içeriği satırın altında açılır: ayrı ekran açmak "THF neye yatırıyor"
-  // sorusu için fazla, tabloya sütun eklemek ise imkânsız — kırılım fon başına
-  // değişken sayıda kalem.
   const body: HTMLElement[] = [];
   for (const r of rows) {
     // NAV günü veri gününden eskiyse fiyat getirilerle taşınmıştır. Taşınmış
     // bir fiyat ölçülmüş gibi görünmemeli; hücre bunu söyler.
     const carried = r.navDate !== null && r.asOfDate !== null && r.navDate < r.asOfDate;
-    const acilir = r.assets.length > 0;
-    const satir = el('tr', acilir
-      ? { class: 'expandable', role: 'button', tabindex: '0', title: 'Fon içeriğini aç' }
-      : {}, [
+    // Fon içeriği satırın altında açılmıyor artık: fon sayfası var ve varlık
+    // dağılımı da hisseler de orada. Satır altında açılan kutu hem tabloyu
+    // bölüyordu hem de aynı bilginin ikinci yeri oluyordu.
+    const detay = iconButton('search', 'Fon detayı');
+    detay.addEventListener('click', () => { void openFundModal(r.fundCode); });
+    body.push(el('tr', {}, [
       el('td', {}, [
         el('span', { class: 'fund-code' }, [r.fundCode]),
         el('span', { class: 'fund-title' }, [r.title ?? '']),
@@ -2842,36 +3391,8 @@ async function portfolioView(): Promise<Node[]> {
       ]),
       el('td', {}, [signed(r.gain, ' ₺')]),
       el('td', {}, [signed(r.returnPct, '')]),
-    ]);
-    body.push(satir);
-    if (!acilir) continue;
-
-    // İçerik satırı baştan çizilir, görünürlüğü sınıfla açılır: her açılışta
-    // yeniden kurmak açılıp kapanınca kayma yaratıyordu.
-    const ilk = r.assets[0];
-    const icerik = el('tr', { class: 'expand-row' }, [
-      el('td', { colspan: '10' }, [
-        el('div', { class: 'asset-list' }, [
-          ...r.assets.map((x) => el('div', { class: 'asset-item' }, [
-            el('span', { class: 'asset-name' }, [x.assetClass]),
-            el('span', { class: 'asset-pct' }, [pct(Number(x.weightPct), 2)]),
-          ])),
-          el('span', { class: 'asset-date' }, [
-            ilk === undefined ? '' : `${gunAd(ilk.asOfDate)} ağırlıkları`,
-          ]),
-        ]),
-      ]),
-    ]);
-    body.push(icerik);
-    const ac = (): void => {
-      const acik = icerik.classList.toggle('open');
-      satir.classList.toggle('open', acik);
-      satir.title = acik ? 'Fon içeriğini kapat' : 'Fon içeriğini aç';
-    };
-    satir.addEventListener('click', ac);
-    satir.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ac(); }
-    });
+      el('td', { class: 'actions' }, [detay]),
+    ]));
   }
 
   const foot = el('tr', { class: 'total-row' }, [
@@ -2881,6 +3402,7 @@ async function portfolioView(): Promise<Node[]> {
     el('td', { class: 'num' }, [num(String(value), 0)]),
     el('td', {}, [signed(String(gain), ' ₺')]),
     el('td', {}, [signed(cost === 0 ? null : String((value / cost - 1) * 100), '')]),
+    el('td', {}, []),
   ]);
 
   return [
@@ -2895,7 +3417,8 @@ async function portfolioView(): Promise<Node[]> {
       'Portföyüm',
       'Açık Pozisyonlar, Fon Başına',
       table(
-        ['Fon', 'Gün %', '1 Ay %', '3 Ay %', 'Süre', 'Adet', 'Maliyet ₺', 'Değer ₺', 'K/Z', 'K/Z %'],
+        ['Fon', 'Gün %', '1 Ay %', '3 Ay %', 'Süre', 'Adet', 'Maliyet ₺', 'Değer ₺',
+          'K/Z', 'K/Z %', ''],
         [...body, foot],
       ),
     ),
@@ -3154,6 +3677,7 @@ const VIEWS: { id: ViewId; label: string; adminOnly: boolean; crumb: string }[] 
   { id: 'portfolio', label: 'Portföyüm', adminOnly: false, crumb: 'Genel' },
   { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
   { id: 'allocation', label: 'Dağılım', adminOnly: false, crumb: 'Genel' },
+  { id: 'stocks', label: 'Hisseler', adminOnly: false, crumb: 'Genel' },
   { id: 'closed', label: 'Kapananlar', adminOnly: false, crumb: 'Genel' },
   { id: 'periods', label: 'Dönemsel Getiri', adminOnly: false, crumb: 'Genel' },
   { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },
@@ -3191,6 +3715,10 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
   const reload = (): void => {
     void appShell(me, view);
   };
+  // Hisseler ekranının arama ve gruplama düğmeleri kendini yeniden çizdiriyor;
+  // ekran her kurulduğunda güncel kabuğa bağlanır.
+  stocksReload = reload;
+  gotoView = (v: ViewId): void => { void appShell(me, v); };
   const visible = VIEWS.filter((v) => !v.adminOnly || me.type === 'admin');
   const current = visible.find((v) => v.id === view) ?? visible[0]!;
 
@@ -3248,6 +3776,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     if (current.id === 'dashboard') bodyNodes = await dashboardView(reload);
     else if (current.id === 'portfolio') bodyNodes = await portfolioView();
     else if (current.id === 'allocation') bodyNodes = await allocationView();
+    else if (current.id === 'stocks') bodyNodes = await stocksView();
     else if (current.id === 'closed') bodyNodes = await closedView();
     else if (current.id === 'periods') bodyNodes = await periodsView();
     else if (current.id === 'market') bodyNodes = await marketView(reload);

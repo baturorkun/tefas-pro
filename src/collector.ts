@@ -20,6 +20,7 @@
 import type pg from 'pg';
 
 import { FintablesClient, isCarriedForwardWindow } from './sources/fintables.js';
+import { FvtClient, chunkSymbols } from './sources/fvt.js';
 import { makePool } from './db/pool.js';
 import { upsertWatchedFunds } from './db/seed.js';
 
@@ -42,6 +43,8 @@ interface Args {
   funds: string[] | undefined;
   backfill: boolean;
   skipYield: boolean;
+  /** Hisse kırılımı ve fiyatları atla; ayrı kaynak, ayrı hata yüzeyi. */
+  skipStocks: boolean;
   flowMonths: number;
   sizeMonths: number;
 }
@@ -51,6 +54,7 @@ export function parseArgs(argv: string[]): Args {
     funds: undefined,
     backfill: false,
     skipYield: false,
+    skipStocks: false,
     flowMonths: 12,
     sizeMonths: 6,
   };
@@ -58,6 +62,7 @@ export function parseArgs(argv: string[]): Args {
     if (argv[i] === '--funds') args.funds = argv[(i += 1)]?.split(',');
     else if (argv[i] === '--backfill') args.backfill = true;
     else if (argv[i] === '--skip-yield') args.skipYield = true;
+    else if (argv[i] === '--skip-stocks') args.skipStocks = true;
     else if (argv[i] === '--flow-months') args.flowMonths = Number(argv[(i += 1)]);
     else if (argv[i] === '--size-months') args.sizeMonths = Number(argv[(i += 1)]);
   }
@@ -423,6 +428,103 @@ async function ingestSizeWindow(
   return n;
 }
 
+/**
+ * Fonların hisse kırılımı ve tutulan hisselerin günlük kapanışları.
+ *
+ * Fintables'tan gelmiyor: `info` ucu yalnız varlık sınıfı veriyor. Kaynak
+ * fvt.com.tr ve ayrı bir istemcisi var.
+ *
+ * İki adım tek yerde çünkü ikincisi birincisine bağlı: hangi hisselerin
+ * fiyatını çekeceğimizi ancak kırılımı gördükten sonra biliyoruz.
+ *
+ * Fon başına hata koşumu düşürmez. Kalem düzeyinde veri her fonda yok — para
+ * piyasası fonu hisse tutmuyor — ve bir fonun eksikliği diğerlerini
+ * engellememeli.
+ */
+export async function ingestStockHoldings(
+  pool: pg.Pool,
+  fvt: FvtClient,
+  codes: readonly string[],
+  runId: number,
+): Promise<{ upserted: number; errors: string[] }> {
+  const errors: string[] = [];
+  let upserted = 0;
+  const stocks = new Set<string>();
+
+  for (const code of codes) {
+    try {
+      const d = await fvt.distribution(code);
+      // Tarihsiz açıklama saklanmaz: as_of_date anahtarın parçası ve "ne
+      // zamana ait" bilinmeyen bir ağırlık rapora giremez.
+      if (d.asOfDate === null || d.holdings.length === 0) continue;
+      for (const h of d.holdings) stocks.add(h.stockCode);
+      const r = await pool.query(
+        `INSERT INTO fund_stock_holding
+           (fund_code, as_of_date, stock_code, company, sector, weight_pct,
+            prev_weight_pct, weight_change, ingest_run_id)
+         SELECT $1, $2::date, x.stock_code, x.company, x.sector, x.weight_pct,
+                x.prev_weight_pct, x.weight_change, $4
+         FROM jsonb_to_recordset($3::jsonb) AS x(
+           stock_code text, company text, sector text, weight_pct numeric,
+           prev_weight_pct numeric, weight_change numeric)
+         ON CONFLICT (fund_code, as_of_date, stock_code) DO UPDATE SET
+           company = EXCLUDED.company, sector = EXCLUDED.sector,
+           weight_pct = EXCLUDED.weight_pct,
+           prev_weight_pct = EXCLUDED.prev_weight_pct,
+           weight_change = EXCLUDED.weight_change,
+           ingest_run_id = EXCLUDED.ingest_run_id, updated_at = now()
+         WHERE fund_stock_holding.weight_pct IS DISTINCT FROM EXCLUDED.weight_pct`,
+        [code, d.asOfDate, JSON.stringify(d.holdings.map((h) => ({
+          stock_code: h.stockCode, company: h.company, sector: h.sector,
+          weight_pct: h.weightPct, prev_weight_pct: h.prevWeightPct,
+          weight_change: h.weightChange,
+        }))), runId],
+      );
+      upserted += r.rowCount ?? 0;
+      console.log(`  ✓ ${code} içerik: ${String(d.holdings.length)} hisse (${d.asOfDate})`);
+    } catch (err) {
+      const reason = String(err).split('\n')[0] ?? '';
+      errors.push(`${code} içerik: ${reason}`);
+      console.error(`  ✗ ${code} içerik: ${reason}`);
+    }
+    await throttle();
+  }
+
+  // Fiyatlar onarlı gruplar hâlinde: uç istek başına 10 sembol döndürüyor.
+  // Ölçüldü — 60 gönderildi, 10 geldi.
+  const gruplar = chunkSymbols([...stocks].sort());
+  console.log(`Hisse fiyatı: ${String(stocks.size)} sembol, ${String(gruplar.length)} istek`);
+  for (const g of gruplar) {
+    try {
+      // 3 ay: bir aylık getiri için 30 gün öncesinin kapanışı gerekiyor ve
+      // `1M` ~21 iş günü veriyor — pencere ucu ucuna yetmiyor, getiri boş
+      // kalıyordu. Ölçüldü. İstek sayısı değişmiyor, yalnız yanıt büyüyor.
+      const kapanislar = await fvt.chartData(g, '3M');
+      if (kapanislar.length === 0) continue;
+      const r = await pool.query(
+        `INSERT INTO fact_stock_daily (stock_code, trade_date, close, ingest_run_id)
+         SELECT x.stock_code, x.trade_date::date, x.close, $2
+         FROM jsonb_to_recordset($1::jsonb) AS x(
+           stock_code text, trade_date text, close numeric)
+         ON CONFLICT (stock_code, trade_date) DO UPDATE SET
+           close = EXCLUDED.close, ingest_run_id = EXCLUDED.ingest_run_id,
+           updated_at = now()
+         WHERE fact_stock_daily.close IS DISTINCT FROM EXCLUDED.close`,
+        [JSON.stringify(kapanislar.map((k) => ({
+          stock_code: k.stockCode, trade_date: k.tradeDate, close: k.close,
+        }))), runId],
+      );
+      upserted += r.rowCount ?? 0;
+    } catch (err) {
+      const reason = String(err).split('\n')[0] ?? '';
+      errors.push(`fiyat ${g[0] ?? ''}…: ${reason}`);
+      console.error(`  ✗ fiyat ${g.join(',')}: ${reason}`);
+    }
+    await throttle();
+  }
+  return { upserted, errors };
+}
+
 async function ingestYieldSnapshot(
   pool: pg.Pool,
   client: FintablesClient,
@@ -551,6 +653,15 @@ async function main(): Promise<void> {
         fundErrors.push(`${code}: ${reason}`);
         console.error(`  ✗ ${code}: ${reason}`);
       }
+    }
+
+    // Hisse kırılımı ve fiyatlar: ayrı kaynak (fvt), fon hatası koşumu
+    // düşürmez. Fon döngüsünden sonra çünkü hangi hisselerin fiyatını
+    // çekeceğimiz ancak kırılım görüldükten sonra belli oluyor.
+    if (!args.skipStocks) {
+      const s = await ingestStockHoldings(pool, new FvtClient(), codes, runId);
+      upserted += s.upserted;
+      fundErrors.push(...s.errors);
     }
 
     // Fon büyüklüğü: fon başına endpoint yok, toplu pencereden gelir.
