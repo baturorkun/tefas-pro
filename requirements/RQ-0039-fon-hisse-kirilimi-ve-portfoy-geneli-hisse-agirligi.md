@@ -133,62 +133,51 @@ başlangıç ama tanımı netleştirmek gerekiyor: hissenin kendi düşüşü m�
 kullanıcının o hisseye maruziyetinin kaybı mı? %8 düşen ama portföyde %0,3
 ağırlıklı bir hisse için alarm gürültüdür. Ayrı RQ.
 
-## Ekran: "İçerik"
+## İki yeni sayfa, mevcut ekranlara dokunulmadan
 
-Menüde Dağılım'ın altında, kendi ekranı. Adı "Hisseler" değil çünkü fonun
-varlık dağılımı da burada duruyor.
+Portföyüm ve Dağılım olduğu gibi kalıyor. RQ-0038'in Portföyüm'e koyduğu
+açılır satır da duruyor — küçük ve işini görüyor. Bu RQ yalnız ekliyor.
 
-Dağılım ekranı portföy düzeyinde kalıyor — "param nasıl dağılmış". Bu ekran
-fonun içine bakıyor — "bu fonda ne var, hangi hisselerdeyim". İki ayrı soru.
+**Fon sayfası.** Uygulamada bugün fon detay sayfası yok: fon kodu beş ekranda
+geçiyor ama hiçbirinde açılamıyor. Fonun kendi hisselerinin doğal yeri burası.
 
-RQ-0038'in Portföyüm'e koyduğu açılır satır **kaldırılıyor**. Bir fonda 74
-kalem olabiliyor ve bu her satırda tekrarlanınca liste okunmaz hale geliyor;
-üstelik "bu fonun içinde ne var" sorusunun iki ayrı yeri olurdu. Portföyüm'de
-satıra tıklamak bu ekranı o fonla açar, sayfada hiçbir şey açılmaz.
+    THF · TERA PORTFÖY HİSSE SENEDİ FONU
+    Hisse Senedi %88,23 · Yatırım Fonları %7,88 · Vadeli Nakit %3,87
+    ──────────────────────────────────────────────────────────────
+    Hisse  Şirket      Sektör    Ağırlık  Önceki Ay  Fark    1A
+    ASELS  Aselsan     Savunma    %6,10     %5,40    +0,70  +9,8%
+    ...74 kalem
 
-    İÇERİK                            Ağustos sonu ağırlıklarıyla · aylık
-    fon: [tümü ▾]      [Hisse] [Sektör]         ara: [ASELS       ]
+Fon kodunun geçtiği yerlerden buraya gelinir. Portföyüm'ün açılır satırına da
+bir bağlantı eklenir; oradaki varlık türleri kalır, hisse listesi buraya gider
+— 74 kalem açılır satırda okunmaz ve her fon satırında tekrarlanırdı.
+
+**Hisseler sayfası.** Farklı bir soru: tek fon değil, portföyün tamamı.
+
+    HİSSELER                          Ağustos sonu ağırlıklarıyla · aylık
+    [Hisse] [Sektör]                            ara: [ASELS       ]
 
     Hisse  Şirket        Sektör     Değer      Ağırlık  Fon   1A
     ASELS  Aselsan       Savunma   214.300 ₺   %5,7  ▓▓▓  4  +9,8%
     THYAO  Türk Hava Y.  Ulaştırma 187.400 ₺   %5,0  ▓▓   6  −2,1%
     TOPLAM 287 hisse               2.140.900 ₺  %56,8
 
-Satır açılınca hisseden fona geçiş görünür — ayrı ekran değil, aynı tablonun
-açılır satırı:
+Satır açılınca hisseden fona geçilir:
 
     ASELS ▼
        THF  %6,1  307.930 ₺  portföyümde
        KHA  %4,6  118.400 ₺  portföyümde
        DFI  %3,2       —     takip listemde, pozisyon yok
-       geçen aya göre: THF azaltmış (−0,4), KHA artırmış (+1,2)
 
 Kullanım şu: bir hisse hareketlendi, hangi fonu artıracağını buradan
 buluyorsun. Pozisyonu olmayan takip listesi fonları da görünüyor çünkü cevap
 orada olabilir.
 
-Hisse ⇄ Sektör geçişi aynı tabloda bir düğme: aynı veri, iki gruplama, ayrı
-panel gerekmiyor.
+Hisse ⇄ Sektör geçişi aynı tabloda bir düğme: aynı veri, iki gruplama.
 
 Çakışma ayrı panel:
 
     THF ⇄ KHA   18 ortak hisse   %34 örtüşme   ikisi de portföyünde
-
-Ekran iki yönden çalışır:
-
-    fon seçilince    →  o fonun varlık dağılımı + 74 hissesi
-    hisse aranınca   →  o hisseyi taşıyan fonlar
-
-Fon seçiliyken üstte RQ-0038'in varlık türü kırılımı durur, altında hisseler:
-
-    THF · TERA PORTFÖY HİSSE SENEDİ FONU
-    Hisse Senedi %88,23 · Yatırım Fonları %7,88 · Vadeli Nakit %3,87
-    ──────────────────────────────────────────────────────────────
-    ASELS  Aselsan     Savunma    %6,10  +9,8%
-    ...
-
-Böylece "fon detay" diye üçüncü bir ekran gerekmiyor: aynı ekran, fon seçili
-ya da değil.
 
 Toplam ağırlığın %100 olmaması normaldir ve söylenmelidir: portföyün gerisi
 tahvil, repo, mevduat — hisse zaten değil.
@@ -222,14 +211,11 @@ RQ-0038'deki kuralın aynısı.
   düşmez.
 - Sektör kırılımı aynı tabloda bir geçişle gösterilir; ayrı panel açılmaz.
 - Hisse toplamının portföyün tamamı olmadığı ekranda belirtilir.
-- İçerik ekranı fona göre filtrelenebilir: seçilen fonun kendi hisseleri
-  listelenir.
-- Portföyüm'de satıra tıklamak İçerik ekranını o fonla açar; sayfada hiçbir
-  şey açılmaz.
-- RQ-0038'in Portföyüm'e eklediği açılır satır kaldırılır; fonun varlık
-  dağılımı İçerik ekranına taşınır.
-- Dağılım ekranındaki portföy geneli varlık türü paneli yerinde kalır: o
-  portföy düzeyinde bir soru, bu fon düzeyinde.
+- Fon sayfası eklenir: fonun varlık dağılımı ve hisse listesi orada durur.
+- Fon koduna tıklanan yerlerden fon sayfasına gidilir.
+- Mevcut ekranlar bozulmaz: Portföyüm ve Dağılım olduğu gibi çalışmaya devam
+  eder, RQ-0038'in açılır satırı kalır; oraya yalnız fon sayfası bağlantısı
+  eklenir.
 - Fonların bir önceki aya göre pozisyonu artırıp azalttığı gösterilir.
 - Hisse kodundan fonlara arama yapılabilir: o hisseyi taşıyan fonlar,
   ağırlıkları ve kullanıcının o fondaki pozisyonu listelenir.
