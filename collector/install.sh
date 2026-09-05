@@ -26,7 +26,7 @@ Usage:
 Ortak seçenekler:
   --network <ad>        Compose ağı (varsayılan: tefas-pro-db_default)
   --collector-args <s>  Collector argümanları, ör. "--backfill"
-  --on-calendar <spec>  systemd OnCalendar (varsayılan: *-*-* 03:00:00)
+  --on-calendar <spec>  systemd OnCalendar (varsayılan: Mon..Fri 10:30:00)
   --random-delay <sn>   systemd RandomizedDelaySec (varsayılan: 1800)
 
 Yerelde systemd yoktur; local modu image'ı kurar ve bir doğrulama koşusu yapar.
@@ -68,8 +68,13 @@ ensure_env_file() {
 # boşluk ise bash source'unda komuta bölünür.
 COLLECTOR_NETWORK="tefas-pro-db_default"
 COLLECTOR_ARGS=""
-COLLECTOR_ON_CALENDAR="*-*-* 03:00:00"
-COLLECTOR_RANDOM_DELAY="1800"
+# Hafta içi sabah 10:30. Gece 03:00 değil: fon fiyatları sabah yayımlanıyor ve
+# hafta sonu yeni veri yok — gece koşum bir önceki günün verisini tekrar
+# çekiyordu. Sunucudaki timer zaten buydu; varsayılan farklı kaldığı için bir
+# sonraki kurulum saati sessizce geri alacaktı.
+COLLECTOR_ON_CALENDAR="Mon..Fri 10:30:00"
+# Dar bir pencere: 1800 sn'lik dağılım koşumu 11:00'a kadar öteliyordu.
+COLLECTOR_RANDOM_DELAY="300"
 
 # Env dosyası doğrulanır ama SOURCE EDİLMEZ: parolayı kabuk ortamına almaya
 # gerek yok, podman dosyayı kendisi okuyor.
@@ -243,7 +248,7 @@ cmd_remote() {
   COPYFILE_DISABLE=1 tar czf - -C "${PROJECT_ROOT}" \
     --exclude='._*' \
     package.json pnpm-lock.yaml tsconfig.json tsconfig.build.json \
-    src db/migrations db/watchlist.txt collector/Containerfile \
+    scripts src db/migrations db/watchlist.txt collector/Containerfile \
     | remote_ssh "tar xzf - -C '${REMOTE_DIR}'"
 
   # Parola taşıyan dosya ayrı kopyalanır ve hemen kısıtlanır.

@@ -14,7 +14,17 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.json tsconfig.build.json ./
+COPY scripts ./scripts
 COPY src ./src
+# Sürüm numarası. `pnpm build` RQ-0033'ten beri scripts/write-version.ts'i de
+# çağırıyor; klasör kopyalanmayınca build hata veriyordu. Collector CI'da
+# kurulmadığı için bu üç gün fark edilmedi ve sunucuda eski image çalışmaya
+# devam etti — yeni kodun yazdığı alanlar boş kaldı.
+#
+# Değer sunucu imajındaki gibi dışarıdan verilir: requirements klasörü build
+# context'ine girmiyor. Verilmezse yalnız ana sürüm görünür, build yine geçer.
+ARG APP_REQUIREMENT=""
+ENV APP_REQUIREMENT=$APP_REQUIREMENT
 RUN pnpm build
 
 FROM docker.io/library/node:22-bookworm-slim
