@@ -2072,8 +2072,11 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
         el('span', { class: 'fifo-gain' }, [
           lot.gain === null ? '—' : signed(lot.gain, ' ₺'),
         ]),
+        // Yüzde işareti değerin sonunda: bu listede sütun başlığı yok, birimi
+        // söyleyen başka bir şey de yok. Tablodaki kural tersi — orada başlık
+        // zaten "K/Z %" diyor ve hücrede tekrarlamak gerekmiyor.
         el('span', { class: 'fifo-pct' }, [
-          lot.gainPct === null ? '' : signed(lot.gainPct, ''),
+          lot.gainPct === null ? '' : signed(lot.gainPct, '%'),
         ]),
         el('span', { class: 'fifo-note' }, [durum]),
       ]);
@@ -2134,7 +2137,7 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
         el('span', { class: 'fifo-units' }, [say(adet)]),
         el('span', { class: 'fifo-gain' }, [eksik ? '—' : signed(String(kz), ' ₺')]),
         el('span', { class: 'fifo-pct' }, [
-          eksik || maliyet === 0 ? '' : signed(String((kz / maliyet) * 100), ''),
+          eksik || maliyet === 0 ? '' : signed(String((kz / maliyet) * 100), '%'),
         ]),
         el('span', { class: 'fifo-note' }, [
           eksik ? 'bazı alımlar değerlenemedi' : 'bugünkü fiyatla',

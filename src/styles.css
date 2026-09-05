@@ -535,7 +535,10 @@ td.actions .icon-btn + .icon-btn { margin-left: 6px; }
 .sidebar-logout:hover { background: var(--panel-hover); color: var(--text-strong); }
 
 /* Form penceresi: onay penceresiyle aynı kabuk, gövdesi kaydırılabilir. */
-.modal-card.modal-form { width: min(47.5rem, 100%); padding: 0; }
+/* 47.5rem'den 52rem'e: satış penceresindeki FIFO listesi altı sütun taşıyor
+   (tarih, adet, K/Z, oran, durum, iptal) ve durum metni uzun — "20.728
+   satılır (+1.046 ₺) · 14.386 açık kalır". Dar pencerede taşma riski vardı. */
+.modal-card.modal-form { width: min(52rem, 100%); padding: 0; }
 .modal-head     { display: flex; align-items: flex-start; justify-content: space-between;
                   gap: 1rem; padding: 1.1rem 1.2rem; border-bottom: 1px solid var(--line-soft); }
 .modal-sub      { margin: .3rem 0 0; color: var(--muted); font-size: .8125rem; line-height: 1.5; }
@@ -719,6 +722,7 @@ textarea:focus  { outline: none; border-color: var(--accent);
               border-radius: 0; background: transparent; cursor: default; }
 .fifo-total:hover { background: transparent; border-color: transparent;
                     border-top-color: var(--line); }
+.fifo-total:hover .fifo-note { border-color: transparent; color: var(--muted); }
 .fifo-total .fifo-when { color: var(--text); font-weight: 500; }
 .fifo-units { text-align: right; font-family: var(--mono); color: var(--text-strong); }
 .fifo-note { color: var(--muted); font-size: 0.78rem; }
@@ -729,7 +733,19 @@ textarea:focus  { outline: none; border-color: var(--accent);
 /* Seçilmemiş satır soluk ama okunur: seçilecek şey görünmezse seçilemez. */
 .fifo-idle { opacity: 0.72; }
 .fifo-idle .fifo-units { color: var(--muted); }
-.fifo-idle .fifo-note { color: var(--accent); }
+/* "Seç" bir eylem; çerçeveli rozet olarak çizilir. Düz yazıyken hem
+   tıklanabilir olduğu anlaşılmıyordu hem de parasal değerlerle aynı turkuazı
+   taşıdığı için sayı sanılıyordu. */
+.fifo-idle .fifo-note {
+  justify-self: start;
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: .72rem;
+  letter-spacing: .02em;
+}
+.fifo-row:hover .fifo-note { border-color: var(--accent); color: var(--accent-soft); }
 .fifo-full .fifo-note { color: var(--ok); }
 
 /* Seçimden çıkarma: yalnız seçili satırlarda çizilir, satırın tıklamasını

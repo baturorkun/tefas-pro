@@ -645,6 +645,9 @@ describe('yüzde sütunları', () => {
   it('başlığında % olmayan sütunda işaret kalır', () => {
     // Takip Listem'in başlığı yalnız "Günlük"; orada birim hücrede durmalı.
     expect(main).toContain('signed(r.dailyReturnPct)]');
+    // Satış penceresindeki lot listesinin hiç başlığı yok: birimi söyleyen
+    // başka bir şey olmadığı için işaret değerin sonunda durur.
+    expect(main).toContain("signed(lot.gainPct, '%')");
   });
 });
 
