@@ -41,9 +41,25 @@ KHA için ölçülen yanıt: 74 kalem, her biri `hisseKodu`, `agirlik`, `sirketA
 `sektorAdi`, `eskiAgirlik`, `fark`. `meta.aciklamaTarihi` ve `oncekiAy/oncekiYil`
 alanları var.
 
-Fiyat alanları (`fiyat`, `fiyatCanli`, `degisim`, `oran`) alınmayacak: hisse
-fiyatı takip etmiyoruz ve fonun getirisi zaten NAV'dan geliyor. Aldığımız veri
-ne kadar dar olursa kaynağa bağımlılık o kadar az.
+`distribution` yanıtındaki fiyat alanları (`fiyat`, `oran`, `degisim`) hep
+`0.00` dönüyor — ölçüldü, token'lı çağrıda da boş. Site bu kolonu ayrı bir
+uçtan dolduruyor.
+
+## Hisse fiyatı: ikinci uç, aynı API
+
+    GET https://fvt.com.tr/api/stocks/chart-data?symbols=ASELS,AKBNK&range=1M
+
+Günlük kapanışları tarihleriyle veriyor. Ölçülen:
+
+    ASELS   6 Ağustos 353,75 → 3 Eylül 388,25  = %+9,75  (21 gün)
+    AKBNK   6 Ağustos  67,40 → 3 Eylül  71,85  = %+6,60
+
+Uç **istek başına 10 sembolle sınırlı**: 60 sembol gönderildi, 10 döndü.
+Portföydeki fonlarda birleşik birkaç yüz farklı hisse var, yani onlu gruplar
+hâlinde ~30 istek — collector'ın bugün 39 fon için attığından az.
+
+Bu uç olmadan hisse kırılımı yarım kalıyor: "ASELS %6,1 ağırlığın var" deyip
+ASELS'in ne yaptığını söyleyememek, kullanıcıyı siteye geri gönderir.
 
 ## Veri aylık, günlük değil
 
@@ -111,10 +127,11 @@ Hesaplanabilir hali `ağırlık × hissenin dönem getirisi × fon değeri` olur
 bu bir yaklaşım kalırdı: ağırlıklar aylık, fon ay içinde alıp satıyor. Fon
 ASELS'i ayın ortasında satmışsa biz hâlâ tutuyormuş gibi hesaplardık.
 
-Aynı sebeple "üç gün üst üste %8 düşen hisse" alarmı da burada değil: günlük
-hisse fiyatı gerekiyor. Ölçek de küçük değil — KHA tek başına 74 hisse
-tutuyor, 39 fonda birleşik birkaç yüz hisse eder. Toplu bir fiyat ucu var mı
-araştırılmalı. Ayrı RQ.
+Alarm kuralları da burada değil. Günlük fiyat bu RQ ile toplanacağı için veri
+hazır olacak; eksik olan kuralın kendisi. "Üç gün üst üste %8 düştü" iyi bir
+başlangıç ama tanımı netleştirmek gerekiyor: hissenin kendi düşüşü mü, yoksa
+kullanıcının o hisseye maruziyetinin kaybı mı? %8 düşen ama portföyde %0,3
+ağırlıklı bir hisse için alarm gürültüdür. Ayrı RQ.
 
 ## Kapsam
 
@@ -126,7 +143,11 @@ RQ-0038'deki kuralın aynısı.
 
 - Fon başına hisse kırılımı toplanır ve saklanır: hisse kodu, şirket adı,
   sektör, ağırlık, önceki ay ağırlığı ve fark.
-- Fiyat ve getiri alanları alınmaz.
+- Hisse günlük kapanışları toplanır ve saklanır; getiri fiyattan hesaplanır,
+  kaynağın hazır getiri alanına bağlanılmaz.
+- Fiyat istekleri onarlı gruplar hâlinde atılır; uç istek başına 10 sembol
+  döndürüyor.
+- Fiyatı bulunamayan hisse hata sayılmaz; ağırlığı yine gösterilir.
 - Açıklama tarihi kayıtla birlikte saklanır; hangi aya ait olduğu kaybolmaz.
 - Toplama collector'a bağlanır; ayrı bir elle çalıştırma gerektirmez.
 - İstekler `x-device-id` başlığıyla ve mevcut throttle kuralıyla atılır; fon
@@ -143,6 +164,7 @@ RQ-0038'deki kuralın aynısı.
 - Fonların bir önceki aya göre pozisyonu artırıp azalttığı gösterilir.
 - Hisse kodundan fonlara arama yapılabilir: o hisseyi taşıyan fonlar,
   ağırlıkları ve kullanıcının o fondaki pozisyonu listelenir.
+- Hisse başına getiri gösterilir; hangi dönemin getirisi olduğu yazılır.
 - Aramada takip listesindeki pozisyonsuz fonlar da görünür; "hangi fonu
   alayım" sorusunun cevabı orada olabilir.
 - Aramanın takip edilen fonlarla sınırlı olduğu belirtilir.
