@@ -168,8 +168,21 @@ panel gerekmiyor.
 
     THF ⇄ KHA   18 ortak hisse   %34 örtüşme   ikisi de portföyünde
 
-Portföyüm'ün açılır satırına da hisseler eklenir; RQ-0038'de varlık türleri
-konmuştu, altına ilk on hisse ve "64 hisse daha".
+Ekran iki yönden çalışır; fon filtresi de var:
+
+    fon filtresi THF   →  THF'nin 74 hissesi, ağırlıklarıyla
+    hisse ara ASELS    →  ASELS'i taşıyan fonlar
+
+Böylece "fon detay" diye ayrı bir ekran gerekmiyor. Aynı veri, aynı tablo,
+iki giriş yönü.
+
+Portföyüm'ün açılır satırına hisse listesi konmaz: bir fonda 74 kalem
+olabiliyor ve bu her satır için tekrarlanır — açılır satır okunmaz hale
+gelirdi. Orada RQ-0038'in varlık türleri kalır, altına yalnız bir bağlantı:
+
+    → 74 hisse
+
+Bağlantı Hisseler ekranını o fonla filtreli açar.
 
 Toplam ağırlığın %100 olmaması normaldir ve söylenmelidir: portföyün gerisi
 tahvil, repo, mevduat — hisse zaten değil.
@@ -203,6 +216,10 @@ RQ-0038'deki kuralın aynısı.
   düşmez.
 - Sektör kırılımı aynı tabloda bir geçişle gösterilir; ayrı panel açılmaz.
 - Hisse toplamının portföyün tamamı olmadığı ekranda belirtilir.
+- Hisseler ekranı fona göre de filtrelenebilir: seçilen fonun kendi hisseleri
+  listelenir.
+- Portföyüm'ün açılır satırına hisse listesi konmaz; oradan Hisseler ekranına
+  fon filtresiyle bağlantı verilir.
 - Fonların bir önceki aya göre pozisyonu artırıp azalttığı gösterilir.
 - Hisse kodundan fonlara arama yapılabilir: o hisseyi taşıyan fonlar,
   ağırlıkları ve kullanıcının o fondaki pozisyonu listelenir.
