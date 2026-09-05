@@ -140,6 +140,26 @@ jobs:
           podman build --format docker -f server/Containerfile \
             --build-arg "APP_REQUIREMENT=${rq}" \
             -t "localhost/tefas-pro-server:${SLOT}" .
+          echo "rq=${rq}" >> "$GITHUB_OUTPUT"
+        id: build
+
+      # Collector ayrı bir image ve daha önce yalnız collector/install.sh ile
+      # elle kuruluyordu. Sonucu şuydu: RQ-0033 build'i bozdu, üç gün kimse
+      # fark etmedi, sunucu eski image ile koştu ve yeni kodun yazdığı alanlar
+      # boş kaldı. Belirti veriyle ilgili göründü, sebep bir build hatasıydı ve
+      # hata hiçbir yere düşmüyordu. Burada kurulunca bozuk build workflow'u
+      # düşürür.
+      #
+      # Slot etiketiyle kurulur: branch dağıtımları yan yana koşuyor ve
+      # birbirinin image'ını ezmemeli.
+      - name: Build collector image
+        env:
+          SLOT: ${{ steps.target.outputs.slot }}
+          RQ: ${{ steps.build.outputs.rq }}
+        run: |
+          podman build --format docker -f collector/Containerfile \
+            --build-arg "APP_REQUIREMENT=${RQ}" \
+            -t "localhost/tefas-pro-collector:${SLOT}" .
 
       - name: Write runtime environment
         env:
@@ -186,6 +206,39 @@ jobs:
             --restart unless-stopped \
             -p "${PORT}:8282" \
             "localhost/tefas-pro-server:${SLOT}" >/dev/null
+
+      # Doğrulama koşum yapmaz: gerçek bir toplama dış servise onlarca istek
+      # atar ve her deploy'da tekrarlanamaz. Aranan şey image'ın ayağa kalkıp
+      # veritabanına bağlanabilmesi — install.sh'in yaptığının aynısı. Build
+      # zaten geçti, buradaki hata çalışma zamanı bağımlılığını yakalar
+      # (impit'in native binary'si gibi).
+      - name: Verify collector image
+        env:
+          SLOT: ${{ steps.target.outputs.slot }}
+          NETWORK: ${{ vars.TEFAS_NETWORK || 'tefas-pro-db_default' }}
+        run: |
+          podman run --rm --network "$NETWORK" \
+            --env-file "${RUNNER_WORKSPACE}/tefas-pro-deployments/${SLOT}/runtime.env" \
+            --entrypoint node "localhost/tefas-pro-collector:${SLOT}" -e \
+            'const{Pool}=require("pg");new Pool({connectionString:process.env.DATABASE_URL})
+             .query("select 1").then(()=>process.exit(0))
+             .catch(e=>{console.error(String(e));process.exit(1)})'
+          echo "Collector image çalışıyor ve veritabanına bağlanabiliyor."
+
+      # Timer `:latest` etiketini çalıştırıyor ve yalnız main için anlamlı.
+      # Branch dağıtımı da etiketleseydi bir branch'in collector'ı üretimde
+      # zamanlanmış koşumu devralırdı.
+      #
+      # systemd unit'lerine dokunulmuyor: timer ve service dosyaları
+      # collector/install.sh'in sorumluluğunda. İki yerde duran systemd
+      # şablonu er geç birbirinden ayrışır.
+      - name: Publish collector image for the timer
+        if: steps.target.outputs.slot == 'main'
+        run: |
+          podman tag "localhost/tefas-pro-collector:main" \
+                     "localhost/tefas-pro-collector:latest"
+          echo "Timer bir sonraki koşumda yeni image ile çalışacak."
+          systemctl list-timers tefas-pro-collector.timer --all --no-pager 2>/dev/null | head -2 || true
 
       - name: Verify deployment
         env:
@@ -243,6 +296,9 @@ jobs:
           fi
           podman rm -f "tefas-pro-${slot}" >/dev/null 2>&1 || true
           podman rmi -f "localhost/tefas-pro-server:${slot}" >/dev/null 2>&1 || true
+          # Collector image'ı da slot etiketli; bırakılırsa sunucuda her branch
+          # için bir image birikir. `:latest` main'e ait, ona dokunulmaz.
+          podman rmi -f "localhost/tefas-pro-collector:${slot}" >/dev/null 2>&1 || true
           if [ -r "$DB_ENV_FILE" ]; then
             u="$(sed -n 's/^TEFAS_POSTGRES_USER=//p' "$DB_ENV_FILE" | head -1)"; u="${u:-tefas}"
             m="$(sed -n 's/^TEFAS_POSTGRES_DB=//p' "$DB_ENV_FILE" | head -1)"; m="${m:-tefas}"
