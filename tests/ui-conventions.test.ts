@@ -505,6 +505,39 @@ describe('FIFO satış', () => {
     expect(sell).toMatch(/e\.key === 'Enter' \|\| e\.key === ' '/);
   });
 
+  it('her lotun kâr/zararı ve oranı görünür', () => {
+    const sell = main.slice(main.indexOf('function openSellModal'),
+                            main.indexOf('function openTransactionModal'));
+    expect(sell).toContain("class: 'fifo-gain'");
+    expect(sell).toContain("class: 'fifo-pct'");
+    expect(css).toContain('.fifo-gain');
+    // Sütun lotun tamamına ait; seçime göre değişseydi adet yazarken sayı
+    // oynar ve "hangi alım ne durumda" okunamazdı.
+    expect(sell).toContain('lot.gain === null');
+  });
+
+  it('satış ne kadar kâr/zarar gerçekleştiriyor yazılır', () => {
+    const sell = main.slice(main.indexOf('function openSellModal'),
+                            main.indexOf('function openTransactionModal'));
+    expect(sell).toContain("'fifo-row fifo-total'");
+    expect(sell).toContain("'Gerçekleşecek'");
+    // Kısmi satışta gerçekleşen kısım lot toplamından az; fark tam o satırda
+    // yazılmazsa satırlar toplama uymuyor görünür.
+    expect(sell).toContain('const parcaKz =');
+    expect(sell).toContain('${parcaKz === null');
+    // Ölçülemeyen lot varsa toplam verilmez: eksiği sıfır saymak yanlış bir
+    // "şu kadar kazanacaksın" üretirdi.
+    expect(sell).toContain('const eksik = adimlar.some(');
+    expect(sell).toContain('bazı alımlar değerlenemedi');
+  });
+
+  it('işaretli sayı metni ve kutusu tek biçimden gelir', () => {
+    // İki ayrı biçimlendirme olsaydı cümle içindeki tutar ile sütundaki tutar
+    // farklı hane sayısıyla yazılabilirdi.
+    expect(main).toContain('function signedText');
+    expect(main).toContain('[signedText(raw, suffix)]');
+  });
+
   it('seçilen satır geri alınabilir', () => {
     const sell = main.slice(main.indexOf('function openSellModal'),
                             main.indexOf('function openTransactionModal'));

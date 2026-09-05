@@ -328,19 +328,26 @@ function people(raw: string | null): string {
  * İşaretli sayı. Yüzdede iki ondalık kalır — orada anlam taşıyor; TL
  * tutarlarında kuruş gösterilmez, sütunu okumayı zorlaştırıyordu.
  */
-function signed(raw: string | null, suffix = '%'): HTMLElement {
-  if (raw === null || raw === '') return el('span', { class: 'num' }, ['—']);
+/**
+ * İşaretli sayının metni. Renkli kutusu olmadan, cümle içine girebilsin diye
+ * ayrı: `signed` bunu bir span'a sarıyor, ikisi aynı biçimi üretiyor.
+ */
+function signedText(raw: string, suffix = '%'): string {
   const n = Number(raw);
-  const cls = n > 0 ? 'num pos' : n < 0 ? 'num neg' : 'num';
   const sign = n > 0 ? '+' : '';
   // Yüzde ve puan hep iki hane: sütun halinde dizildiklerinde sondaki sıfır
   // düşerse rakamlar kayıyor ve "+5,4" ile "+0,93" hizasız duruyor.
   const digits = suffix.includes('₺') ? 0 : 2;
-  return el('span', { class: cls }, [
-    `${sign}${n.toLocaleString('tr-TR', {
-      minimumFractionDigits: digits, maximumFractionDigits: digits,
-    })}${suffix}`,
-  ]);
+  return `${sign}${n.toLocaleString('tr-TR', {
+    minimumFractionDigits: digits, maximumFractionDigits: digits,
+  })}${suffix}`;
+}
+
+function signed(raw: string | null, suffix = '%'): HTMLElement {
+  if (raw === null || raw === '') return el('span', { class: 'num' }, ['—']);
+  const n = Number(raw);
+  const cls = n > 0 ? 'num pos' : n < 0 ? 'num neg' : 'num';
+  return el('span', { class: cls }, [signedText(raw, suffix)]);
 }
 
 /**
@@ -2034,10 +2041,19 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
       birikim += Number(lot.units);
       const hedef = birikim;
       const adim = adimlar.find((a) => a.id === lot.id);
+      // Kısmi satışta gerçekleşen kâr/zarar satırdakinden az: sütun lotun
+      // tamamını gösteriyor. Fark yalnız bu satırda oluşuyor — tam satılan lot
+      // kârının tamamını, dokunulmayan hiçbirini gerçekleştirir — o yüzden
+      // rakam tam buraya yazılıyor. Yoksa satırlar toplama uymuyor görünürdü.
+      const parcaKz = adim === undefined || adim.keep === 0 || lot.gain === null
+        ? null
+        : Number(lot.gain) * (adim.sell / Number(lot.units));
       const durum = adim === undefined
         ? 'Seç'
         : adim.keep > 0
-          ? `${say(adim.sell)} satılır · ${say(adim.keep)} açık kalır`
+          ? `${say(adim.sell)} satılır`
+            + `${parcaKz === null ? '' : ` (${signedText(String(parcaKz), ' ₺')})`}`
+            + ` · ${say(adim.keep)} açık kalır`
           : 'tamamı satılır';
       const cls = adim === undefined ? 'fifo-idle' : adim.keep > 0 ? 'fifo-part' : 'fifo-full';
 
@@ -2049,6 +2065,16 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
       }, [
         el('span', { class: 'fifo-when' }, [gunAd(lot.tradeDate)]),
         el('span', { class: 'fifo-units' }, [say(Number(lot.units))]),
+        // Lotun kendi kâr/zararı: ne kadarını sattığından bağımsız, lota ait
+        // bir özellik. Seçime göre değişseydi adet yazarken sayı oynardı ve
+        // "hangi alım ne durumda" sorusu okunamazdı; ne kadarının
+        // gerçekleşeceği aşağıdaki toplamda duruyor.
+        el('span', { class: 'fifo-gain' }, [
+          lot.gain === null ? '—' : signed(lot.gain, ' ₺'),
+        ]),
+        el('span', { class: 'fifo-pct' }, [
+          lot.gainPct === null ? '' : signed(lot.gainPct, ''),
+        ]),
         el('span', { class: 'fifo-note' }, [durum]),
       ]);
       const sec = (): void => {
@@ -2083,6 +2109,38 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
         satir.append(el('span', { class: 'fifo-undo-gap' }));
       }
       plan.append(satir);
+    }
+
+    // Bu satışta gerçekleşecek kâr/zarar. Satır başındaki rakamlar lotun
+    // tamamına ait; kısmi satışta gerçekleşen kısım daha az oluyor ve fark
+    // yalnız burada görünüyor.
+    //
+    // Ölçülemeyen lot varsa toplam verilmez: eksik veriyi sıfır saymak
+    // "bu satıştan şu kadar kazanacaksın" diye yanlış bir rakam üretirdi.
+    if (adimlar.length > 0) {
+      const eksik = adimlar.some((a) => {
+        const l = liste.find((t) => t.id === a.id);
+        return l === undefined || l.gain === null || l.cost === null;
+      });
+      const oranli = (a: { id: number; sell: number }, alan: 'gain' | 'cost'): number => {
+        const l = liste.find((t) => t.id === a.id);
+        if (l === undefined) return 0;
+        return Number(l[alan]) * (a.sell / Number(l.units));
+      };
+      const kz = adimlar.reduce((t, a) => t + oranli(a, 'gain'), 0);
+      const maliyet = adimlar.reduce((t, a) => t + oranli(a, 'cost'), 0);
+      plan.append(el('div', { class: 'fifo-row fifo-total' }, [
+        el('span', { class: 'fifo-when' }, ['Gerçekleşecek']),
+        el('span', { class: 'fifo-units' }, [say(adet)]),
+        el('span', { class: 'fifo-gain' }, [eksik ? '—' : signed(String(kz), ' ₺')]),
+        el('span', { class: 'fifo-pct' }, [
+          eksik || maliyet === 0 ? '' : signed(String((kz / maliyet) * 100), ''),
+        ]),
+        el('span', { class: 'fifo-note' }, [
+          eksik ? 'bazı alımlar değerlenemedi' : 'bugünkü fiyatla',
+        ]),
+        el('span', { class: 'fifo-undo-gap' }),
+      ]));
     }
   };
   sadeceSayi(units);
