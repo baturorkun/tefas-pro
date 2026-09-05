@@ -524,6 +524,9 @@ describe('FIFO satış', () => {
                             main.indexOf('function openTransactionModal'));
     expect(sell).toContain('const kzTutar =');
     expect(sell).toContain('Number(lot.gain) * (adim.sell / Number(lot.units))');
+    // Dokunulmayan alım hiçbir şey gerçekleştirmez. Lotun tamamı yazsaydı
+    // 29.272 satmakla 101.090 satmak aynı görünürdü.
+    expect(sell).toContain('lot.gain === null || adim === undefined');
     // Ayrı toplam satırı yok: aynı bilgiyi iki yerde söylemek kafa karıştırdı.
     expect(sell).not.toContain('fifo-total');
     expect(sell).not.toContain('Gerçekleşecek');

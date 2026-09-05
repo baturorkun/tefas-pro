@@ -2047,19 +2047,19 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
           ? `${say(adim.sell)} satılır · ${say(adim.keep)} açık kalır`
           : 'tamamı satılır';
 
-      // Kâr/zarar satırdaki adede göre: kısmi satışta lotun tamamı satılmadığı
-      // için gerçekleşen kısım da az. Seçilmemiş satırda lotun tamamı yazar —
-      // "bu satırı seçersen bu kadarı gerçekleşir" demek, sınır durumu aynı
-      // kural. Sütun her satırda tek şey söylüyor ve toplamı ayrı bir satırda
-      // tekrarlamaya gerek kalmıyor.
+      // Sütun tek şey söyler: bu satıştan bu alımdan ne gerçekleşiyor.
+      //
+      // Seçilmemiş satır lotun tamamını yazsaydı — ilk hâli buydu — 29.272
+      // satmakla 101.090 satmak aynı görünürdü: sayı yalnız sınırdaki tek
+      // lotta değişir, gerisi sabit dururdu. Dokunulmayan alım hiçbir şey
+      // gerçekleştirmiyor, o yüzden tire.
       //
       // Oran değişmiyor: satılan adet hem tutarı hem maliyeti aynı çarpanla
-      // ölçekliyor, yüzde sadeleşiyor.
-      const kzTutar = lot.gain === null
+      // ölçeklediği için yüzde sadeleşiyor. Yani lotun getirisi kısmi satışta
+      // da aynı ve seçilmemiş satırda da gösterilebilir.
+      const kzTutar = lot.gain === null || adim === undefined
         ? null
-        : adim === undefined
-          ? Number(lot.gain)
-          : Number(lot.gain) * (adim.sell / Number(lot.units));
+        : Number(lot.gain) * (adim.sell / Number(lot.units));
       const cls = adim === undefined ? 'fifo-idle' : adim.keep > 0 ? 'fifo-part' : 'fifo-full';
 
       // Satır düğme değil, role taşıyan bir kutu: içine iptal düğmesi girecek
