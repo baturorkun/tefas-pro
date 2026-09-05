@@ -539,6 +539,17 @@ td.actions .icon-btn + .icon-btn { margin-left: 6px; }
    (tarih, adet, K/Z, oran, durum, iptal) ve durum metni uzun — "20.728
    satılır (+1.046 ₺) · 14.386 açık kalır". Dar pencerede taşma riski vardı. */
 .modal-card.modal-form { width: min(52rem, 100%); padding: 0; }
+/* Geniş pencere: fon içeriği 7 sütunlu ve 80 satıra kadar çıkan bir tablo
+   taşıyor, form genişliğinde okunmuyor. Ayrı ekran yerine pencere çünkü
+   ekran değiştirmek listedeki kaydırma yerini kaybettiriyor. */
+/* Sektör sütunu kalkınca 76rem gereksiz genişlik oldu. */
+.modal-card.modal-wide { width: min(64rem, 96vw); padding: 0; }
+.modal-wide .modal-body { max-height: min(78vh, 46rem); }
+/* Pencere içindeki paneller kendi çerçevelerini taşımaz: pencerenin kendisi
+   zaten bir çerçeve, iç içe kutu gürültü olurdu. */
+.fund-modal .panel { border: 0; background: transparent; margin: 0; }
+.fund-modal .panel-body { padding-left: 0; padding-right: 0; }
+.fund-modal .metric-grid { margin-bottom: .75rem; }
 .modal-head     { display: flex; align-items: flex-start; justify-content: space-between;
                   gap: 1rem; padding: 1.1rem 1.2rem; border-bottom: 1px solid var(--line-soft); }
 .modal-sub      { margin: .3rem 0 0; color: var(--muted); font-size: .8125rem; line-height: 1.5; }
@@ -781,3 +792,41 @@ textarea:focus  { outline: none; border-color: var(--accent);
 .asset-pct  { color: var(--accent); font-family: var(--mono); font-size: .72rem; }
 /* Tarih en sonda ve soluk: ağırlıklar bugüne ait değil, o gün açıklanmış. */
 .asset-date { color: var(--muted-dim); font-size: .7rem; margin-left: 4px; }
+
+/* Hisseler ekranı: gruplama düğmeleri ve hisseden fona açılan satır. */
+/* Sekme: iki tablo alt alta çizilince ekran çok uzuyordu (686 hisse + 28
+   sektör). flex-shrink:0 — arama kutusuyla yan yana duruyor ve esnetilince
+   ikinci sekme kutunun altında kalıyordu. */
+.tabs { display: inline-flex; flex-shrink: 0; gap: 2px; }
+.panel-actions .combo-search { width: 12rem; }
+.tab-btn { display: inline-flex; align-items: baseline; gap: 6px;
+           padding: 6px 12px; border: 0; border-bottom: 2px solid transparent;
+           background: transparent; color: var(--muted);
+           font: inherit; font-size: .82rem; cursor: pointer; }
+.tab-btn:hover { color: var(--text); }
+.tab-on  { color: var(--accent); border-bottom-color: var(--accent); }
+/* Sayı sekmenin içinde: hangi sekmede ne kadar var, açmadan görünsün. */
+.tab-count { font-family: var(--mono); font-size: .7rem; color: var(--muted-dim); }
+.tab-on .tab-count { color: var(--accent-soft); }
+
+/* Bir hissenin hangi fonlardan geldiği. Fon başına tek satır; ızgara sabit
+   ki kodlar ve yüzdeler sütun halinde okunsun. */
+.stock-funds { display: grid; gap: 3px; }
+.stock-fund  { display: grid; grid-template-columns: 5rem 5rem 7rem 1fr 5rem 5rem 6rem;
+               gap: 10px; align-items: baseline; padding: 4px 10px;
+               border-radius: var(--radius-sm); background: var(--panel);
+               font-size: .78rem; }
+/* Pozisyonu olmayan fon soluk: "hangi fonu alayım" sorusunun adayı ama
+   bugün orada paran yok. */
+.stock-fund-watch { opacity: .62; }
+/* Başlık satırı: rakamlar tek başına hangisinin ne olduğunu söylemiyordu. */
+.stock-fund-head { background: transparent; color: var(--muted-dim);
+                   font-size: .68rem; letter-spacing: .04em;
+                   text-transform: uppercase; padding-bottom: 0; }
+
+/* Kod biçiminde bağlantı: fon koduna tıklayınca fon sayfası açılır. Düğme
+   ama düğme gibi görünmemeli — tablo içinde kod olarak okunuyor. */
+.link-code { padding: 0; border: 0; background: transparent; cursor: pointer;
+             font: inherit; font-family: var(--mono); font-size: .78rem;
+             color: var(--accent); text-align: left; }
+.link-code:hover { color: var(--accent-soft); text-decoration: underline; }

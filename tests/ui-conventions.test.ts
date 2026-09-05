@@ -653,9 +653,12 @@ describe('yüzde sütunları', () => {
 });
 
 describe('panel özeti', () => {
-  it('bugünkü getiri sayı olarak yazar', () => {
+  it('günlük getiri sayı olarak ve tarihiyle yazar', () => {
     // Değer yalnız grafikte bar olarak çiziliyordu, sayı olarak yoktu.
-    expect(main).toContain("metric(\n        'Bugünkü Getiri',");
+    // "Bugünkü" değil: hafta sonu ve tatilde son ölçülen gün geçmişte kalıyor
+    // ve kutu yine de dolu görünüyor — hangi güne ait olduğu yazılmalı.
+    expect(main).toContain("'Günlük Getiri',");
+    expect(main).toContain('gunAd(p.dayDate)');
   });
 
   it('toplam kazanç kapananları da içerir', () => {
@@ -773,7 +776,9 @@ describe('fon içeriği', () => {
     // Gizlenirse rakam bugünün kesin dağılımı sanılır; ağırlıklar fonun
     // açıkladığı son güne ait, değer bugüne.
     expect(main).toMatch(/ağırlıklarıyla/);
-    expect(main).toMatch(/ağırlıkları`/);
+    // Fon penceresinde iki kırılımın tarihi ayrı yazılır: varlık türü günlük
+    // (Fintables), hisse aylık (fvt). Tek tarih birini taze gösterirdi.
+    expect(main).toMatch(/açıklaması/);
   });
 
   it('kapsanmayan tutar ve borçlanma söylenir', () => {
@@ -792,7 +797,7 @@ describe('fon içeriği', () => {
     // gibi gösterirdi. Fark ekranda söyleniyor.
     expect(repo).toContain('export function buildAssetAllocation');
     const fn = repo.slice(repo.indexOf('export function buildAssetAllocation'),
-                          repo.indexOf('/**\n * Açık pozisyonların banka'));
+                          repo.indexOf('export interface StockFundRow'));
     expect(fn).not.toMatch(/normalize|ölçekle|scaleTo100/i);
     expect(main).toContain('yuvarlanmış');
   });
@@ -802,16 +807,48 @@ describe('fon içeriği', () => {
     // para koydun" diye yanlış bir rakam üretirdi.
     const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
     const fn = repo.slice(repo.indexOf('export function buildAssetAllocation'),
-                          repo.indexOf('/**\n * Açık pozisyonların banka'));
+                          repo.indexOf('export interface StockFundRow'));
     expect(fn).not.toContain('cost');
     expect(fn).not.toContain('gain');
   });
 
-  it('fon içeriği satırın altında açılır, ayrı istek atmaz', () => {
-    expect(main).toContain("class: 'expandable'");
-    expect(css).toContain('.expand-row.open');
-    expect(main).toContain("class: 'asset-list'");
-    // Veri portföy yanıtına gömülü: her açılışta istek beklemek olurdu.
-    expect(main).not.toMatch(/api\(`\/api\/funds\//);
+  it('fon içeriği pencerede açılır, satır altında değil', () => {
+    // Satır altında açılan kutu tabloyu bölüyordu ve 80 kalemlik hisse
+    // listesi oraya sığmıyordu. Pencere ayrıca listedeki kaydırma yerini
+    // koruyor: ekran değiştirmek içeriği baştan kurup yeri kaybettiriyor.
+    expect(main).toContain('async function openFundModal');
+    expect(main).toContain("iconButton('search', 'Fon detayı')");
+    expect(css).toContain('.modal-card.modal-wide');
+    // Geniş pencere: 7 sütunlu ve 80 satıra kadar çıkan tablo form
+    // genişliğinde okunmuyor.
+    expect(main).toMatch(/'wide',/);
+  });
+});
+
+describe('ikon adları', () => {
+  it('kullanılan her ikon tanımlı', () => {
+    // Tanımsız ad icon()'a verilince boş bir svg üretiliyor ve düğme boş kutu
+    // olarak çiziliyor — hata yok, görsel de yok. Bir kez oldu: 'search'.
+    const tanimli = new Set(
+      [...(/const ICON_PATHS: Record<string, string\[\]> = \{([\s\S]*?)\n\};/.exec(main)?.[1] ?? '')
+        .matchAll(/^ {2}([a-zA-Z]+):/gm)].map((m) => m[1] ?? ''),
+    );
+    const kullanilan = [
+      ...[...main.matchAll(/\bicon\('([a-zA-Z]+)'/g)].map((m) => m[1] ?? ''),
+      ...[...main.matchAll(/iconButton\('([a-zA-Z]+)'/g)].map((m) => m[1] ?? ''),
+    ];
+    expect(kullanilan.length).toBeGreaterThan(5);
+    for (const ad of kullanilan) expect(tanimli, `ikon tanımsız: ${ad}`).toContain(ad);
+  });
+
+  it('her menü öğesinin ikonu var', () => {
+    // Menü düğmesi ikonu view id'sinden alıyor; eksikse boş kutu çıkıyor.
+    const tanimli = new Set(
+      [...(/const ICON_PATHS: Record<string, string\[\]> = \{([\s\S]*?)\n\};/.exec(main)?.[1] ?? '')
+        .matchAll(/^ {2}([a-zA-Z]+):/gm)].map((m) => m[1] ?? ''),
+    );
+    const idler = [...main.matchAll(/\{ id: '([a-z]+)', label:/g)].map((m) => m[1] ?? '');
+    expect(idler.length).toBeGreaterThan(8);
+    for (const id of idler) expect(tanimli, `menü ikonu yok: ${id}`).toContain(id);
   });
 });

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -31,13 +32,15 @@ describe('tarih yardımcıları', () => {
 describe('parseArgs', () => {
   it('varsayılan: akış 12 ay, büyüklük 6 ay, artımlı', () => {
     expect(parseArgs([])).toEqual({
-      funds: undefined, backfill: false, skipYield: false, flowMonths: 12, sizeMonths: 6,
+      funds: undefined, backfill: false, skipYield: false,
+      skipStocks: false, flowMonths: 12, sizeMonths: 6,
     });
   });
   it('bayrakları okur', () => {
     expect(parseArgs(['--funds', 'AAA,BBB', '--backfill', '--skip-yield',
-                      '--flow-months', '24', '--size-months', '3'])).toEqual({
-      funds: ['AAA', 'BBB'], backfill: true, skipYield: true, flowMonths: 24, sizeMonths: 3,
+                      '--skip-stocks', '--flow-months', '24', '--size-months', '3'])).toEqual({
+      funds: ['AAA', 'BBB'], backfill: true, skipYield: true,
+      skipStocks: true, flowMonths: 24, sizeMonths: 3,
     });
   });
 });
@@ -153,5 +156,29 @@ describe('dropFutureRows', () => {
   it('ay ve yıl sınırını doğru geçer', () => {
     expect(dropFutureRows([row('2027-01-01')] as never, '2026-12-31')).toEqual([]);
     expect(dropFutureRows([row('2026-12-31')] as never, '2027-01-01')).toHaveLength(1);
+  });
+});
+
+describe('sıralama tuzağı', () => {
+  it('::text seçilen sütun ORDER BY’da niteliksiz bırakılmaz', () => {
+    // PostgreSQL ORDER BY’da çıplak adı görünce tablo sütunu yerine çıktı
+    // sütununu seçiyor. `weight_pct::text` seçilip `ORDER BY weight_pct`
+    // yazılınca sıralama sözlüksel oluyordu: "5.62" > "55.41" > "24.46".
+    // Ölçüldü: PNU'nun en ağır kalemi Ters-Repo %55,41 iken Hazine Bonosu
+    // %5,62 en üstte görünüyordu.
+    const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
+    const supheli: string[] = [];
+    for (const m of repo.matchAll(/`([^`]*ORDER BY[^`]*)`/g)) {
+      const q = m[1] ?? '';
+      // Nitelenmiş de olsa çıktı sütunu adı son parçadır: `a.weight_pct::text`
+      // çıktıya `weight_pct` diye geliyor ve ORDER BY onu seçiyor.
+      const metne = [...q.matchAll(/(\w+)::text(?!\s+AS)/g)].map((x) => x[1] ?? '');
+      for (const o of [...q.matchAll(/ORDER BY\s+([^\n]+)/g)].map((x) => x[1] ?? '')) {
+        for (const k of metne) {
+          if (new RegExp(`(?<![\\w.])${k}\\b`).test(o)) supheli.push(`${k} -> ${o.trim()}`);
+        }
+      }
+    }
+    expect(supheli, `niteliksiz sıralama: ${supheli.join(' ; ')}`).toEqual([]);
   });
 });

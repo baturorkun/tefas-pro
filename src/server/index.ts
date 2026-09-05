@@ -9,6 +9,7 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type pg from 'pg';
 
@@ -41,6 +42,8 @@ import {
   addBank,
   addToWatchlist,
   allocation,
+  stockAllocation,
+  fundDetail,
   benchmarkCode,
   clearUserSetting,
   closedPositions,
@@ -257,15 +260,36 @@ function readTransactionInput(body: Record<string, unknown>): TransactionInput {
   };
 }
 
-function serveStatic(res: ServerResponse, path: string): boolean {
+/**
+ * Statik dosyalar. Adları sabit (`/app.js`), içerikleri her derlemede
+ * değişiyor.
+ *
+ * Önbellek başlığı olmadan tarayıcı kendi tahminiyle önbellekliyor ve
+ * sunucuya hiç sormadan eski dosyayı veriyordu: deploy edilen özellik
+ * görünmüyor, kimse de sebebini anlamıyor — ölçüldü, yeni kodu servis eden
+ * sunucudan tarayıcıya eski JS gidiyordu.
+ *
+ * `no-cache` "önbellekleme" demek değil, "her seferinde sor" demek. ETag ile
+ * birlikte dosya değişmediyse 304 dönüyor, gövde tekrar inmiyor; değiştiyse
+ * yeni içerik geliyor. Hash içerikten üretiliyor, zaman damgasından değil:
+ * derleme aynı çıktıyı ürettiğinde ETag da aynı kalsın.
+ */
+function serveStatic(res: ServerResponse, path: string, req: IncomingMessage): boolean {
   const entry = STATIC[path];
   if (!entry) return false;
   try {
     const body = readFileSync(join(process.cwd(), entry.file));
+    const etag = `"${createHash('sha1').update(body).digest('base64url').slice(0, 22)}"`;
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { ETag: etag, 'Cache-Control': 'no-cache' }).end();
+      return true;
+    }
     res.writeHead(200, {
       'Content-Type': entry.type,
       'Content-Length': body.length,
       'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'no-cache',
+      ETag: etag,
     });
     res.end(body);
   } catch {
@@ -286,7 +310,7 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
     }
 
     if (!path.startsWith('/api/')) {
-      if (serveStatic(res, path)) return;
+      if (serveStatic(res, path, req)) return;
       res.writeHead(404).end('not found');
       return;
     }
@@ -472,6 +496,19 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
 
       if (path === '/api/benchmark' && method === 'GET') {
         sendJson(res, 200, { benchmark: (await userBenchmark(pool, user.id)).code });
+        return;
+      }
+
+      const fonEslesme = /^\/api\/funds\/([A-Za-z0-9]{2,10})$/.exec(path);
+      if (fonEslesme !== null && method === 'GET') {
+        const d = await fundDetail(pool, user.id, fonEslesme[1] ?? '');
+        if (d === null) { sendJson(res, 404, { error: 'Fon bulunamadı.' }); return; }
+        sendJson(res, 200, d);
+        return;
+      }
+
+      if (path === '/api/stocks' && method === 'GET') {
+        sendJson(res, 200, await stockAllocation(pool, user.id));
         return;
       }
 
