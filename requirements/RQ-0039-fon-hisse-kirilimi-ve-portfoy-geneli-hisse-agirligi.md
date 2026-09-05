@@ -74,9 +74,32 @@ Fon çakışması: iki fonun portföyü büyük ölçüde aynıysa iki yönetim 
 ödenip tek pozisyon taşınıyor demektir. Bu, hisse listesine bakarak
 görülmeyen ama listeden hesaplanabilen bir bilgi ve doğrudan aksiyon üretiyor.
 
-Yön değişimi: `eskiAgirlik` ve `fark` alanları fonların pozisyonu artırıp
-azaltmadığını söylüyor. "Fonlar geçen ay ASELS'i azaltmış" bilgisi kâr değil
-ama karar için değerli ve veri zaten yanıtta — ek maliyeti yok.
+## Hisseden fona arama
+
+Asıl kullanım şu: bir hisse hareketleniyor, o hisseyi taşıyan fonu artırmak
+ya da azaltmak istiyorsun. Bu, toplanan verinin ters indeksi — hisse kodundan
+fonlara.
+
+    ASELS →  THF  %6,1  portföyümde 307.930 ₺
+             KHA  %4,6  portföyümde 118.400 ₺
+             DFI  %3,2  takip listemde, pozisyon yok
+
+Fiyat verisi gerektirmiyor: hissenin hareketini kullanıcı piyasadan biliyor,
+uygulamanın cevapladığı soru "o hisse hangi fonlarımda, ne ağırlıkta".
+
+Takip listesindeki ama pozisyon açılmamış fonlar da listelenir — "hangi fonu
+alayım" sorusunun cevabı orada olabilir.
+
+Kapsam takip edilen fonlarla sınırlı. "Bu hisseyi en çok tutan fon hangisi"
+diye tüm evrene sormak fon başına bir istek demek ve evren binlerce fon;
+o ayrı bir iş. "Hangi fonumu artırayım" sorusu zaten kendi fonları arasından
+cevaplanıyor.
+
+## Yön değişimi
+
+`eskiAgirlik` ve `fark` fonların pozisyonu artırıp azaltmadığını söylüyor.
+"Fonlar geçen ay ASELS'i azaltmış" bilgisi kâr değil ama karar için değerli ve
+veri zaten yanıtta — ek maliyeti yok.
 
 Sektör kırılımı da bedava geliyor: `sektorAdi` alanı yanıtta.
 
@@ -118,5 +141,10 @@ RQ-0038'deki kuralın aynısı.
   düşmez.
 - Sektör kırılımı da raporlanır; veri zaten geliyor.
 - Fonların bir önceki aya göre pozisyonu artırıp azalttığı gösterilir.
+- Hisse kodundan fonlara arama yapılabilir: o hisseyi taşıyan fonlar,
+  ağırlıkları ve kullanıcının o fondaki pozisyonu listelenir.
+- Aramada takip listesindeki pozisyonsuz fonlar da görünür; "hangi fonu
+  alayım" sorusunun cevabı orada olabilir.
+- Aramanın takip edilen fonlarla sınırlı olduğu belirtilir.
 - Hisse fiyatı toplanmaz ve kâr dağıtımı yapılmaz; ikisi de ayrı RQ.
 - Fon çakışması gösterilir: aynı hisseyi taşıyan fonlar ve örtüşme oranı.
