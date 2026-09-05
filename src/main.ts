@@ -2065,10 +2065,14 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
       }, [
         el('span', { class: 'fifo-when' }, [gunAd(lot.tradeDate)]),
         el('span', { class: 'fifo-units' }, [say(Number(lot.units))]),
-        // Lotun kendi kâr/zararı: ne kadarını sattığından bağımsız, lota ait
-        // bir özellik. Seçime göre değişseydi adet yazarken sayı oynardı ve
-        // "hangi alım ne durumda" sorusu okunamazdı; ne kadarının
-        // gerçekleşeceği aşağıdaki toplamda duruyor.
+        el('span', { class: 'fifo-note' }, [durum]),
+        // Kâr/zarar en sağda ve karara girmiyor: satışın ne yapacağı soldaki
+        // adet ve durum sütunlarında yazıyor, bu ikisi yalnız "hangi alım ne
+        // durumda" diye bakınca lazım oluyor. Araya girseydi asıl bilgiyle
+        // yan yana durup onunla karışırdı.
+        //
+        // Değer lotun tamamına ait, ne kadarını sattığından bağımsız. Seçime
+        // göre değişseydi adet yazarken sayılar oynardı.
         el('span', { class: 'fifo-gain' }, [
           lot.gain === null ? '—' : signed(lot.gain, ' ₺'),
         ]),
@@ -2078,7 +2082,6 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
         el('span', { class: 'fifo-pct' }, [
           lot.gainPct === null ? '' : signed(lot.gainPct, '%'),
         ]),
-        el('span', { class: 'fifo-note' }, [durum]),
       ]);
       const sec = (): void => {
         units.value = String(hedef);
@@ -2114,37 +2117,6 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
       plan.append(satir);
     }
 
-    // Bu satışta gerçekleşecek kâr/zarar. Satır başındaki rakamlar lotun
-    // tamamına ait; kısmi satışta gerçekleşen kısım daha az oluyor ve fark
-    // yalnız burada görünüyor.
-    //
-    // Ölçülemeyen lot varsa toplam verilmez: eksik veriyi sıfır saymak
-    // "bu satıştan şu kadar kazanacaksın" diye yanlış bir rakam üretirdi.
-    if (adimlar.length > 0) {
-      const eksik = adimlar.some((a) => {
-        const l = liste.find((t) => t.id === a.id);
-        return l === undefined || l.gain === null || l.cost === null;
-      });
-      const oranli = (a: { id: number; sell: number }, alan: 'gain' | 'cost'): number => {
-        const l = liste.find((t) => t.id === a.id);
-        if (l === undefined) return 0;
-        return Number(l[alan]) * (a.sell / Number(l.units));
-      };
-      const kz = adimlar.reduce((t, a) => t + oranli(a, 'gain'), 0);
-      const maliyet = adimlar.reduce((t, a) => t + oranli(a, 'cost'), 0);
-      plan.append(el('div', { class: 'fifo-row fifo-total' }, [
-        el('span', { class: 'fifo-when' }, ['Gerçekleşecek']),
-        el('span', { class: 'fifo-units' }, [say(adet)]),
-        el('span', { class: 'fifo-gain' }, [eksik ? '—' : signed(String(kz), ' ₺')]),
-        el('span', { class: 'fifo-pct' }, [
-          eksik || maliyet === 0 ? '' : signed(String((kz / maliyet) * 100), '%'),
-        ]),
-        el('span', { class: 'fifo-note' }, [
-          eksik ? 'bazı alımlar değerlenemedi' : 'bugünkü fiyatla',
-        ]),
-        el('span', { class: 'fifo-undo-gap' }),
-      ]));
-    }
   };
   sadeceSayi(units);
   units.addEventListener('input', () => {

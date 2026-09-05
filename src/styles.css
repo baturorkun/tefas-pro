@@ -694,7 +694,7 @@ textarea:focus  { outline: none; border-color: var(--accent);
    varsayılanları (ortalı metin, kendi yazı tipi, dar genişlik) sıfırlanır. */
 .fifo-row {
   display: grid;
-  grid-template-columns: 6.5rem 5.5rem 6.5rem 4rem 1fr auto;
+  grid-template-columns: 6.5rem 5.5rem 1fr 6.5rem 4rem auto;
   gap: 10px;
   align-items: baseline;
   width: 100%;
@@ -711,19 +711,13 @@ textarea:focus  { outline: none; border-color: var(--accent);
 .fifo-row:hover { border-color: var(--line); background: var(--panel-hover); }
 .fifo-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .fifo-when { color: var(--muted); }
-/* Kâr/zarar sağa dayalı ve tabular: sütun halinde okunabilsin. Yüzde ayrı
-   sütunda, çünkü tutarla aynı hücrede olsa uzun tutar yüzdeyi kaydırıyordu. */
+/* Kâr/zarar en sağda, soluk: karara girmeyen bilgi. Sağa dayalı ve tabular
+   ki sütun halinde okunabilsin. Yüzde ayrı sütunda, çünkü tutarla aynı
+   hücrede olsa uzun tutar yüzdeyi kaydırıyordu. */
 .fifo-gain, .fifo-pct { text-align: right; font-variant-numeric: tabular-nums;
                         font-size: .78rem; }
 .fifo-pct { color: var(--muted); }
 
-/* Toplam satırı: tıklanamaz, üstten çizgiyle ayrılır. */
-.fifo-total { margin-top: 4px; border-top: 1px solid var(--line);
-              border-radius: 0; background: transparent; cursor: default; }
-.fifo-total:hover { background: transparent; border-color: transparent;
-                    border-top-color: var(--line); }
-.fifo-total:hover .fifo-note { border-color: transparent; color: var(--muted); }
-.fifo-total .fifo-when { color: var(--text); font-weight: 500; }
 .fifo-units { text-align: right; font-family: var(--mono); color: var(--text-strong); }
 .fifo-note { color: var(--muted); font-size: 0.78rem; }
 /* Bölünen kayıt vurgulanır: kullanıcının yazmadığı sayılar oradan çıkıyor. */

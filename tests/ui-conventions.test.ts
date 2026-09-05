@@ -516,19 +516,14 @@ describe('FIFO satış', () => {
     expect(sell).toContain('lot.gain === null');
   });
 
-  it('satış ne kadar kâr/zarar gerçekleştiriyor yazılır', () => {
+  it('kısmi satışta gerçekleşen kısım satırın içinde yazar', () => {
+    // Sütun lotun tamamına ait: 50.000 satarken 6.506 + 1.772 görünür ama
+    // gerçekte 7.553 gerçekleşir, çünkü ikinci lotun bir kısmı satılır. Fark
+    // yalnız bölünen satırda oluşuyor, rakam oraya yazılıyor.
     const sell = main.slice(main.indexOf('function openSellModal'),
                             main.indexOf('function openTransactionModal'));
-    expect(sell).toContain("'fifo-row fifo-total'");
-    expect(sell).toContain("'Gerçekleşecek'");
-    // Kısmi satışta gerçekleşen kısım lot toplamından az; fark tam o satırda
-    // yazılmazsa satırlar toplama uymuyor görünür.
     expect(sell).toContain('const parcaKz =');
     expect(sell).toContain('${parcaKz === null');
-    // Ölçülemeyen lot varsa toplam verilmez: eksiği sıfır saymak yanlış bir
-    // "şu kadar kazanacaksın" üretirdi.
-    expect(sell).toContain('const eksik = adimlar.some(');
-    expect(sell).toContain('bazı alımlar değerlenemedi');
   });
 
   it('işaretli sayı metni ve kutusu tek biçimden gelir', () => {
