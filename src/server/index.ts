@@ -58,6 +58,7 @@ import {
   dashboard,
   deleteBank,
   deleteTransaction,
+  changeOwnPassword,
   fifoBlocker,
   findSessionUser,
   konusmaAc,
@@ -65,6 +66,7 @@ import {
   konusmaSil,
   konusmalar,
   konusmayaYaz,
+  updateProfile,
   findUserByUsername,
   fundHasData,
   fundValor,
@@ -81,6 +83,7 @@ import {
   portfolioSummary,
   removeFromWatchlist,
   revokeSession,
+  revokeUserSessions,
   sellFifo,
   trackFundForUser,
   type AppUser,
@@ -129,6 +132,9 @@ const STATIC: Record<string, { file: string; type: string }> = {
     file: 'dist/assistant-labels.js', type: 'text/javascript; charset=utf-8',
   },
   '/sse.js': { file: 'dist/sse.js', type: 'text/javascript; charset=utf-8' },
+  '/user-fields.js': {
+    file: 'dist/user-fields.js', type: 'text/javascript; charset=utf-8',
+  },
   '/styles.css': { file: 'src/styles.css', type: 'text/css; charset=utf-8' },
 };
 
@@ -357,9 +363,17 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         sendJson(
           res,
           200,
+          // Alanlar elle sayılıyor: `found` parola hash'ini ve tuzunu da
+          // taşıyor, olduğu gibi gönderilemez. Bedeli, yeni bir alan
+          // eklendiğinde buraya da eklenmesinin unutulabilmesi — ölçüldü,
+          // ad soyad eklendi ama giriş yanıtında yoktu ve kenar çubuğu
+          // kullanıcı adını göstermeye devam ediyordu. Testle sabitlendi.
           {
             id: found.id,
             username: found.username,
+            fullName: found.fullName,
+            email: found.email,
+            telegram: found.telegram,
             type: found.type,
             mustChangePassword: found.mustChangePassword,
           },
@@ -400,9 +414,62 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         return;
       }
 
+      // İlk giriş ekranı: kullanıcı az önce o parolayla girdi, mevcut parola
+      // sorulmuyor. Bu uç yalnız zorunlu değişiklik içindir.
       if (path === '/api/password' && method === 'POST') {
         const body = asRecord(await readJson(req));
+        if (!user.mustChangePassword) {
+          sendJson(res, 409, {
+            error: 'Parolanız zaten belirlenmiş; Profil ekranından değiştirin.',
+          });
+          return;
+        }
         await updateUser(pool, user.id, { password: reqString(body, 'password') });
+        sendJson(res, 200, { ok: true }, { 'Set-Cookie': clearCookie(COOKIE_NAME) });
+        return;
+      }
+
+      // Kendi profili. Admin uçlarından ayrı: burada kullanıcı yalnız
+      // kendine yazıyor ve kimlik oturumdan geliyor, istekten değil.
+      if (path === '/api/profile' && method === 'PATCH') {
+        const body = asRecord(await readJson(req));
+        try {
+          // Alanların hepsi isteniyor: kısmi güncelleme, zorunlu bir alanı
+          // hiç göndermeyerek boş bırakmanın yolu olurdu.
+          const guncel = await updateProfile(pool, user.id, {
+            username: reqString(body, 'username'),
+            fullName: reqString(body, 'fullName'),
+            email: reqString(body, 'email'),
+            telegram: optString(body, 'telegram') ?? '',
+          });
+          sendJson(res, 200, guncel);
+        } catch (err) {
+          // Çakışan kullanıcı adı kullanıcının düzeltebileceği bir durum;
+          // 500 yerine mesajı gösteriliyor.
+          sendJson(res, 400, {
+            error: err instanceof Error ? err.message : 'Profil güncellenemedi.',
+          });
+        }
+        return;
+      }
+
+      // Sonradan parola değiştirme: mevcut parola isteniyor. Açık bırakılmış
+      // bir oturumun başına geçen biri, parolayı bilmeden hesabı
+      // devralabilirdi.
+      if (path === '/api/profile/password' && method === 'POST') {
+        const body = asRecord(await readJson(req));
+        const oldu = await changeOwnPassword(
+          pool, user.id, reqString(body, 'current'), reqString(body, 'password'),
+        );
+        if (!oldu) {
+          sendJson(res, 403, { error: 'Mevcut parola yanlış.' });
+          return;
+        }
+        // Parola değişince kullanıcının TÜM oturumları düşer. Yalnız bu
+        // tarayıcının çerezini silmek yetmezdi: parolayı değiştirmenin asıl
+        // sebebi çoğu zaman "başkası girmiş olabilir" endişesidir ve o
+        // oturum açık kalırdı.
+        await revokeUserSessions(pool, user.id);
         sendJson(res, 200, { ok: true }, { 'Set-Cookie': clearCookie(COOKIE_NAME) });
         return;
       }
@@ -832,6 +899,10 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
               username: reqString(body, 'username'),
               password: reqString(body, 'password'),
               type,
+              // Arayüzden açılan her hesapta ad soyad ve e-posta zorunlu.
+              fullName: reqString(body, 'fullName'),
+              email: reqString(body, 'email'),
+              telegram: optString(body, 'telegram') ?? '',
             }),
           );
           return;
@@ -839,10 +910,19 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         const userId = matchPath('/api/admin/users/:id', path);
         if (userId !== null && method === 'PATCH') {
           const body = asRecord(await readJson(req));
-          const patch: { type?: 'admin' | 'user'; isActive?: boolean; password?: string } = {};
+          const patch: {
+            type?: 'admin' | 'user'; isActive?: boolean; password?: string;
+            fullName?: string; email?: string; telegram?: string;
+          } = {};
           if (body['type'] !== undefined) patch.type = body['type'] === 'admin' ? 'admin' : 'user';
           if (body['isActive'] !== undefined) patch.isActive = body['isActive'] === true;
           if (body['password'] !== undefined) patch.password = reqString(body, 'password');
+          // Kimlik alanları birlikte: ad soyad geldiyse e-posta da isteniyor.
+          if (body['fullName'] !== undefined) {
+            patch.fullName = reqString(body, 'fullName');
+            patch.email = reqString(body, 'email');
+            patch.telegram = optString(body, 'telegram') ?? '';
+          }
           sendJson(res, 200, await updateUser(pool, Number(userId), patch));
           return;
         }

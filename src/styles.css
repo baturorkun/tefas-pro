@@ -129,6 +129,15 @@ body {
 
 .sidebar-foot { margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--line-soft); }
 .sidebar-user { display: flex; align-items: center; gap: .6rem; padding: .35rem .2rem .75rem; }
+/* Kullanıcı satırı artık menüyü açan bir düğme. Ok sağa yaslanıyor ve menü
+   açıkken aşağı dönüyor: yön, menünün nereye gideceğini söylüyor. */
+.sidebar-user { width: 100%; border: 0; background: transparent; font: inherit;
+                color: inherit; text-align: left; cursor: pointer;
+                border-radius: 7px; transition: background .15s ease; }
+.sidebar-user:hover { background: var(--panel-hover); }
+.sidebar-user-text { flex: 1; min-width: 0; }
+.sidebar-user .icon { color: var(--muted-dim); transition: transform .15s ease; }
+.sidebar-foot.acik .sidebar-user .icon { transform: rotate(180deg); }
 .avatar {
   width: 28px; height: 28px; flex: none; border-radius: 50%;
   display: grid; place-items: center;
@@ -539,14 +548,38 @@ td.actions .icon-btn + .icon-btn { margin-left: 6px; }
 .version-value  { color: var(--text); font-family: var(--mono); font-size: 12px;
                   font-weight: 600; }
 
-/* Çıkış kendi şeridinde, kullanıcı kutusundan çizgiyle ayrılmış. */
-.sidebar-foot   { margin-top: auto; padding-top: .85rem; display: grid; gap: .35rem;
+/* Kullanıcı satırı en altta, menü onun ÜSTÜNDE açılıyor: aşağıda ekran
+   bitiyor. Bu yüzden ızgarada menü önce, düğme sonra geliyor. */
+.sidebar-foot   { position: relative; margin-top: auto; padding-top: .85rem;
+                  display: grid; gap: .35rem;
                   border-top: 1px solid var(--line-soft); }
+/* Menü akışta yer kaplamıyor, nav'ın üstüne biniyor. Akışta olsaydı kenar
+   çubuğu 100vh'i aşar ve menü açılınca kullanıcı satırı ekranın altından
+   taşardı — ölçüldü, tıklanan satır görünmez oluyordu. */
+.user-menu      { display: none; position: absolute; bottom: 100%; left: 0; right: 0;
+                  z-index: 20; grid-gap: 2px; padding: 4px; margin-bottom: .35rem;
+                  border: 1px solid var(--line); border-radius: 9px;
+                  background: var(--bg-raised);
+                  box-shadow: 0 12px 28px rgb(0 0 0 / .45); }
+.sidebar-foot.acik .user-menu { display: grid; }
+.user-menu-item { display: flex; align-items: center; gap: 10px; width: 100%;
+                  padding: .55rem .6rem; border: 0; border-radius: 6px;
+                  background: transparent; color: var(--muted); font: inherit;
+                  font-size: 13px; text-align: left; cursor: pointer; }
+.user-menu-item:hover { background: var(--panel-hover); color: var(--text-strong); }
+.user-menu-item.active { color: var(--accent); }
+.user-menu-sep  { height: 1px; margin: 3px 4px; background: var(--line-soft); }
+.user-menu .sidebar-logout { padding: .55rem .6rem; }
 .sidebar-logout { display: flex; align-items: center; gap: 10px; width: 100%;
                   padding: .6rem .7rem; border: 0; border-radius: 7px;
                   background: transparent; color: var(--muted); font-size: 13px;
                   cursor: pointer; transition: .15s; }
 .sidebar-logout:hover { background: var(--panel-hover); color: var(--text-strong); }
+
+/* Profil ekranı: iki ayrı form, dar sütunda. Tam genişlikte bir metin
+   kutusu, iki kelimelik bir ad için gereksiz uzun görünüyor. */
+.profil-form    { display: grid; gap: 1rem; max-width: 26rem; }
+.profil-aksiyon { display: flex; align-items: center; gap: .75rem; }
 
 /* Form penceresi: onay penceresiyle aynı kabuk, gövdesi kaydırılabilir. */
 /* 47.5rem'den 52rem'e: satış penceresindeki FIFO listesi altı sütun taşıyor
@@ -693,6 +726,8 @@ textarea:focus  { outline: none; border-color: var(--accent);
   font-size: .85rem;
 }
 .status { font-size: .78rem; color: var(--muted-dim); }
+/* Hata durumu okunur olmalı: soluk gri bir "Kaydedilemedi" fark edilmiyordu. */
+.status-error { color: var(--danger); }
 .hint { font-size: .8rem; color: var(--muted-dim); margin: 0 0 1.25rem; }
 
 /* ─── Dar ekran ────────────────────────────────────────────────────────── */

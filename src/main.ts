@@ -11,6 +11,9 @@
 interface Me {
   id: number;
   username: string;
+  fullName: string;
+  email: string | null;
+  telegram: string | null;
   type: 'admin' | 'user';
   mustChangePassword: boolean;
 }
@@ -55,6 +58,10 @@ interface WatchlistRow {
 interface UserRow {
   id: number;
   username: string;
+  fullName: string;
+  /** Alanın eklenmesinden önceki kayıtlarda boş olabilir. */
+  email: string | null;
+  telegram: string | null;
   type: 'admin' | 'user';
   isActive: boolean;
 }
@@ -283,7 +290,8 @@ interface PerformanceSeries {
 
 type ViewId =
   | 'dashboard' | 'portfolio' | 'closed' | 'periods' | 'market'
-  | 'allocation' | 'stocks' | 'chat' | 'transactions' | 'watchlist' | 'prefs' | 'users' | 'runs' | 'settings';
+  | 'allocation' | 'stocks' | 'chat' | 'transactions' | 'watchlist' | 'prefs'
+  | 'profile' | 'users' | 'runs' | 'settings';
 
 const root = document.getElementById('app');
 
@@ -522,6 +530,11 @@ const ICON_PATHS: Record<string, string[]> = {
   periods: ['M4 5h16v15H4z', 'M4 10h16', 'M9 5V3M15 5V3', 'M8 14h3M13 14h3'],
   runs: ['M12 8v4l3 2', 'M12 3a9 9 0 1 0 9 9 9 9 0 0 0-9-9z'],
   prefs: ['M4 7h10M18 7h2M4 17h2M10 17h10', 'M16 5v4M8 15v4'],
+  // Profil: tek kişi silueti. `users` üç kişilik, hesabı temsil etmiyor.
+  profile: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M5 20a7 7 0 0 1 14 0'],
+  // Kullanıcı menüsünün oku. Menü yukarı açıldığı için yukarı bakıyor;
+  // açıkken CSS ile dönüyor.
+  caretUp: ['m7 14 5-5 5 5'],
   allocation: ['M12 12V3a9 9 0 1 0 9 9z', 'M14 3a7 7 0 0 1 7 7h-7z'],
   market: ['M3 3v18h18', 'm7 14 3-4 3 3 5-7', 'M18 6h3v3'],
   settings: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'],
@@ -842,6 +855,7 @@ import { planFifoSale } from './fifo.js';
 import { NOTE_MAX } from './limits.js';
 import { toolEtiket } from './assistant-labels.js';
 import { sseAyir } from './sse.js';
+import { EMAIL_MAX, FULL_NAME_MAX } from './user-fields.js';
 import { orderFromSettlement, settlementFromOrder } from './settlement.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -1480,6 +1494,123 @@ function bankPanel(banks: BankRow[], reload: () => void): HTMLElement {
       status,
     ]),
   );
+}
+
+/**
+ * Profil: kullanıcı adı, görünen ad ve parola.
+ *
+ * İki ayrı form, tek panelde değil iki panelde: kimlik bilgisi ile parola
+ * değiştirmenin sonuçları farklı. Kimlik alanlarını kaydetmek ekranı
+ * tazeliyor, parola
+ * değiştirmek oturumları düşürüp giriş ekranına atıyor. Tek "Kaydet"
+ * düğmesinin altında birleştirilseydi kullanıcı adını düzeltmek isteyen biri
+ * kendini giriş ekranında bulurdu.
+ */
+async function profileView(me: Me, reload: () => void): Promise<Node[]> {
+  const guncel = (await api('/api/me')) as Me;
+
+  const kullaniciAdi = el('input', {
+    maxlength: '64', spellcheck: 'false', autocomplete: 'username',
+  }) as HTMLInputElement;
+  kullaniciAdi.value = guncel.username;
+  const adSoyad = el('input', {
+    maxlength: String(FULL_NAME_MAX), spellcheck: 'false', autocomplete: 'name',
+    required: 'true',
+  }) as HTMLInputElement;
+  adSoyad.value = guncel.fullName;
+  const eposta = el('input', {
+    type: 'email', maxlength: String(EMAIL_MAX), spellcheck: 'false',
+    autocomplete: 'email', required: 'true',
+  }) as HTMLInputElement;
+  eposta.value = guncel.email ?? '';
+  const telegram = el('input', {
+    maxlength: '33', spellcheck: 'false', placeholder: '@kullaniciadi',
+  }) as HTMLInputElement;
+  // Ekranda @ ile gösteriliyor, veritabanında @ olmadan duruyor.
+  telegram.value = guncel.telegram === null ? '' : `@${guncel.telegram}`;
+  const kimlikDurum = el('span', { class: 'status' });
+  const kimlikKaydet = el('button', { class: 'btn-primary', type: 'submit' }, ['Kaydet']);
+
+  const kimlikForm = el('form', { class: 'profil-form' }, [
+    field('Kullanıcı adı', kullaniciAdi,
+      'Giriş yaparken kullandığın ad. Değiştirirsen oturumun düşmez.'),
+    field('Ad soyad', adSoyad),
+    field('E-posta', eposta),
+    field('Telegram', telegram, 'İsteğe bağlı. Baştaki @ olsa da olmasa da olur.'),
+    el('div', { class: 'profil-aksiyon' }, [kimlikKaydet, kimlikDurum]),
+  ]);
+  kimlikForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    void (async () => {
+      kimlikDurum.className = 'status';
+      kimlikDurum.textContent = 'Kaydediliyor…';
+      try {
+        const yeni = (await api('/api/profile', {
+          method: 'PATCH',
+          body: JSON.stringify({
+            username: kullaniciAdi.value,
+            fullName: adSoyad.value,
+            email: eposta.value,
+            telegram: telegram.value,
+          }),
+        })) as Me;
+        // Kabuk yeniden kuruluyor: kenar çubuğundaki ad ve baş harfler
+        // değişmiş olabilir.
+        void appShell({ ...me, ...yeni }, 'profile');
+      } catch (err) {
+        kimlikDurum.className = 'status status-error';
+        kimlikDurum.textContent = err instanceof Error ? err.message : 'Kaydedilemedi.';
+      }
+    })();
+  });
+
+  const mevcut = el('input', {
+    type: 'password', autocomplete: 'current-password', required: 'true',
+  }) as HTMLInputElement;
+  const yeni = el('input', {
+    type: 'password', autocomplete: 'new-password', required: 'true', minlength: '8',
+  }) as HTMLInputElement;
+  const parolaDurum = el('span', { class: 'status' });
+
+  const parolaForm = el('form', { class: 'profil-form' }, [
+    field('Mevcut parola', mevcut),
+    field('Yeni parola (en az 8 karakter)', yeni),
+    el('div', { class: 'profil-aksiyon' }, [
+      el('button', { class: 'btn-primary', type: 'submit' }, ['Parolayı Değiştir']),
+      parolaDurum,
+    ]),
+  ]);
+  parolaForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    void (async () => {
+      parolaDurum.className = 'status';
+      parolaDurum.textContent = 'Değiştiriliyor…';
+      try {
+        await api('/api/profile/password', {
+          method: 'POST',
+          body: JSON.stringify({ current: mevcut.value, password: yeni.value }),
+        });
+        loginScreen('Parola değişti, yeniden giriş yapın.');
+      } catch (err) {
+        parolaDurum.className = 'status status-error';
+        parolaDurum.textContent = err instanceof Error ? err.message : 'Değiştirilemedi.';
+      }
+    })();
+  });
+
+  return [
+    panel('Hesap', 'kullanıcı adı, ad soyad ve iletişim',
+      el('div', { class: 'panel-body' }, [kimlikForm])),
+    panel('Parola', 'değiştirmek için mevcut parolan gerekir',
+      el('div', { class: 'panel-body' }, [
+        parolaForm,
+        el('p', { class: 'panel-note' }, [
+          'Parola değişince açık olan bütün oturumlar kapanır — bu tarayıcı '
+          + 'dahil. Değiştirmenin sebebi çoğu zaman "başkası girmiş olabilir" '
+          + 'endişesidir ve o oturumun açık kalması işe yaramazdı.',
+        ]),
+      ])),
+  ];
 }
 
 /**
@@ -3978,6 +4109,15 @@ function userForm(existing: UserRow | null, onDone: () => void): {
   submit: HTMLButtonElement;
 } {
   const uname = el('input', { required: 'true', placeholder: 'kullanici', maxlength: '32' });
+  const ufull = el('input', {
+    required: 'true', maxlength: String(FULL_NAME_MAX), spellcheck: 'false',
+  }) as HTMLInputElement;
+  const uemail = el('input', {
+    type: 'email', required: 'true', maxlength: String(EMAIL_MAX), spellcheck: 'false',
+  }) as HTMLInputElement;
+  const utelegram = el('input', {
+    maxlength: '33', spellcheck: 'false', placeholder: '@kullaniciadi',
+  }) as HTMLInputElement;
   const upass = el('input', {
     type: 'password',
     placeholder: existing === null ? 'En az 8 karakter' : 'Değiştirmek için doldurun',
@@ -3993,6 +4133,9 @@ function userForm(existing: UserRow | null, onDone: () => void): {
     uname.value = existing.username;
     uname.disabled = true;
     utype.value = existing.type;
+    ufull.value = existing.fullName;
+    uemail.value = existing.email ?? '';
+    utelegram.value = existing.telegram === null ? '' : `@${existing.telegram}`;
   }
 
   const status = el('span', { class: 'status' });
@@ -4001,6 +4144,9 @@ function userForm(existing: UserRow | null, onDone: () => void): {
   ]) as HTMLButtonElement;
   const form = el('form', { class: 'modal-form-grid', id: 'user-form' }, [
     field('Kullanıcı Adı', uname),
+    field('Ad Soyad', ufull),
+    field('E-posta', uemail),
+    field('Telegram', utelegram, 'İsteğe bağlı.'),
     field('Parola', upass, existing === null
       ? 'En az 8 karakter.'
       : 'Boş bırakılırsa parola değişmez.'),
@@ -4023,11 +4169,13 @@ function userForm(existing: UserRow | null, onDone: () => void): {
         method: 'POST',
         body: JSON.stringify({
           username: uname.value, password: upass.value, type: utype.value,
+          fullName: ufull.value, email: uemail.value, telegram: utelegram.value,
         }),
       });
     } else {
       const patch: Record<string, unknown> = {
         type: utype.value, isActive: uactive.checked,
+        fullName: ufull.value, email: uemail.value, telegram: utelegram.value,
       };
       // Boş parola "değiştirme" demektir; sunucuya boş dize göndermeyiz.
       if (upass.value !== '') patch['password'] = upass.value;
@@ -4067,8 +4215,14 @@ async function usersView(reload: () => void): Promise<Node[]> {
     return el('tr', {}, [
       el('td', {}, [
         el('span', { class: 'fund-code' }, [u.username]),
-        el('span', { class: 'fund-title' }, [`#${String(u.id)}`]),
+        el('span', { class: 'fund-title' }, [u.fullName]),
       ]),
+      // E-posta alanın eklenmesinden önceki kayıtlarda boş olabilir; boş
+      // bırakmak yerine işaretleniyor ki tamamlanması gerektiği görünsün.
+      el('td', {}, u.email === null
+        ? [badge('E-posta yok', 'pending')]
+        : [u.email]),
+      el('td', {}, [u.telegram === null ? '—' : `@${u.telegram}`]),
       el('td', {}, [badge(u.type === 'admin' ? 'Yönetici' : 'Kullanıcı', u.type)]),
       el('td', {}, [u.isActive ? badge('Aktif', 'open') : badge('Pasif', 'passive')]),
       el('td', { class: 'actions' }, [editBtn]),
@@ -4086,7 +4240,7 @@ async function usersView(reload: () => void): Promise<Node[]> {
       'Kullanıcılar',
       `${String(rows.length)} kayıt · ${String(active)} aktif`,
       el('div', { class: 'panel-body' }, [
-        table(['Kullanıcı', 'Tip', 'Durum', ''], body),
+        table(['Kullanıcı', 'E-posta', 'Telegram', 'Tip', 'Durum', ''], body),
       ]),
       addBtn,
     ),
@@ -4096,7 +4250,11 @@ async function usersView(reload: () => void): Promise<Node[]> {
 
 // ─── İskelet ────────────────────────────────────────────────────────────────
 
-const VIEWS: { id: ViewId; label: string; adminOnly: boolean; crumb: string }[] = [
+const VIEWS: {
+  id: ViewId; label: string; adminOnly: boolean; crumb: string;
+  /** Sol menünün ana listesi yerine kullanıcı menüsünde görünür. */
+  inUserMenu?: boolean;
+}[] = [
   { id: 'dashboard', label: 'Panel', adminOnly: false, crumb: 'Genel' },
   { id: 'portfolio', label: 'Portföyüm', adminOnly: false, crumb: 'Genel' },
   { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
@@ -4108,9 +4266,13 @@ const VIEWS: { id: ViewId; label: string; adminOnly: boolean; crumb: string }[] 
   { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },
   { id: 'watchlist', label: 'Takip Listem', adminOnly: false, crumb: 'Genel' },
   { id: 'prefs', label: 'Tercihlerim', adminOnly: false, crumb: 'Genel' },
-  { id: 'users', label: 'Kullanıcılar', adminOnly: true, crumb: 'Admin' },
-  { id: 'runs', label: 'Collector Log', adminOnly: true, crumb: 'Admin' },
-  { id: 'settings', label: 'Ayarlar', adminOnly: true, crumb: 'Admin' },
+  // Aşağıdakiler sol menünün ana listesinde ÇIKMAZ; en alttaki kullanıcı
+  // satırından yukarı açılan menüde duruyorlar. Kayıtları burada kalıyor
+  // çünkü ekran yönlendirmesi, breadcrumb ve ikon hep bu tablodan okunuyor.
+  { id: 'profile', label: 'Profil', adminOnly: false, crumb: 'Hesabım', inUserMenu: true },
+  { id: 'users', label: 'Kullanıcılar', adminOnly: true, crumb: 'Admin', inUserMenu: true },
+  { id: 'runs', label: 'Collector Log', adminOnly: true, crumb: 'Admin', inUserMenu: true },
+  { id: 'settings', label: 'Ayarlar', adminOnly: true, crumb: 'Admin', inUserMenu: true },
 ];
 
 /**
@@ -4144,8 +4306,13 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
   // ekran her kurulduğunda güncel kabuğa bağlanır.
   stocksReload = reload;
   gotoView = (v: ViewId): void => { void appShell(me, v); };
-  const visible = VIEWS.filter((v) => !v.adminOnly || me.type === 'admin');
-  const current = visible.find((v) => v.id === view) ?? visible[0]!;
+  const izinli = VIEWS.filter((v) => !v.adminOnly || me.type === 'admin');
+  // Ana listede yalnız gündelik ekranlar. Admin bağlantıları ve Profil
+  // aşağıdaki kullanıcı menüsünde: haftada bir girilen ekranlar her sayfada
+  // yer kaplamamalı.
+  const visible = izinli.filter((v) => v.inUserMenu !== true);
+  const menuOgeleri = izinli.filter((v) => v.inUserMenu === true);
+  const current = izinli.find((v) => v.id === view) ?? visible[0]!;
 
   const navButton = (v: (typeof VIEWS)[number]): HTMLElement => {
     const b = el('button', v.id === current.id ? { class: 'active' } : {}, [
@@ -4179,21 +4346,79 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     })();
   });
 
+  // Kullanıcı menüsü: alttaki satıra basınca yukarı doğru açılır.
+  //
+  // <details> değil elle yazılmış bir açılır menü, çünkü menünün dışarı
+  // tıklamayla ve Esc ile kapanması gerekiyor — <details> ikisini de
+  // kendiliğinden yapmıyor ve açık kalan bir menü ekranın üstünü kapatırdı.
+  const menu = el('div', { class: 'user-menu', role: 'menu' }, [
+    ...menuOgeleri.map((v) => {
+      const b = el('button', {
+        class: `user-menu-item${v.id === current.id ? ' active' : ''}`,
+        type: 'button', role: 'menuitem',
+      }, [icon(v.id), v.label]);
+      b.addEventListener('click', () => void appShell(me, v.id));
+      return b;
+    }),
+    el('div', { class: 'user-menu-sep' }, []),
+    logout,
+  ]);
+
+  const gorunenAd = me.fullName ?? me.username;
+  // Baş harfler kelimelerin baş harflerinden: "Batur Orkun" → BO. İlk iki
+  // karakteri almak "BA" verirdi ve ad soyad yazan biri onu bekliyor değil.
+  // Tek kelimede (kullanıcı adı) ilk iki karakter kalıyor.
+  const kelimeler = gorunenAd.trim().split(/\s+/).filter((x) => x !== '');
+  const basHarfler = (kelimeler.length > 1
+    ? kelimeler.slice(0, 2).map((k) => k[0] ?? '').join('')
+    : gorunenAd.slice(0, 2)).toLocaleUpperCase('tr');
+
+  const userButton = el('button', {
+    class: 'sidebar-user', type: 'button',
+    'aria-haspopup': 'menu', 'aria-expanded': 'false',
+  }, [
+    el('div', { class: 'avatar' }, [basHarfler]),
+    el('div', { class: 'sidebar-user-text' }, [
+      el('div', { class: 'sidebar-user-name' }, [gorunenAd]),
+      el('div', { class: 'sidebar-user-role' }, [me.type === 'admin' ? 'Yönetici' : 'Kullanıcı']),
+    ]),
+    icon('caretUp', 16),
+  ]) as HTMLButtonElement;
+
+  const foot = el('div', { class: 'sidebar-foot' }, [menu, userButton]);
+
+  const menuKapat = (): void => {
+    foot.classList.remove('acik');
+    userButton.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('keydown', menuKlavye);
+    document.removeEventListener('pointerdown', menuDisari);
+  };
+  function menuKlavye(e: KeyboardEvent): void {
+    if (e.key === 'Escape') menuKapat();
+  }
+  function menuDisari(e: Event): void {
+    // Menünün kendi içine yapılan tıklama kapatmamalı; öğeler zaten ekran
+    // değiştirip kabuğu yeniden kuruyor.
+    if (!foot.contains(e.target as Node)) menuKapat();
+  }
+  userButton.addEventListener('click', () => {
+    const acildi = !foot.classList.contains('acik');
+    if (acildi) {
+      foot.classList.add('acik');
+      userButton.setAttribute('aria-expanded', 'true');
+      document.addEventListener('keydown', menuKlavye);
+      document.addEventListener('pointerdown', menuDisari);
+    } else {
+      menuKapat();
+    }
+  });
+
   const sidebar = el('aside', { class: 'sidebar' }, [
     brand(),
     nav,
-    // Kullanıcı bilgisi ve çıkış birlikte en altta; kullanıcı çıkışın hemen
-    // üstünde durur, ikisi nav'dan çizgiyle ayrılır.
-    el('div', { class: 'sidebar-foot' }, [
-      el('div', { class: 'sidebar-user' }, [
-        el('div', { class: 'avatar' }, [me.username.slice(0, 2).toUpperCase()]),
-        el('div', {}, [
-          el('div', { class: 'sidebar-user-name' }, [me.username]),
-          el('div', { class: 'sidebar-user-role' }, [me.type === 'admin' ? 'Yönetici' : 'Kullanıcı']),
-        ]),
-      ]),
-      logout,
-    ]),
+    // Kullanıcı satırı en altta; menü onun ÜSTÜNDE açılıyor, çünkü aşağıda
+    // ekran bitiyor.
+    foot,
   ]);
 
   let bodyNodes: Node[];
@@ -4209,6 +4434,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     else if (current.id === 'transactions') bodyNodes = await transactionsView(reload);
     else if (current.id === 'watchlist') bodyNodes = await watchlistView(reload);
     else if (current.id === 'prefs') bodyNodes = await prefsView(reload);
+    else if (current.id === 'profile') bodyNodes = await profileView(me, reload);
     else if (current.id === 'runs') bodyNodes = await runsView();
     else if (current.id === 'settings') bodyNodes = await settingsView(reload);
     else bodyNodes = await usersView(reload);
