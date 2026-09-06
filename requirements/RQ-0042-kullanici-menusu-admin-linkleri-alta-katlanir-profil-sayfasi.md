@@ -1,6 +1,6 @@
 ---
 id: RQ-0042
-status: ready
+status: completed
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -8,6 +8,9 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-09-06T20:21:56.425Z"
 branch: "factory/RQ-0042"
 createdFromCommit: "032ba2156005bf25dcfb5b483d1a4f9d72e8e458"
+completedRunId: "20260906203948-RQ-0042"
+completedBy: "Batur Orkun"
+completedAt: "2026-09-06T21:11:47.320Z"
 githubPullRequestUrl: "https://github.com/baturorkun/tefas-pro/pull/84"
 githubPullRequestIid: 84
 githubIssueUrl: "https://github.com/baturorkun/tefas-pro/issues/83"
