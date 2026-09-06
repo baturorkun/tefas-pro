@@ -13,25 +13,41 @@
       }
     ]
   },
-  "status": "running",
+  "status": "needs-fix",
   "createdAt": "2026-09-06T20:39:48.151Z",
-  "updatedAt": "2026-09-06T20:40:03.124Z",
+  "updatedAt": "2026-09-06T21:07:36.691Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-09-06T20:40:03.124Z"
+      "status": "needs-fix",
+      "startedAt": "2026-09-06T20:40:03.124Z",
+      "finishedAt": "2026-09-06T21:07:36.691Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "db/migrations/037_app_user_full_name.sql",
+    "db/migrations/038_app_user_contact.sql",
+    "package.json",
+    "requirements/RQ-0042-kullanici-menusu-admin-linkleri-alta-katlanir-profil-sayfasi.md",
+    "src/db/seed.ts",
+    "src/db/user.ts",
+    "src/main.ts",
+    "src/server/index.ts",
+    "src/server/repository.ts",
+    "src/styles.css",
+    "src/user-fields.ts",
+    "tests/profile.test.sh",
+    "tests/ui-conventions.test.ts",
+    "tests/user-fields.test.ts"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "failed",
+    "security": "passed"
   }
 }

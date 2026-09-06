@@ -23,8 +23,8 @@ if [ -z "${DATABASE_URL:-}" ] || ! command -v psql >/dev/null 2>&1 \
 fi
 q() { psql "${DATABASE_URL}" -tAqc "$1"; }
 
-uid="$(q "INSERT INTO app_user (username, type, password_hash, password_salt, is_active)
-          VALUES ('__test_pref', 'user', 'x', 'y', false) RETURNING id")"
+uid="$(q "INSERT INTO app_user (username, full_name, type, password_hash, password_salt, is_active)
+          VALUES ('__test_pref', '__test_pref', 'user', 'x', 'y', false) RETURNING id")"
 cleanup() { q "DELETE FROM app_user WHERE id = ${uid}" >/dev/null; }
 trap cleanup EXIT
 
