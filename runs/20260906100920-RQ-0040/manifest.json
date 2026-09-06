@@ -13,25 +13,37 @@
       }
     ]
   },
-  "status": "running",
+  "status": "passed",
   "createdAt": "2026-09-06T10:09:20.261Z",
-  "updatedAt": "2026-09-06T10:09:32.530Z",
+  "updatedAt": "2026-09-06T11:09:51.460Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-09-06T10:09:32.530Z"
+      "status": "passed",
+      "startedAt": "2026-09-06T10:09:32.530Z",
+      "finishedAt": "2026-09-06T11:09:51.460Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "package.json",
+    "requirements/RQ-0040-dogal-dille-soru-sorma-veri-destekli-ai-asistan.md",
+    "src/main.ts",
+    "src/server/assistant.ts",
+    "src/server/index.ts",
+    "src/sources/gemini.ts",
+    "src/styles.css",
+    "tests/assistant.test.sh",
+    "tests/assistant.test.ts",
+    "tests/ui-conventions.test.ts"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
   }
 }
