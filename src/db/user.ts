@@ -175,11 +175,17 @@ export async function clone(
        SELECT $2, fund_code, added_at, note FROM user_watchlist WHERE user_id = $1`,
       [from, yeni.id],
     );
+    // Tercihler kopyalanır, sayaçlar kopyalanmaz: `assistant.usage` bir
+    // tercih değil günlük soru sayacı ve kopyalanırsa klon hesap dolu
+    // sayaçla doğar — test için açılan hesap ilk soruda sınıra takılırdı.
     const st = await client.query(
       `INSERT INTO user_setting (user_id, key, value)
-       SELECT $2, key, value FROM user_setting WHERE user_id = $1`,
+       SELECT $2, key, value FROM user_setting
+        WHERE user_id = $1 AND key <> 'assistant.usage'`,
       [from, yeni.id],
     );
+    // Konuşmalar kopyalanmıyor: klonun amacı portföy verisiyle denemek,
+    // kaynağın sorduğu soruları devralmak değil. Sorular kişisel.
     await client.query('COMMIT');
     return {
       userId: yeni.id,
@@ -201,6 +207,7 @@ export interface DropResult {
   watchlist: number;
   settings: number;
   sessions: number;
+  conversations: number;
 }
 
 /**
@@ -231,6 +238,12 @@ export async function drop(pool: pg.Pool, username: string): Promise<DropResult>
     }
 
     const ses = await client.query('DELETE FROM app_session WHERE user_id = $1', [id]);
+    // Konuşmalar ON DELETE CASCADE ile de giderdi; burada açıkça siliniyor ki
+    // raporda sayısı görünsün. "Ne silindi" listesi eksikse, silinen şeyin
+    // farkında olunmuyor demektir.
+    const kn = await client.query(
+      'DELETE FROM assistant_conversation WHERE user_id = $1', [id],
+    );
     const st = await client.query('DELETE FROM user_setting WHERE user_id = $1', [id]);
     const wl = await client.query('DELETE FROM user_watchlist WHERE user_id = $1', [id]);
     await client.query(
@@ -245,6 +258,7 @@ export async function drop(pool: pg.Pool, username: string): Promise<DropResult>
       watchlist: wl.rowCount ?? 0,
       settings: st.rowCount ?? 0,
       sessions: ses.rowCount ?? 0,
+      conversations: kn.rowCount ?? 0,
     };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -378,7 +392,7 @@ async function main(): Promise<void> {
       console.log(
         `${username} silindi: ${String(r.transactions)} işlem, `
         + `${String(r.watchlist)} takip satırı, ${String(r.settings)} tercih, `
-        + `${String(r.sessions)} oturum`,
+        + `${String(r.sessions)} oturum, ${String(r.conversations)} konuşma`,
       );
     } else if (cmd === 'transfer') {
       const [from, to] = rest;

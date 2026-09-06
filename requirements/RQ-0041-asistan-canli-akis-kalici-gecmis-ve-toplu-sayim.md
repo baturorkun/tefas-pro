@@ -1,6 +1,6 @@
 ---
 id: RQ-0041
-status: draft
+status: ready
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -70,6 +70,35 @@ zaman salt-okunur rol, zaman aşımı ve satır limiti gerekir.
 
 Sayım veritabanında yapılır; modelin kendi araması yasak kalır.
 
+## 4. Giriş ekranında boşluk yok
+
+Kart düz bir blok: etiket, girdi ve düğme aralarında hiç boşluk olmadan
+yığılıyor. "Parola" etiketi üstteki girdiye, "Giriş yap" düğmesi de parola
+girdisine yapışık duruyor. Düğme ayrıca girdilerden alçak; tam genişlikte
+olduğu için sütun aşağı doğru inceliyor gibi görünüyor.
+
+Asistan işiyle ilgisi yok, bu RQ'ya sığdırılıyor.
+
+## 5. Asistan yerel geliştirme ortamında kapalı
+
+`.env` içinde `CHATBOT_API_KEY` duruyor ama compose dosyası dev container'ına
+aktarmıyor; 8282'deki uygulama "Asistan yapılandırılmamış" diyor. RQ-0040'ta
+aynı hata deploy tarafında yaşanmıştı: tanımlanmış ama aktarılmayan değişken,
+kullanıcının yaptığını sandığı ama olmayan bir ayardır.
+
+## 6. Kuruş her yerde gürültü
+
+Parasal tutarlar virgülden sonra iki hane yazıyor: "3.770.766,36 TL". Portföy
+ölçeğinde kuruş bilgi taşımıyor, yalnız rakamı uzatıyor.
+
+Kısaltmalardaki virgül bunun dışında: "3,77 m ₺" içindeki iki hane 770 bin
+lira demek ve atılırsa bilgi gider. Yüzde, adet ve birim fiyat da öyle.
+
+## 7. Soru örnekleri az
+
+Asistan ekranında dört örnek var. Neyi sorabileceğini göstermek için az;
+hepsini birden düğme olarak dizmek de ekranı rozet duvarına çevirir.
+
 ## Acceptance Criteria
 
 - Soru sorulduğunda hangi adımda olunduğu canlı görünür; hangi tool'un
@@ -84,3 +113,12 @@ Sayım veritabanında yapılır; modelin kendi araması yasak kalır.
 - "Salı günleri mi daha çok alım yaptım" sorusu doğru cevaplanır ve rakam
   veritabanıyla birebir tutar.
 - Serbest SQL bu RQ'da yok.
+- Giriş ve parola ekranlarında alanlar arasında boşluk var; düğme girdilerle
+  aynı yükseklikte.
+- Asistan yerel geliştirme ortamında da çalışır: `.env`deki ayarlar dev
+  container'ına geçer.
+- Parasal tutarlar kuruşsuz gösterilir; kısaltma, yüzde, adet ve birim fiyat
+  hanelerini korur. Asistanın cevapları da kuruşsuz.
+- Örnek sorular çoğalır ama ekranı doldurmaz: bir kısmı görünür, gerisi
+  konu başlıkları altında katlanmış durur.
+- Sağlayıcı boş yanıt döndüğünde bir kez daha denenir; sebep günlüğe yazılır.

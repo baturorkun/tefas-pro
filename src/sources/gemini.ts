@@ -92,6 +92,25 @@ export function parseError(raw: unknown): string | null {
   return metin((e as { message?: unknown }).message);
 }
 
+/**
+ * Boş bir turun sebebini günlüğe yazılabilir hâle getirir.
+ *
+ * Yanıtın tamamı yazılmıyor: kullanıcının portföy verisi ve soruları
+ * günlüğe düşmemeli. Yalnız teşhis için gereken alanlar alınıyor.
+ */
+function ozetle(raw: unknown): string {
+  if (typeof raw !== 'object' || raw === null) return 'yanıt nesne değil';
+  const r = raw as Record<string, unknown>;
+  const aday = Array.isArray(r['candidates']) ? r['candidates'][0] as Record<string, unknown> : null;
+  const parts = (aday?.['content'] as { parts?: unknown } | undefined)?.parts;
+  return [
+    `finishReason=${String(aday?.['finishReason'] ?? '—')}`,
+    `parça=${Array.isArray(parts) ? String(parts.length) : 'yok'}`,
+    `promptFeedback=${JSON.stringify(r['promptFeedback'] ?? null)}`,
+    `usage=${JSON.stringify(r['usageMetadata'] ?? null)}`,
+  ].join(' ');
+}
+
 export class GeminiClient {
   private readonly key: string;
 
@@ -107,7 +126,29 @@ export class GeminiClient {
    * çağrılıyor. Döngüyü burada kapatmamak, tur sınırının ve tool
    * yürütmesinin sunucu tarafında kalmasını sağlıyor.
    */
+  /**
+   * Bir tur çalıştırır ve boş dönerse BİR kez daha dener.
+   *
+   * Ölçüldü: aynı soruya sekiz denemenin ikisinde model `finishReason=STOP`
+   * ile hiç parça döndürmüyor — ne metin ne fonksiyon çağrısı, çıktı token'ı
+   * sıfır. Kullanıcı bunu "Cevap üretilemedi" olarak görüyordu. Sağlayıcı
+   * kaynaklı geçici bir arıza; sıfır çıktılı bir yanıt hiçbir zaman geçerli
+   * bir cevap olmadığı için tekrar denemek güvenli.
+   *
+   * Tek deneme: ikincisi de boşsa sorun geçici değildir ve döngüyü sürekli
+   * yeniden denemeye sokmak hem parayı hem süreyi boşa harcar.
+   */
   async generate(
+    system: string,
+    contents: readonly Content[],
+    tools: readonly FunctionDeclaration[],
+  ): Promise<Turn> {
+    const ilk = await this.tekTur(system, contents, tools);
+    if (ilk.text !== null || ilk.calls.length > 0) return ilk;
+    return this.tekTur(system, contents, tools);
+  }
+
+  private async tekTur(
     system: string,
     contents: readonly Content[],
     tools: readonly FunctionDeclaration[],
@@ -131,6 +172,14 @@ export class GeminiClient {
       // Mesaj kullanıcıya gösterilmez; anahtar parçası taşıyabilir.
       throw new Error(`gemini http ${String(res.status)}: ${parseError(govde) ?? 'bilinmeyen hata'}`);
     }
-    return parseTurn(govde);
+    const tur = parseTurn(govde);
+    // Ne metin ne çağrı: kullanıcı "Cevap üretilemedi" görüyor ve sebebi
+    // hiçbir yere yazılmıyordu. Sebep yanıtın kendisinde duruyor
+    // (finishReason, güvenlik filtresi, düşünmede tükenen bütçe); günlüğe
+    // yazılmazsa aralıklı bir arıza hiç teşhis edilemez.
+    if (tur.text === null && tur.calls.length === 0) {
+      console.warn('gemini boş tur (yeniden denenecek):', ozetle(govde));
+    }
+    return tur;
   }
 }

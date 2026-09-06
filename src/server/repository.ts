@@ -1632,6 +1632,127 @@ export async function fundDetail(
   };
 }
 
+/** Gruplama boyutu ve ölçüsü: model yalnız bu listelerden seçebilir. */
+const BOYUT = {
+  gun_adi: "to_char(t.trade_date, 'Day')",
+  ay: "to_char(t.trade_date, 'YYYY-MM')",
+  fon: 't.fund_code',
+  banka: 't.platform',
+  durum: "CASE WHEN t.sell_date IS NULL THEN 'açık' ELSE 'satılmış' END",
+} as const;
+
+const OLCU = {
+  islem_sayisi: 'count(*)',
+  adet: 'sum(t.units)',
+  maliyet: 'sum(s.cost)',
+  deger: 'sum(s.value)',
+} as const;
+
+/** Boyutun doğal sırası: gün ve ay alfabetik değil takvim sırasıyla anlamlı. */
+const SIRA: Record<keyof typeof BOYUT, string> = {
+  gun_adi: 'min(extract(dow from t.trade_date))',
+  ay: "min(to_char(t.trade_date, 'YYYY-MM'))",
+  fon: 'min(t.fund_code)',
+  banka: 'min(t.platform)',
+  durum: "min(CASE WHEN t.sell_date IS NULL THEN 0 ELSE 1 END)",
+};
+
+export interface SayimSatiri {
+  grup: string;
+  deger: string;
+  /** Ölçü hesaplanamayan satır sayısı; sessizce düşmesin diye taşınır. */
+  olculemeyen: number;
+}
+
+export interface SayimSonucu {
+  grupla: string;
+  olcu: string;
+  satirlar: SayimSatiri[];
+  toplam: string;
+  /** Ölçüsü hesaplanamayan işlem sayısı; ölçülemeyen gün varsa dolu olur. */
+  olculemeyenToplam: number;
+}
+
+/**
+ * İşlemleri sabit boyutlara göre gruplayıp sayar.
+ *
+ * Sayım veritabanında yapılır. Modelin kendisi saymasına izin verilmiyor:
+ * ölçüldü, 103 işlemi bir denemede 14, bir başkasında 77 diye bildirdi ve iki
+ * cevap da kesin göründüğü için yanlışlığı ancak veritabanıyla karşılaştırınca
+ * anlaşıldı.
+ *
+ * Serbest SQL yerine sabit boyut: gerçek soruların neredeyse tamamı "şuna göre
+ * grupla ve say" biçiminde ve bu, arbitrary SQL'in güvenlik yüzeyini hiç
+ * açmadan karşılanıyor.
+ *
+ * Getiri ölçüsü YOK ve bilerek yok: getiri NAV zincirleme ve nakit akışı
+ * düzeltmesi istiyor, düz bir ortalama yanlış sonuç verir. O sorular
+ * donemsel_getiri ve fon_listesi'nin işi.
+ */
+export async function islemSayimi(
+  pool: pg.Pool,
+  userId: number,
+  grupla: string,
+  olcu: string,
+  filtre: { fon?: string; banka?: string; baslangic?: string; bitis?: string } = {},
+): Promise<SayimSonucu> {
+  const b = BOYUT[grupla as keyof typeof BOYUT];
+  const o = OLCU[olcu as keyof typeof OLCU];
+  if (b === undefined) {
+    throw new Error(`Bilinmeyen gruplama: ${grupla}. Seçenekler: ${Object.keys(BOYUT).join(', ')}`);
+  }
+  if (o === undefined) {
+    throw new Error(`Bilinmeyen ölçü: ${olcu}. Seçenekler: ${Object.keys(OLCU).join(', ')}`);
+  }
+
+  // Parametreler dizinin sırasına göre numaralanıyor; koşullar isteğe bağlı.
+  const kosul: string[] = ['t.user_id = $1'];
+  const p: unknown[] = [userId];
+  const ekle = (sql: string, deger: unknown): void => {
+    p.push(deger);
+    kosul.push(sql.replace('$?', `$${String(p.length)}`));
+  };
+  if (filtre.fon !== undefined && filtre.fon !== '') ekle('t.fund_code = $?', filtre.fon.toUpperCase());
+  if (filtre.banka !== undefined && filtre.banka !== '') ekle('t.platform = $?', filtre.banka);
+  if (filtre.baslangic !== undefined && filtre.baslangic !== '') ekle('t.trade_date >= $?::date', filtre.baslangic);
+  if (filtre.bitis !== undefined && filtre.bitis !== '') ekle('t.trade_date <= $?::date', filtre.bitis);
+
+  // position_slice LEFT JOIN: maliyeti ölçülemeyen işlem de sayıma girmeli.
+  // İç birleşim yapılsaydı o satırlar sessizce düşerdi — RQ-0040'ta modelin
+  // yaptığı hatanın aynısı, bu kez SQL'de.
+  // olculemeyen yalnız slice okuyan ölçüler için anlamlı: count(*) ve sum(t.units)
+  // eşleşme olmasa da doğru sonuç verir, onlarda 0 raporlanır.
+  const slicedenOkur = o.includes('s.');
+  const r = await pool.query<{ grup: string; deger: string | null; olculemeyen: string }>(
+    `SELECT ${b} AS grup, ${o}::text AS deger,
+            ${slicedenOkur ? 'count(*) FILTER (WHERE s.transaction_id IS NULL)' : '0'}::text AS olculemeyen
+       FROM portfolio_transaction t
+       LEFT JOIN analytics.position_slice s ON s.transaction_id = t.id
+      WHERE ${kosul.join(' AND ')}
+      GROUP BY ${b}
+      ORDER BY ${SIRA[grupla as keyof typeof BOYUT]}`,
+    p,
+  );
+
+  const satirlar = r.rows.map((x) => ({
+    grup: x.grup.trim(),
+    deger: x.deger ?? '0',
+    olculemeyen: Number(x.olculemeyen),
+  }));
+  return {
+    grupla,
+    olcu,
+    satirlar,
+    toplam: satirlar.reduce((a, x) => a + Number(x.deger), 0).toFixed(
+      olcu === 'islem_sayisi' ? 0 : 2,
+    ),
+    olculemeyenToplam: satirlar.reduce((a, x) => a + x.olculemeyen, 0),
+  };
+}
+
+export const SAYIM_BOYUTLARI = Object.keys(BOYUT);
+export const SAYIM_OLCULERI = Object.keys(OLCU);
+
 export interface StockFundRow {
   fundCode: string;
   title: string | null;
@@ -2121,4 +2242,131 @@ export async function fundValor(
   const row = r.rows[0];
   if (!row) return null;
   return { buy: row.buy_valor_days ?? 0, sell: row.sell_valor_days ?? 0 };
+}
+
+/* ── Asistan konuşmaları ───────────────────────────────────────────────── */
+
+export interface KonusmaOzet {
+  id: number;
+  title: string;
+  updatedAt: string;
+  messages: number;
+}
+
+export interface KonusmaMesaj {
+  role: 'user' | 'model';
+  text: string;
+  toolNames: string[];
+}
+
+/** Kullanıcının konuşmaları, yeniden eskiye. */
+export async function konusmalar(pool: pg.Pool, userId: number): Promise<KonusmaOzet[]> {
+  const r = await pool.query<{ id: number; title: string; updated_at: Date; n: string }>(
+    `SELECT c.id, c.title, c.updated_at,
+            (SELECT count(*) FROM assistant_message m
+              WHERE m.conversation_id = c.id)::text AS n
+       FROM assistant_conversation c
+      WHERE c.user_id = $1
+      ORDER BY c.updated_at DESC`,
+    [userId],
+  );
+  return r.rows.map((x) => ({
+    id: x.id,
+    title: x.title,
+    updatedAt: x.updated_at.toISOString(),
+    messages: Number(x.n),
+  }));
+}
+
+/**
+ * Bir konuşmanın mesajları.
+ *
+ * user_id koşulu JOIN'de: kimlik doğrulaması ayrı bir sorguya bırakılsaydı
+ * unutulduğunda başkasının konuşması okunabilirdi. Sahibi olmayan kimlik
+ * için boş dizi döner — "yok" ile "senin değil" arasındaki fark, olmayan
+ * bir kaydın varlığını sızdırmamak için dışarıdan görünmüyor.
+ */
+export async function konusmaMesajlari(
+  pool: pg.Pool, userId: number, id: number,
+): Promise<KonusmaMesaj[]> {
+  const r = await pool.query<{ role: string; text: string; tool_names: string[] }>(
+    `SELECT m.role, m.text, m.tool_names
+       FROM assistant_message m
+       JOIN assistant_conversation c ON c.id = m.conversation_id
+      WHERE m.conversation_id = $1 AND c.user_id = $2
+      ORDER BY m.id`,
+    [id, userId],
+  );
+  return r.rows.map((x) => ({
+    role: x.role === 'model' ? 'model' : 'user',
+    text: x.text,
+    toolNames: x.tool_names,
+  }));
+}
+
+/** Konuşma açar. Başlık ilk sorudan; kullanıcı listede ne sorduğunu görsün. */
+export async function konusmaAc(
+  pool: pg.Pool, userId: number, baslik: string,
+): Promise<number> {
+  const r = await pool.query<{ id: number }>(
+    'INSERT INTO assistant_conversation (user_id, title) VALUES ($1, $2) RETURNING id',
+    [userId, baslik.slice(0, 120)],
+  );
+  const id = r.rows[0]?.id;
+  if (id === undefined) throw new Error('Konuşma açılamadı.');
+  return id;
+}
+
+/**
+ * Konuşmaya soru–cevap çifti yazar.
+ *
+ * İkisi tek transaction'da: yalnız sorunun kaydedildiği bir konuşma, sayfa
+ * yenilendiğinde cevapsız görünürdü.
+ *
+ * Yazmadan önce sahiplik doğrulanıyor; kimlik istekten geliyor.
+ */
+export async function konusmayaYaz(
+  pool: pg.Pool,
+  userId: number,
+  id: number,
+  soru: string,
+  cevap: { text: string; usedTools: string[] },
+): Promise<boolean> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const sahip = await client.query(
+      'SELECT 1 FROM assistant_conversation WHERE id = $1 AND user_id = $2',
+      [id, userId],
+    );
+    if (sahip.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return false;
+    }
+    await client.query(
+      `INSERT INTO assistant_message (conversation_id, role, text, tool_names)
+       VALUES ($1, 'user', $2, '{}'), ($1, 'model', $3, $4)`,
+      [id, soru, cevap.text, cevap.usedTools],
+    );
+    await client.query(
+      'UPDATE assistant_conversation SET updated_at = now() WHERE id = $1', [id],
+    );
+    await client.query('COMMIT');
+    return true;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Konuşmayı siler. Mesajlar ON DELETE CASCADE ile gider. */
+export async function konusmaSil(
+  pool: pg.Pool, userId: number, id: number,
+): Promise<boolean> {
+  const r = await pool.query(
+    'DELETE FROM assistant_conversation WHERE id = $1 AND user_id = $2', [id, userId],
+  );
+  return (r.rowCount ?? 0) > 0;
 }
