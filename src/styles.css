@@ -830,3 +830,27 @@ textarea:focus  { outline: none; border-color: var(--accent);
              font: inherit; font-family: var(--mono); font-size: .78rem;
              color: var(--accent); text-align: left; }
 .link-code:hover { color: var(--accent-soft); text-decoration: underline; }
+
+/* Danış ekranı: sohbet balonları ve soru kutusu. */
+.chat-body   { display: flex; flex-direction: column; gap: 10px; }
+.chat-msg    { max-width: 46rem; padding: 10px 14px; border-radius: var(--radius);
+               font-size: .88rem; line-height: 1.55; }
+.chat-msg p  { margin: 0 0 .4rem; }
+.chat-msg p:last-child { margin-bottom: 0; }
+/* Kullanıcı sağda, model solda: kimin konuştuğu okumadan anlaşılsın. */
+.chat-user   { align-self: flex-end; background: var(--accent-tint); color: var(--text-strong); }
+.chat-model  { align-self: flex-start; background: var(--bg-raised);
+               border: 1px solid var(--line-soft); }
+.chat-wait   { color: var(--muted); letter-spacing: .3em; }
+/* Çağrılan tool'lar: cevabın kaynağı görünür olmalı, ama cevabın önüne
+   geçmemeli — küçük ve soluk. */
+.chat-tools  { margin-top: .5rem; padding-top: .4rem; border-top: 1px solid var(--line-soft);
+               color: var(--muted-dim); font-family: var(--mono); font-size: .68rem; }
+.chat-form   { display: flex; gap: 8px; margin-top: .5rem; }
+.chat-input  { flex: 1; }
+.chat-empty  { color: var(--muted); font-size: .88rem; }
+.chat-samples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: .75rem; }
+.chat-sample { padding: 6px 12px; border: 1px solid var(--line); border-radius: var(--radius-pill);
+               background: transparent; color: var(--text); font: inherit; font-size: .8rem;
+               cursor: pointer; }
+.chat-sample:hover { border-color: var(--accent); color: var(--accent); }

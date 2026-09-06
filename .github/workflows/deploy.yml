@@ -167,6 +167,10 @@ jobs:
           DB_URL: ${{ steps.db.outputs.url }}
           ADMIN_INITIAL_PASSWORD: ${{ secrets.ADMIN_INITIAL_PASSWORD }}
           COMMIT_SHA: ${{ github.sha }}
+          # Danış ekranı (RQ-0040). Zorunlu değil: yoksa yalnız o ekran
+          # kapalı kalır, deploy düşmez.
+          CHATBOT_API_KEY: ${{ secrets.CHATBOT_API_KEY }}
+          CHATBOT_MODEL: ${{ vars.CHATBOT_MODEL }}
         run: |
           [ -n "$ADMIN_INITIAL_PASSWORD" ] || {
             echo "ADMIN_INITIAL_PASSWORD secret'ı tanımlı değil."; exit 1; }
@@ -179,6 +183,17 @@ jobs:
           commit_time="$(git log -1 --format=%cI 2>/dev/null || true)"
           printf 'DATABASE_URL=%s\nADMIN_INITIAL_PASSWORD=%s\nSESSION_TTL=43200\nSECURE_COOKIE=false\nGIT_COMMIT_SHA=%s\nGIT_COMMIT_TIME=%s\n' \
             "$DB_URL" "$ADMIN_INITIAL_PASSWORD" "${COMMIT_SHA:0:7}" "$commit_time" > "${root}/runtime.env"
+          # Anahtar yalnız tanımlıysa yazılır. Boş bir CHATBOT_API_KEY satırı
+          # yazmak, uygulamanın "anahtar var ama geçersiz" koluna girmesine ve
+          # her soruda sağlayıcıdan hata almasına yol açardı; tanımsız olması
+          # ekranı temiz biçimde kapatıyor.
+          if [ -n "$CHATBOT_API_KEY" ]; then
+            printf 'CHATBOT_API_KEY=%s\n' "$CHATBOT_API_KEY" >> "${root}/runtime.env"
+            [ -n "$CHATBOT_MODEL" ] && printf 'CHATBOT_MODEL=%s\n' "$CHATBOT_MODEL" >> "${root}/runtime.env"
+            echo "Danış ekranı etkin."
+          else
+            echo "CHATBOT_API_KEY secret'ı yok; Danış ekranı kapalı kalacak."
+          fi
           chmod 600 "${root}/runtime.env"
 
       - name: Run migrations on slot database

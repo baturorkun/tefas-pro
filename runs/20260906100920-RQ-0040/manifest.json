@@ -1,0 +1,49 @@
+{
+  "runId": "20260906100920-RQ-0040",
+  "requirementId": "RQ-0040",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260906100920-RQ-0040/handoff.md",
+  "projectGuidelines": {
+    "combinedSha256": "73bde0d690f8ec23c37c27be97d17c628d2f60e56f49bffbe0810fd5769a70fb",
+    "files": [
+      {
+        "path": "AGENTS.md",
+        "sha256": "35dbcb26a57ab038e0e772629d210a83e459fa6674e4582d4ed0ed52b8bd28f8"
+      }
+    ]
+  },
+  "status": "passed",
+  "createdAt": "2026-09-06T10:09:20.261Z",
+  "updatedAt": "2026-09-06T11:09:51.460Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-09-06T10:09:32.530Z",
+      "finishedAt": "2026-09-06T11:09:51.460Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "package.json",
+    "requirements/RQ-0040-dogal-dille-soru-sorma-veri-destekli-ai-asistan.md",
+    "src/main.ts",
+    "src/server/assistant.ts",
+    "src/server/index.ts",
+    "src/sources/gemini.ts",
+    "src/styles.css",
+    "tests/assistant.test.sh",
+    "tests/assistant.test.ts",
+    "tests/ui-conventions.test.ts"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  }
+}

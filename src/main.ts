@@ -283,7 +283,7 @@ interface PerformanceSeries {
 
 type ViewId =
   | 'dashboard' | 'portfolio' | 'closed' | 'periods' | 'market'
-  | 'allocation' | 'stocks' | 'transactions' | 'watchlist' | 'prefs' | 'users' | 'runs' | 'settings';
+  | 'allocation' | 'stocks' | 'chat' | 'transactions' | 'watchlist' | 'prefs' | 'users' | 'runs' | 'settings';
 
 const root = document.getElementById('app');
 
@@ -501,6 +501,8 @@ const ICON_PATHS: Record<string, string[]> = {
   // Aşağı ok: satış paylardan çıkış. Yukarı bakarken "artır" gibi okunuyordu,
   // üstelik yanındaki "Alış Ekle" artı işaretiyle aynı yöne bakıyordu.
   sell: ['M12 5v14', 'm5 12 7 7 7-7'],
+  // Konuşma balonu: Danış ekranının menü ikonu.
+  chat: ['M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z'],
   // Büyüteç: satırın detayını açan düğme. Tanımsız bir ad verilince icon()
   // boş bir svg üretiyor ve düğme boş kutu olarak çiziliyordu.
   search: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z', 'm16.5 16.5 3.5 3.5'],
@@ -2943,6 +2945,124 @@ async function stocksView(): Promise<Node[]> {
   ];
 }
 
+/**
+ * Danış ekranı: doğal dille soru sorma.
+ *
+ * Konuşma modül düzeyinde tutuluyor — ekran değiştirip dönünce geçmiş
+ * duruyor. Sunucuda saklanmıyor: soru ve cevaplar kullanıcının kendi
+ * verisinden türüyor ve kalıcı bir kayıt tutmanın karşılığı yok.
+ */
+interface SohbetParca {
+  role: 'user' | 'model';
+  parts: { text: string }[];
+}
+
+let sohbet: SohbetParca[] = [];
+let sohbetAraclar: string[][] = [];
+let sohbetMesgul = false;
+let sohbetHata: string | null = null;
+
+async function chatView(reload: () => void): Promise<Node[]> {
+  const girdi = el('input', {
+    class: 'chat-input', placeholder: 'Sorunu yaz…', spellcheck: 'false',
+    ...(sohbetMesgul ? { disabled: 'true' } : {}),
+  }) as HTMLInputElement;
+  const gonder = el('button', {
+    class: 'btn-primary', type: 'submit',
+    ...(sohbetMesgul ? { disabled: 'true' } : {}),
+  }, [sohbetMesgul ? 'Düşünüyor…' : 'Sor']);
+
+  const sor = (): void => {
+    const soru = girdi.value.trim();
+    if (soru === '' || sohbetMesgul) return;
+    sohbet.push({ role: 'user', parts: [{ text: soru }] });
+    sohbetAraclar.push([]);
+    sohbetMesgul = true;
+    sohbetHata = null;
+    reload();
+    void (async () => {
+      try {
+        const r = (await api('/api/assistant', {
+          method: 'POST',
+          body: JSON.stringify({ history: sohbet }),
+        })) as { text: string; usedTools: string[] };
+        sohbet.push({ role: 'model', parts: [{ text: r.text }] });
+        sohbetAraclar.push(r.usedTools);
+      } catch (err) {
+        // Soru geçmişte kalıyor: kullanıcı yeniden yazmak zorunda olmasın.
+        sohbetHata = err instanceof Error ? err.message : 'Cevap alınamadı.';
+      } finally {
+        sohbetMesgul = false;
+        reload();
+      }
+    })();
+  };
+
+  const form = el('form', { class: 'chat-form' }, [girdi, gonder]);
+  form.addEventListener('submit', (e) => { e.preventDefault(); sor(); });
+
+  const balonlar = sohbet.map((m, i) => {
+    const metin = m.parts.map((x) => x.text).join('\n');
+    const araclar = sohbetAraclar[i] ?? [];
+    return el('div', { class: `chat-msg chat-${m.role}` }, [
+      // Metin satır satır: modelin cevabı çok satırlı geliyor ve tek düğümde
+      // satır sonları kayboluyordu.
+      ...metin.split('\n').map((satir) => el('p', {}, [satir])),
+      // Hangi tool'ların çağrıldığı görünür: cevabın nereden geldiği
+      // gizlenirse kullanıcı doğruluğunu değerlendiremez.
+      ...(araclar.length === 0 ? [] : [
+        el('div', { class: 'chat-tools' }, [`ⓘ ${araclar.join(' · ')}`]),
+      ]),
+    ]);
+  });
+
+  const ornekler = [
+    'Portföyüm ne durumda?',
+    'En çok hangi hissedeyim?',
+    'Paramın ne kadarı hisse senedinde?',
+    'Geçen ay ne kazandım?',
+  ];
+
+  return [
+    panel(
+      'Danış',
+      'kendi verin üzerinden soru sor',
+      el('div', { class: 'panel-body chat-body' }, [
+        ...(sohbet.length === 0
+          ? [el('div', { class: 'chat-empty' }, [
+              el('p', {}, ['Portföyün hakkında soru sorabilirsin. Örnekler:']),
+              el('div', { class: 'chat-samples' }, ornekler.map((o) => {
+                const b = el('button', { type: 'button', class: 'chat-sample' }, [o]);
+                b.addEventListener('click', () => { girdi.value = o; sor(); });
+                return b;
+              })),
+            ])]
+          : balonlar),
+        ...(sohbetMesgul ? [el('div', { class: 'chat-msg chat-model chat-wait' }, ['…'])] : []),
+        ...(sohbetHata === null ? [] : [
+          el('p', { class: 'panel-note panel-note-warn' }, [sohbetHata]),
+        ]),
+        form,
+      ]),
+      sohbet.length === 0 ? undefined : (() => {
+        const t = el('button', { class: 'btn-ghost', type: 'button' }, ['Yeni konuşma']);
+        t.addEventListener('click', () => {
+          sohbet = [];
+          sohbetAraclar = [];
+          sohbetHata = null;
+          reload();
+        });
+        return t;
+      })(),
+    ),
+    el('p', { class: 'panel-note' }, [
+      'Cevaplar senin verinden üretilir; ekranlardaki hesapların aynısı kullanılır. '
+      + 'Hisse ağırlıkları fonların aylık açıklamasından gelir ve bir aya kadar eski '
+      + 'olabilir. Yatırım tavsiyesi değildir.',
+    ]),
+  ];
+}
+
 async function closedView(): Promise<Node[]> {
   const rows = (await api('/api/closed')) as ClosedPositionRow[];
   const sum = (f: (r: ClosedPositionRow) => number): number => rows.reduce((a, r) => a + f(r), 0);
@@ -3704,6 +3824,7 @@ const VIEWS: { id: ViewId; label: string; adminOnly: boolean; crumb: string }[] 
   { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
   { id: 'allocation', label: 'Dağılım', adminOnly: false, crumb: 'Genel' },
   { id: 'stocks', label: 'Hisseler', adminOnly: false, crumb: 'Genel' },
+  { id: 'chat', label: 'Danış', adminOnly: false, crumb: 'Genel' },
   { id: 'closed', label: 'Kapananlar', adminOnly: false, crumb: 'Genel' },
   { id: 'periods', label: 'Dönemsel Getiri', adminOnly: false, crumb: 'Genel' },
   { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },
@@ -3803,6 +3924,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     else if (current.id === 'portfolio') bodyNodes = await portfolioView();
     else if (current.id === 'allocation') bodyNodes = await allocationView();
     else if (current.id === 'stocks') bodyNodes = await stocksView();
+    else if (current.id === 'chat') bodyNodes = await chatView(reload);
     else if (current.id === 'closed') bodyNodes = await closedView();
     else if (current.id === 'periods') bodyNodes = await periodsView();
     else if (current.id === 'market') bodyNodes = await marketView(reload);
