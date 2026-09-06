@@ -6,11 +6,24 @@ import type pg from 'pg';
 import { SCHEDULED_SOURCE } from '../collector.js';
 import { planFifoSale, type FifoStep } from '../fifo.js';
 
-import { hashPassword, newSessionId } from './auth.js';
+import { hashPassword, newSessionId, verifyPassword } from './auth.js';
+import {
+  adSoyadKontrol, epostaKontrol, telegramKontrol, telegramNormal,
+} from '../user-fields.js';
 
 export interface AppUser {
   id: number;
   username: string;
+  /** Görünen ad. Zorunlu. */
+  fullName: string;
+  /**
+   * E-posta. Yazma yollarında zorunlu, ama alanın eklenmesinden önceki
+   * kayıtlarda boş olabilir: uydurma bir adres yazmak, olmayan bir adresi
+   * varmış gibi göstermek olurdu.
+   */
+  email: string | null;
+  /** Telegram kullanıcı adı, @ olmadan. İsteğe bağlı. */
+  telegram: string | null;
   type: 'admin' | 'user';
   isActive: boolean;
   mustChangePassword: boolean;
@@ -21,7 +34,8 @@ interface UserRow extends AppUser {
   password_salt: string;
 }
 
-const USER_COLUMNS = `id, username, type, is_active AS "isActive",
+const USER_COLUMNS = `id, username, full_name AS "fullName", email, telegram,
+                      type, is_active AS "isActive",
                       must_change_password AS "mustChangePassword"`;
 
 export async function findUserByUsername(
@@ -45,16 +59,36 @@ export async function listUsers(pool: pg.Pool): Promise<AppUser[]> {
 
 export async function createUser(
   pool: pg.Pool,
-  input: { username: string; password: string; type: 'admin' | 'user'; mustChange?: boolean },
+  input: {
+    username: string; password: string; type: 'admin' | 'user'; mustChange?: boolean;
+  } & Partial<KimlikAlanlari>,
 ): Promise<AppUser> {
   const username = input.username.trim();
   if (username === '') throw new Error('Kullanıcı adı boş olamaz.');
+  const cakisma = await pool.query(
+    'SELECT 1 FROM app_user WHERE lower(username) = lower($1)', [username],
+  );
+  if ((cakisma.rowCount ?? 0) > 0) throw new Error(`"${username}" kullanıcı adı zaten var.`);
+
+  // Alanlar verilmezse kullanıcı adına düşülüyor ve e-posta boş kalıyor.
+  // CLI'dan hesap açmak (`pnpm db:user add`) bunları soramaz; arayüzden
+  // açılan her hesapta ikisi de zorunlu. Zorunluluğu CLI'a da taşımak,
+  // kurulum sırasında ilk admin'i açmayı imkânsız kılardı.
+  const alan = input.fullName === undefined && input.email === undefined
+    ? { fullName: username, email: null as string | null, telegram: null as string | null }
+    : kimlikAlanlari({
+      fullName: input.fullName ?? '', email: input.email ?? '', telegram: input.telegram ?? '',
+    });
+  if (alan.email !== null) await epostaBos(pool, alan.email, null);
+
   const { hash, salt } = await hashPassword(input.password);
   const r = await pool.query<AppUser>(
-    `INSERT INTO app_user (username, password_hash, password_salt, type, must_change_password)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO app_user (username, password_hash, password_salt, type,
+                           must_change_password, full_name, email, telegram)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING ${USER_COLUMNS}`,
-    [username, hash, salt, input.type, input.mustChange ?? false],
+    [username, hash, salt, input.type, input.mustChange ?? false,
+      alan.fullName, alan.email, alan.telegram],
   );
   return r.rows[0]!;
 }
@@ -71,10 +105,126 @@ async function assertNotLastAdmin(pool: pg.Pool, userId: number): Promise<void> 
   }
 }
 
+export interface KimlikAlanlari {
+  fullName: string;
+  email: string;
+  telegram: string;
+}
+
+/**
+ * Ad soyad, e-posta ve Telegram alanlarını doğrular ve normalleştirir.
+ *
+ * Profil ekranı ile admin kullanıcı formu aynı yoldan geçiyor: kurallar iki
+ * yerde ayrı yazılsaydı biri sıkı diğeri gevşek kalabilirdi ve admin
+ * üzerinden açılan bir hesap profilin kabul etmeyeceği veriyi taşırdı.
+ */
+function kimlikAlanlari(giris: KimlikAlanlari): {
+  fullName: string; email: string; telegram: string | null;
+} {
+  for (const hata of [
+    adSoyadKontrol(giris.fullName),
+    epostaKontrol(giris.email),
+    telegramKontrol(giris.telegram),
+  ]) {
+    if (hata !== null) throw new Error(hata.mesaj);
+  }
+  return {
+    fullName: giris.fullName.trim(),
+    email: giris.email.trim(),
+    telegram: telegramNormal(giris.telegram),
+  };
+}
+
+/** E-posta benzersizliği küçük harfe göre; username ile aynı kural. */
+async function epostaBos(
+  pool: pg.Pool | pg.PoolClient, email: string, disarida: number | null,
+): Promise<void> {
+  const r = await pool.query(
+    `SELECT 1 FROM app_user
+      WHERE lower(email) = lower($1) AND ($2::int IS NULL OR id <> $2)`,
+    [email, disarida],
+  );
+  if ((r.rowCount ?? 0) > 0) throw new Error(`"${email}" adresi başka bir hesapta.`);
+}
+
+/**
+ * Kullanıcının kendi profilini günceller: görünen ad ve kullanıcı adı.
+ *
+ * `updateUser` ile birleştirilmedi: o admin işlemi (tip, aktiflik, parola
+ * sıfırlama) ve son yönetici korumasını taşıyor. Kullanıcının kendine
+ * yapabildikleri farklı bir küme; tek fonksiyonda toplansa yetki kuralları
+ * iç içe geçerdi.
+ *
+ * Kullanıcı adı serbestçe değişebilir: hiçbir tablo kopyasını tutmuyor, her
+ * şey user_id üzerinden bağlı ve oturumlar da öyle — ad değişince kimse
+ * düşmüyor. Benzersizlik lower(username) üzerindeki unique index'te, o yüzden
+ * çakışma denetimi de küçük harfe göre.
+ */
+export async function updateProfile(
+  pool: pg.Pool,
+  id: number,
+  patch: { username: string } & KimlikAlanlari,
+): Promise<AppUser> {
+  const username = patch.username.trim();
+  if (username === '') throw new Error('Kullanıcı adı boş olamaz.');
+  // Kendi adını büyük/küçük harf değiştirerek yazabilmeli: "batur" →
+  // "Batur" çakışma sayılmamalı.
+  const cakisma = await pool.query(
+    'SELECT 1 FROM app_user WHERE lower(username) = lower($1) AND id <> $2',
+    [username, id],
+  );
+  if ((cakisma.rowCount ?? 0) > 0) {
+    throw new Error(`"${username}" kullanıcı adı başkasında.`);
+  }
+  const alan = kimlikAlanlari(patch);
+  await epostaBos(pool, alan.email, id);
+
+  const r = await pool.query<AppUser>(
+    `UPDATE app_user SET
+       username   = $2,
+       full_name  = $3,
+       email      = $4,
+       telegram   = $5,
+       updated_at = now()
+     WHERE id = $1
+     RETURNING ${USER_COLUMNS}`,
+    [id, username, alan.fullName, alan.email, alan.telegram],
+  );
+  const row = r.rows[0];
+  if (!row) throw new Error('Kullanıcı bulunamadı.');
+  return row;
+}
+
+/**
+ * Kullanıcının kendi parolasını değiştirir; mevcut parolayı ister.
+ *
+ * İlk giriş ekranı sormuyor çünkü orada kullanıcı az önce o parolayla girdi.
+ * Sonradan değiştirmede sormak gerekiyor: açık bırakılmış bir oturumun başına
+ * geçen biri, parolayı bilmeden değiştirip hesabı devralabilirdi.
+ */
+export async function changeOwnPassword(
+  pool: pg.Pool,
+  id: number,
+  current: string,
+  next: string,
+): Promise<boolean> {
+  const r = await pool.query<{ password_hash: string; password_salt: string }>(
+    'SELECT password_hash, password_salt FROM app_user WHERE id = $1', [id],
+  );
+  const row = r.rows[0];
+  if (!row) throw new Error('Kullanıcı bulunamadı.');
+  const dogru = await verifyPassword(current, { hash: row.password_hash, salt: row.password_salt });
+  if (!dogru) return false;
+  await updateUser(pool, id, { password: next });
+  return true;
+}
+
 export async function updateUser(
   pool: pg.Pool,
   id: number,
-  patch: { type?: 'admin' | 'user'; isActive?: boolean; password?: string },
+  patch: {
+    type?: 'admin' | 'user'; isActive?: boolean; password?: string;
+  } & Partial<KimlikAlanlari>,
 ): Promise<AppUser> {
   const current = await pool.query<{ type: string; is_active: boolean }>(
     'SELECT type, is_active FROM app_user WHERE id = $1',
@@ -94,6 +244,14 @@ export async function updateUser(
     hash = h.hash;
     salt = h.salt;
   }
+
+  // Kimlik alanları ya birlikte gelir ya hiç gelmez: tek başına ad soyad
+  // güncellemek e-postayı doğrulamadan geçirmenin yolu olurdu.
+  const kimlik = patch.fullName === undefined ? null : kimlikAlanlari({
+    fullName: patch.fullName, email: patch.email ?? '', telegram: patch.telegram ?? '',
+  });
+  if (kimlik !== null) await epostaBos(pool, kimlik.email, id);
+
   const r = await pool.query<AppUser>(
     `UPDATE app_user SET
        type                 = COALESCE($2, type),
@@ -101,10 +259,14 @@ export async function updateUser(
        password_hash        = COALESCE($4, password_hash),
        password_salt        = COALESCE($5, password_salt),
        must_change_password = CASE WHEN $4 IS NULL THEN must_change_password ELSE false END,
+       full_name            = COALESCE($6, full_name),
+       email                = CASE WHEN $6 IS NULL THEN email ELSE $7 END,
+       telegram             = CASE WHEN $6 IS NULL THEN telegram ELSE $8 END,
        updated_at           = now()
      WHERE id = $1
      RETURNING ${USER_COLUMNS}`,
-    [id, patch.type ?? null, patch.isActive ?? null, hash, salt],
+    [id, patch.type ?? null, patch.isActive ?? null, hash, salt,
+      kimlik?.fullName ?? null, kimlik?.email ?? null, kimlik?.telegram ?? null],
   );
   // Parola değişti veya hesap kapandı: açık oturumlar geçersiz kılınır.
   if (hash !== null || patch.isActive === false) await revokeUserSessions(pool, id);
@@ -130,7 +292,8 @@ export async function createSession(
 /** Süresi geçmiş, iptal edilmiş veya pasif kullanıcıya ait oturum kabul edilmez. */
 export async function findSessionUser(pool: pg.Pool, sessionId: string): Promise<AppUser | null> {
   const r = await pool.query<AppUser>(
-    `SELECT u.id, u.username, u.type, u.is_active AS "isActive",
+    `SELECT u.id, u.username, u.full_name AS "fullName", u.email, u.telegram,
+            u.type, u.is_active AS "isActive",
             u.must_change_password AS "mustChangePassword"
      FROM app_session s JOIN app_user u ON u.id = s.user_id
      WHERE s.id = $1 AND s.revoked_at IS NULL AND s.expires_at > now() AND u.is_active`,

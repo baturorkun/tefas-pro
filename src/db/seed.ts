@@ -123,7 +123,8 @@ async function main(): Promise<void> {
   const client = new FintablesClient();
   try {
     const user = await pool.query<{ id: number }>(
-      'SELECT id FROM app_user WHERE username = $1',
+      // Küçük harfe göre: benzersizlik ve giriş de öyle arıyor.
+      'SELECT id FROM app_user WHERE lower(username) = lower($1)',
       [username],
     );
     const userId = user.rows[0]?.id;

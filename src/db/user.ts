@@ -34,8 +34,17 @@ export interface TransferResult {
   watchlist: number;
 }
 
+/**
+ * Kullanıcı adından kimlik. Arama küçük harfe göre.
+ *
+ * Benzersizlik veritabanında `lower(username)` üzerinde ve giriş de öyle
+ * arıyor. Burada tam eşleşme kullanılıyordu; kullanıcı adı değiştirilebilir
+ * olunca fark görünür oldu — ölçüldü: adı "_Prof" yapılmış bir hesap
+ * `drop _prof` ile bulunamıyor, oysa o adla giriş yapılabiliyor.
+ */
 async function userId(db: pg.Pool | pg.PoolClient, username: string): Promise<number> {
-  const r = await db.query<{ id: number }>('SELECT id FROM app_user WHERE username = $1', [
+  const r = await db.query<{ id: number }>(
+    'SELECT id FROM app_user WHERE lower(username) = lower($1)', [
     username,
   ]);
   const id = r.rows[0]?.id;
@@ -114,7 +123,9 @@ export async function clone(
   if (fromUser === toUser) throw new Error('Kaynak ve hedef aynı kullanıcı.');
   const from = await userId(pool, fromUser);
 
-  const varMi = await pool.query('SELECT 1 FROM app_user WHERE username = $1', [toUser]);
+  const varMi = await pool.query(
+    'SELECT 1 FROM app_user WHERE lower(username) = lower($1)', [toUser],
+  );
   if (varMi.rowCount) throw new Error(`${toUser} zaten var. Önce silin ya da başka ad seçin.`);
 
   // Kullanıcı kendi transaction'ının dışında açılır: createUser parolayı

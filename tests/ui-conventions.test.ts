@@ -91,13 +91,21 @@ describe('yerleşim', () => {
     expect(main).toContain("el('div', { class: 'panel-heading-text' }");
   });
 
-  it('kullanıcı bilgisi ve çıkış birlikte en altta', () => {
-    // sidebar-user, sidebar-foot'un içinde olmalı; dışında kalırsa
-    // margin-top:auto onu navigasyonun altına itiyor.
-    const foot = main.indexOf("class: 'sidebar-foot'");
-    const user = main.indexOf("class: 'sidebar-user'");
-    expect(foot).toBeGreaterThan(-1);
-    expect(user).toBeGreaterThan(foot);
+  it('kullanıcı bilgisi ve menü birlikte en altta', () => {
+    // sidebar-user ile menü, sidebar-foot'un İÇİNDE olmalı: dışında kalırsa
+    // margin-top:auto onları navigasyonun altına itiyor. Kaynak sırası değil
+    // ağaçtaki yer önemli — düğüm foot'a konuyor mu ona bakılıyor.
+    expect(main).toContain("el('div', { class: 'sidebar-foot' }, [menu, userButton])");
+    expect(main).toContain("class: 'sidebar-user'");
+  });
+
+  it('kullanıcı menüsü akışta yer kaplamaz', () => {
+    // Akışta olsaydı kenar çubuğu 100vh'i aşar ve menü açılınca kullanıcı
+    // satırı ekranın altından taşardı — ölçüldü, tıklanan satır görünmez
+    // oluyordu.
+    const kural = /\.user-menu\s*\{[^}]*\}/.exec(css)?.[0] ?? '';
+    expect(kural).toContain('position: absolute');
+    expect(kural).toContain('bottom: 100%');
   });
 });
 
@@ -728,8 +736,20 @@ describe('menü grupları', () => {
   });
 
   it('yönetim grubunun adı Admin', () => {
-    expect(main).toContain("adminOnly: true, crumb: 'Admin' }");
+    expect(main).toMatch(/adminOnly: true, crumb: 'Admin'/);
     expect(main).not.toContain("crumb: 'Yönetim'");
+  });
+
+  it('ana listede yalnız gündelik ekranlar var', () => {
+    // Admin bağlantıları haftada bir giriliyor ama her ekranda yer
+    // kaplıyordu; kullanıcı menüsüne taşındılar.
+    const listede = [...main.matchAll(/\{ id: '([a-z]+)', label: [^}]*\}/g)]
+      .filter((m) => !m[0].includes('inUserMenu'))
+      .map((m) => m[1] ?? '');
+    for (const yasak of ['users', 'runs', 'settings', 'profile']) {
+      expect(listede, `${yasak} ana listede`).not.toContain(yasak);
+    }
+    expect(listede).toContain('dashboard');
   });
 
   it('grup sırası menü sırasından gelir, ayrı bir liste tutulmaz', () => {

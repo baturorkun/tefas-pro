@@ -31,8 +31,8 @@ q() { psql "${DATABASE_URL}" -tAqc "$1"; }
 q "DELETE FROM portfolio_transaction WHERE user_id IN (SELECT id FROM app_user WHERE username = '__test_open');
    DELETE FROM app_user WHERE username = '__test_open'" >/dev/null
 
-uid="$(q "INSERT INTO app_user (username, type, password_hash, password_salt, is_active)
-          VALUES ('__test_open', 'user', 'x', 'y', false) RETURNING id")"
+uid="$(q "INSERT INTO app_user (username, full_name, type, password_hash, password_salt, is_active)
+          VALUES ('__test_open', '__test_open', 'user', 'x', 'y', false) RETURNING id")"
 cleanup() { q "DELETE FROM portfolio_transaction WHERE user_id = ${uid}; DELETE FROM app_user WHERE id = ${uid};
             DELETE FROM bank WHERE name = '__test_bank'" >/dev/null; }
 trap cleanup EXIT
