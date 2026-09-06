@@ -171,6 +171,8 @@ jobs:
           # kapalı kalır, deploy düşmez.
           CHATBOT_API_KEY: ${{ secrets.CHATBOT_API_KEY }}
           CHATBOT_MODEL: ${{ vars.CHATBOT_MODEL }}
+          CHATBOT_PROVIDER: ${{ vars.CHATBOT_PROVIDER }}
+          CHATBOT_DAILY_LIMIT: ${{ vars.CHATBOT_DAILY_LIMIT }}
         run: |
           [ -n "$ADMIN_INITIAL_PASSWORD" ] || {
             echo "ADMIN_INITIAL_PASSWORD secret'ı tanımlı değil."; exit 1; }
@@ -189,7 +191,13 @@ jobs:
           # ekranı temiz biçimde kapatıyor.
           if [ -n "$CHATBOT_API_KEY" ]; then
             printf 'CHATBOT_API_KEY=%s\n' "$CHATBOT_API_KEY" >> "${root}/runtime.env"
-            [ -n "$CHATBOT_MODEL" ] && printf 'CHATBOT_MODEL=%s\n' "$CHATBOT_MODEL" >> "${root}/runtime.env"
+            # İsteğe bağlı ayarlar. Tanımlıysa yazılır; tanımsızsa kod kendi
+            # varsayılanını kullanır. Tanımlanmış ama aktarılmayan bir değişken
+            # sessiz bir tuzak olurdu — kullanıcı ayarı yaptığını sanır, olmaz.
+            for v in CHATBOT_MODEL CHATBOT_PROVIDER CHATBOT_DAILY_LIMIT; do
+              eval "val=\${$v}"
+              [ -n "$val" ] && printf '%s=%s\n' "$v" "$val" >> "${root}/runtime.env"
+            done
             echo "Danış ekranı etkin."
           else
             echo "CHATBOT_API_KEY secret'ı yok; Danış ekranı kapalı kalacak."

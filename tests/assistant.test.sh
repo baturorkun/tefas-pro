@@ -57,7 +57,15 @@ grep -q "CHATBOT_API_KEY: \${{ secrets.CHATBOT_API_KEY }}" "${D}" \
 grep -q 'printf .CHATBOT_API_KEY=%s' "${D}" || fail "anahtar runtime.env'e yazılmıyor"
 # Boş anahtar yazılmamalı: "var ama geçersiz" kolu her soruda hata verirdi.
 grep -q 'if \[ -n "\$CHATBOT_API_KEY" \]' "${D}" || fail "boş anahtar koşulsuz yazılıyor"
-printf 'PASS: anahtar deploy ile sunucuya geçiyor, boşsa yazılmıyor\n'
+# Tanımlanmış ama aktarılmayan değişken sessiz bir tuzak: kullanıcı ayarı
+# yaptığını sanır, uygulanmaz. GitHub'da tanımlanabilen her CHATBOT_* değişkeni
+# runtime.env'e geçmeli.
+for v in CHATBOT_MODEL CHATBOT_PROVIDER CHATBOT_DAILY_LIMIT; do
+  grep -q "\${{ vars.$v }}" "${D}" || fail "$v deploy'a bağlı değil"
+done
+grep -q "for v in CHATBOT_MODEL CHATBOT_PROVIDER CHATBOT_DAILY_LIMIT" "${D}" \
+  || fail "isteğe bağlı ayarlar runtime.env'e yazılmıyor"
+printf 'PASS: anahtar ve isteğe bağlı ayarlar deploy ile sunucuya geçiyor\n'
 
 # Ortam değişkeni adları sağlayıcıdan bağımsız olmalı. "gemini" adı .env,
 # .env.example ve deploy dosyasına sızarsa sağlayıcı değiştirmek üç ayrı yerde
