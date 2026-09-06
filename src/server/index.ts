@@ -18,7 +18,7 @@ import { FintablesClient } from '../sources/fintables.js';
 import { makePool } from '../db/pool.js';
 import { currentVersion } from '../version.js';
 import { NOTE_MAX } from '../limits.js';
-import { ask, geminiFromEnv } from './assistant.js';
+import { ask, chatbotFromEnv } from './assistant.js';
 import type { Content } from '../sources/gemini.js';
 import { isValidHoliday } from '../settlement.js';
 import {
@@ -95,7 +95,7 @@ const PORT = Number(process.env.PORT ?? 8282);
  */
 const HOST = process.env.HOST ?? '127.0.0.1';
 /** Kullanıcı başına günlük soru sınırı. */
-const ASSISTANT_DAILY_LIMIT = Number(process.env['ASSISTANT_DAILY_LIMIT'] ?? 50);
+const ASSISTANT_DAILY_LIMIT = Number(process.env['CHATBOT_DAILY_LIMIT'] ?? 50);
 const SESSION_TTL = Number(process.env.SESSION_TTL ?? 60 * 60 * 12);
 const SECURE_COOKIE = process.env.SECURE_COOKIE === 'true';
 
@@ -515,9 +515,9 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
       // Asistan. Anahtar yoksa uç 503 döner; uygulama ve diğer ekranlar
       // etkilenmez.
       if (path === '/api/assistant' && method === 'POST') {
-        const gemini = geminiFromEnv();
+        const gemini = chatbotFromEnv();
         if (gemini === null) {
-          sendJson(res, 503, { error: 'Asistan yapılandırılmamış: GEMINI_API_KEY yok.' });
+          sendJson(res, 503, { error: 'Asistan yapılandırılmamış: CHATBOT_API_KEY yok.' });
           return;
         }
         const body = (await readJson(req)) as Record<string, unknown>;

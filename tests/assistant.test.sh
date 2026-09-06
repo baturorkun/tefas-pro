@@ -28,13 +28,13 @@ printf 'PASS: tool sonuçları veri sayılıyor, uydurma yasak\n'
 
 # Tur ve günlük sınır.
 grep -q "MAX_TURN" "${A}" || fail "tur sınırı yok"
-grep -q "ASSISTANT_DAILY_LIMIT" "${I}" || fail "günlük sınır yok"
+grep -q "CHATBOT_DAILY_LIMIT" "${I}" || fail "günlük sınır yok"
 printf 'PASS: tur ve günlük soru sınırı var\n'
 
 # Anahtar kodda olmamalı ve yoksa uygulama açılmalı.
 grep -qE "AIza[0-9A-Za-z_-]{10}" "${A}" "${PROJECT_ROOT}/src/sources/gemini.ts" \
   && fail "kaynakta API anahtarı var"
-grep -q "GEMINI_API_KEY" "${A}" || fail "anahtar ortamdan okunmalı"
+grep -q "CHATBOT_API_KEY" "${A}" || fail "anahtar ortamdan okunmalı"
 grep -q "Asistan yapılandırılmamış" "${I}" || fail "anahtar yokken uç 503 dönmeli"
 printf 'PASS: anahtar ortamdan, yoksa yalnız bu uç kapalı\n'
 
@@ -47,3 +47,36 @@ for f in "${PROJECT_ROOT}/src/server/assistant.ts" "${PROJECT_ROOT}/src/main.ts"
   grep -q "generativelanguage" "${f}" && fail "sağlayıcı adresi ${f} içinde"
 done
 printf 'PASS: sağlayıcıya özel kod tek dosyada\n'
+
+# Anahtar sunucuya ulaşmalı: deploy runtime.env'i yazıyor ve orada olmayan bir
+# değişken container'a hiç geçmiyor. Ölçüldü — ilk hâlinde Danış remote'ta
+# sessizce kapalı kalıyordu.
+D="${PROJECT_ROOT}/.github/workflows/deploy.yml"
+grep -q "CHATBOT_API_KEY: \${{ secrets.CHATBOT_API_KEY }}" "${D}" \
+  || fail "deploy anahtarı secret'tan okumuyor"
+grep -q 'printf .CHATBOT_API_KEY=%s' "${D}" || fail "anahtar runtime.env'e yazılmıyor"
+# Boş anahtar yazılmamalı: "var ama geçersiz" kolu her soruda hata verirdi.
+grep -q 'if \[ -n "\$CHATBOT_API_KEY" \]' "${D}" || fail "boş anahtar koşulsuz yazılıyor"
+printf 'PASS: anahtar deploy ile sunucuya geçiyor, boşsa yazılmıyor\n'
+
+# Ortam değişkeni adları sağlayıcıdan bağımsız olmalı. "gemini" adı .env,
+# .env.example ve deploy dosyasına sızarsa sağlayıcı değiştirmek üç ayrı yerde
+# yeniden adlandırma demek olur — oysa kural "sağlayıcıya özel her şey tek
+# dosyada".
+for f in "${PROJECT_ROOT}/.env.example" "${PROJECT_ROOT}/.github/workflows/deploy.yml" \
+         "${PROJECT_ROOT}/src/server/index.ts" "${PROJECT_ROOT}/src/main.ts"; do
+  grep -qE "GEMINI_(API_KEY|MODEL)" "${f}" && fail "sağlayıcı adı ortam değişkeninde: ${f}"
+done
+grep -q "CHATBOT_API_KEY" "${A}" || fail "anahtar CHATBOT_API_KEY'den okunmalı"
+# Tanınmayan sağlayıcı sessizce yok sayılmamalı: yoksayılan ayar, kullanıcının
+# yaptığını sandığı ama olmayan bir değişikliktir.
+grep -q "Desteklenmeyen CHATBOT_PROVIDER" "${A}" || fail "bilinmeyen sağlayıcı sessizce geçiyor"
+printf 'PASS: ortam değişkenleri sağlayıcıdan bağımsız, bilinmeyen sağlayıcı hata veriyor\n'
+
+# Model uzun listeleri kendisi saymamalı. Ölçüldü: 103 işlemi bir kez 14, bir
+# kez 77 diye bildirdi ve ikisinde de cevap kesin göründüğü için yanlışlık
+# fark edilmedi. Toplu sayım veritabanında yapılmalı; model yapamıyorsa
+# yapamadığını söylemeli.
+grep -q "Uzun listeleri kendin SAYMA" "${A}" || fail "toplu sayım yasağı yok"
+grep -q "aracım yok" "${A}" || fail "yapamadığını söyleme yönergesi yok"
+printf 'PASS: model uzun listeleri kendisi saymıyor\n'

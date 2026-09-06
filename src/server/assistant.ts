@@ -49,6 +49,14 @@ Kurallar:
   açıkça söyle. Tahmin etme, uydurma.
 - Gelecek tahmini yapma. "Bu fon yükselir mi" gibi sorulara geçmiş veriyi
   anlatarak cevap ver, öngörüde bulunma.
+- Uzun listeleri kendin SAYMA ve GRUPLAMA. Bir tool sana yüzlerce satır
+  döndürdüyse, onları gün/ay/fon gibi bir ölçüte göre sayıp özet çıkarma;
+  "bu sayımı yapacak bir aracım yok" de. İki kez ölçüldü: 103 işlemi bir kez
+  14, bir kez 77 diye bildirdin ve ikisinde de cevap kesin göründüğü için
+  yanlışlığı fark edilmedi. Tek tek satır okumak (kaç tanesi X fonundan,
+  şu tarihte ne olmuş) sorun değil; toplu sayım güvenilir olmuyor.
+- Hazır bir tool'un döndürdüğü toplamları olduğu gibi kullan; onlar
+  veritabanında hesaplanıyor ve doğrular.
 - Kısa ve somut yaz. Rakamları Türkçe biçimde ver (1.234,56).
 - Ağırlık verilerinin tarihini belirt: hisse kırılımı aylık açıklamadan gelir
   ve bir aya kadar eski olabilir.`;
@@ -155,7 +163,11 @@ const TOOLS: Tool[] = [
       name: 'islem_listesi',
       description: 'Ham işlem kayıtları: her alım ayrı satır — fon, banka, adet, alış '
         + 'tarihi, satış tarihi, maliyet, güncel değer, not. "Ne zaman almışım", "kaç '
-        + 'işlemim var", "şu tarihte ne yaptım" için. Liste uzun olabilir.',
+        + 'işlemim var", "şu tarihte ne yaptım" için. Liste uzun olabilir.\n'
+        + 'DİKKAT: cost, value, gain ve gainPct alanları BOŞ (null) olabilir — '
+        + 'ölçülebilir fiyat günü olmayan işlemlerde bu normaldir ve o işlem yine '
+        + 'gerçek bir işlemdir. Sayarken bu satırları atlama; para toplarken '
+        + 'atlamak zorundaysan kaç satırı dışarıda bıraktığını cevabında söyle.',
       parameters: bos,
     },
     run: (pool, userId) => listTransactions(pool, userId),
@@ -236,9 +248,28 @@ async function calistir(
   }
 }
 
-/** Anahtar ve model ortamdan; anahtar yoksa ekran kapalı ama uygulama açılır. */
-export function geminiFromEnv(): GeminiClient | null {
-  const key = process.env['GEMINI_API_KEY'];
+/**
+ * İstemciyi ortamdan kurar.
+ *
+ * Değişken adları sağlayıcıdan bağımsız (`CHATBOT_*`): sağlayıcı adı `.env`,
+ * `.env.example` ve deploy dosyasına sızarsa, sağlayıcı değiştirmek üç ayrı
+ * yerde yeniden adlandırma demek olur. Kural "sağlayıcıya özel her şey tek
+ * dosyada" ve ortam değişkeni de o kurala tabi.
+ *
+ * `CHATBOT_PROVIDER` bugün tek değer kabul ediyor ama sessizce yok sayılmıyor:
+ * tanımadığı bir değerde hata veriyor. Yoksayılan bir ayar, kullanıcının
+ * yaptığını sandığı ama olmayan bir değişikliktir.
+ *
+ * Anahtar yoksa null döner: yalnız Danış ekranı kapalı kalır.
+ */
+export function chatbotFromEnv(): GeminiClient | null {
+  const saglayici = (process.env['CHATBOT_PROVIDER'] ?? 'gemini').trim().toLowerCase();
+  if (saglayici !== 'gemini') {
+    throw new Error(
+      `Desteklenmeyen CHATBOT_PROVIDER: ${saglayici}. Şu an yalnız "gemini" var.`,
+    );
+  }
+  const key = process.env['CHATBOT_API_KEY'];
   if (key === undefined || key.trim() === '') return null;
-  return new GeminiClient(key, process.env['GEMINI_MODEL'] ?? 'gemini-2.5-flash');
+  return new GeminiClient(key, process.env['CHATBOT_MODEL'] ?? 'gemini-2.5-flash');
 }

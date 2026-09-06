@@ -58,9 +58,18 @@ Sonraki RQ'da yapılacak ve şunları gerektirecek:
     satır limiti            devasa sonuç dönmez
     son çare kuralı         hazır tool cevaplayabiliyorsa o kullanılmalı
 
-Karşılanmayan soru örneği: "salı günleri mi daha çok alım yaptım". Hangi
-soruların gerçekten eksik kaldığını kullanımdan öğrenip o RQ'yu ona göre
-yazmak, şimdi tahmin etmekten iyi.
+Karşılanmayan soru örneği: "salı günleri mi daha çok alım yaptım".
+
+Bu örnek çalıştırılarak doğrulandı ve beklenmedik bir şey çıktı: model, tool
+yokluğunda ham işlem listesini çekip **kendisi saymaya** çalıştı. 103 işlemi
+bir denemede 14, bir başkasında 77 diye bildirdi; her ikisinde de cevap kesin
+göründüğü için yanlışlık ancak veritabanıyla karşılaştırınca anlaşıldı.
+
+Sonuç: eksik olan yalnız bir tool değil, bir kural. Sistem talimatına "uzun
+listeleri kendin sayma, sayamıyorsan söyle" eklendi ve model artık dürüstçe
+"bu analizi yapacak bir aracım yok" diyor. Sonraki RQ toplu sayımı
+veritabanında yapan bir yol getirecek — serbest SQL ya da sabit boyutlara
+göre gruplayan bir tool.
 
 ## Güvenlik
 
