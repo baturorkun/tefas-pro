@@ -49,7 +49,7 @@ done
 printf 'PASS: sağlayıcıya özel kod tek dosyada\n'
 
 # Anahtar sunucuya ulaşmalı: deploy runtime.env'i yazıyor ve orada olmayan bir
-# değişken container'a hiç geçmiyor. Ölçüldü — ilk hâlinde Danış remote'ta
+# değişken container'a hiç geçmiyor. Ölçüldü — ilk hâlinde Asistan remote'ta
 # sessizce kapalı kalıyordu.
 D="${PROJECT_ROOT}/.github/workflows/deploy.yml"
 grep -q "CHATBOT_API_KEY: \${{ secrets.CHATBOT_API_KEY }}" "${D}" \

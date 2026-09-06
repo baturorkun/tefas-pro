@@ -831,7 +831,7 @@ textarea:focus  { outline: none; border-color: var(--accent);
              color: var(--accent); text-align: left; }
 .link-code:hover { color: var(--accent-soft); text-decoration: underline; }
 
-/* Danış ekranı: sohbet balonları ve soru kutusu. */
+/* Asistan ekranı: sohbet balonları ve soru kutusu. */
 .chat-body   { display: flex; flex-direction: column; gap: 10px; }
 .chat-msg    { max-width: 46rem; padding: 10px 14px; border-radius: var(--radius);
                font-size: .88rem; line-height: 1.55; }

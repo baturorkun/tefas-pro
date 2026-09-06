@@ -501,7 +501,7 @@ const ICON_PATHS: Record<string, string[]> = {
   // Aşağı ok: satış paylardan çıkış. Yukarı bakarken "artır" gibi okunuyordu,
   // üstelik yanındaki "Alış Ekle" artı işaretiyle aynı yöne bakıyordu.
   sell: ['M12 5v14', 'm5 12 7 7 7-7'],
-  // Konuşma balonu: Danış ekranının menü ikonu.
+  // Konuşma balonu: Asistan ekranının menü ikonu.
   chat: ['M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z'],
   // Büyüteç: satırın detayını açan düğme. Tanımsız bir ad verilince icon()
   // boş bir svg üretiyor ve düğme boş kutu olarak çiziliyordu.
@@ -2946,7 +2946,7 @@ async function stocksView(): Promise<Node[]> {
 }
 
 /**
- * Danış ekranı: doğal dille soru sorma.
+ * Asistan ekranı: doğal dille soru sorma.
  *
  * Konuşma modül düzeyinde tutuluyor — ekran değiştirip dönünce geçmiş
  * duruyor. Sunucuda saklanmıyor: soru ve cevaplar kullanıcının kendi
@@ -3025,7 +3025,7 @@ async function chatView(reload: () => void): Promise<Node[]> {
 
   return [
     panel(
-      'Danış',
+      'Asistan',
       'kendi verin üzerinden soru sor',
       el('div', { class: 'panel-body chat-body' }, [
         ...(sohbet.length === 0
@@ -3824,7 +3824,7 @@ const VIEWS: { id: ViewId; label: string; adminOnly: boolean; crumb: string }[] 
   { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
   { id: 'allocation', label: 'Dağılım', adminOnly: false, crumb: 'Genel' },
   { id: 'stocks', label: 'Hisseler', adminOnly: false, crumb: 'Genel' },
-  { id: 'chat', label: 'Danış', adminOnly: false, crumb: 'Genel' },
+  { id: 'chat', label: 'Asistan', adminOnly: false, crumb: 'Genel' },
   { id: 'closed', label: 'Kapananlar', adminOnly: false, crumb: 'Genel' },
   { id: 'periods', label: 'Dönemsel Getiri', adminOnly: false, crumb: 'Genel' },
   { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },

@@ -167,7 +167,7 @@ jobs:
           DB_URL: ${{ steps.db.outputs.url }}
           ADMIN_INITIAL_PASSWORD: ${{ secrets.ADMIN_INITIAL_PASSWORD }}
           COMMIT_SHA: ${{ github.sha }}
-          # Danış ekranı (RQ-0040). Zorunlu değil: yoksa yalnız o ekran
+          # Asistan ekranı (RQ-0040). Zorunlu değil: yoksa yalnız o ekran
           # kapalı kalır, deploy düşmez.
           CHATBOT_API_KEY: ${{ secrets.CHATBOT_API_KEY }}
           CHATBOT_MODEL: ${{ vars.CHATBOT_MODEL }}
@@ -198,9 +198,9 @@ jobs:
               eval "val=\${$v}"
               [ -n "$val" ] && printf '%s=%s\n' "$v" "$val" >> "${root}/runtime.env"
             done
-            echo "Danış ekranı etkin."
+            echo "Asistan ekranı etkin."
           else
-            echo "CHATBOT_API_KEY secret'ı yok; Danış ekranı kapalı kalacak."
+            echo "CHATBOT_API_KEY secret'ı yok; Asistan ekranı kapalı kalacak."
           fi
           chmod 600 "${root}/runtime.env"
 
