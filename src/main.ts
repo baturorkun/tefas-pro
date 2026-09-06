@@ -1195,6 +1195,8 @@ function watchlistToggle(checked: boolean, onChange: (v: boolean) => void): HTML
 function positionSection(
   p: Dashboard['positions'],
   onlyOwned: boolean,
+  /** Cepten çıkan para: maliyet eksi gerçekleşen kâr. Üstteki özetten gelir. */
+  netCapital: string | null,
 ): Node[] {
   const s = p.summary;
   const kapsam = onlyOwned ? 'yalnız portföyüm' : 'takip listem dahil, almış gibi';
@@ -1209,9 +1211,18 @@ function positionSection(
       : [
           el('div', { class: 'metric-grid' }, [
             metric('Maliyet', money(s.cost), 'açık pozisyonlar'),
-            metric('Bugünkü değer', money(s.value), `${s.gainPct}% getiri`),
-            metric('Açık kâr', money(s.gain), `${String(s.winners)} kârda · ${String(s.losers)} zararda`),
+            // "Bugünkü değer" üstteki "Portföy Değeri" kutusuyla aynı sayıydı;
+            // aynı ekranda iki kez yazmak yer harcıyordu. Yerine net sermaye:
+            // maliyet eksi gerçekleşen kâr, yani cepten çıkan para. Maliyetten
+            // farkı, kazanılıp yeniden yatırılan tutarın sermaye sayılmaması —
+            // üstteki getiri yüzdesinin paydası da bu.
+            metric('Net sermaye', netCapital === null ? '—' : money(netCapital),
+              'cepten çıkan para'),
+            // Gerçekleşmiş önce: net sermaye kutusunun hemen yanında duruyor
+            // ve ikisi aynı sayıyla bağlı — net sermaye, maliyetten bu kârın
+            // çıkarılmış hâli. Yan yana olunca fark okunuyor.
             metric('Gerçekleşmiş kâr', money(s.realizedGain), 'kapanmış pozisyonlar'),
+            metric('Açık kâr', money(s.gain), `${String(s.winners)} kârda · ${String(s.losers)} zararda`),
           ]),
         ]),
     el('div', { class: 'chart-grid' }, [
@@ -1323,7 +1334,7 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
       writeOnlyOwned(!dahil);
       reload();
     }),
-    ...positionSection(d.positions, onlyOwned),
+    ...positionSection(d.positions, onlyOwned, p?.netCapital ?? null),
     await performancePanel(),
   ];
 }
@@ -3106,7 +3117,21 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
   const open = rows.filter((t) => t.sellDate === null);
   const funds = new Set(open.map((t) => t.fundCode));
   const platforms = new Set(open.map((t) => t.platform));
-  const last = rows.map((t) => t.tradeDate).sort().at(-1);
+  // Son işlem alış da satış da olabilir. Yalnız alış tarihine bakılıyordu ve
+  // kutu "Son İşlem" derken satışları görmezden geliyordu — ölçülen veride son
+  // alış 4 Eylül, son satış 8 Eylül'dü.
+  //
+  // İleri tarihli satış sayılmaz: girilmiş ama henüz gerçekleşmemiş bir işlem
+  // "son yaptığın şey" değil. Uygulama başka yerlerde de onu "Bekliyor" diye
+  // ayırıyor.
+  const bugunISO = new Date().toISOString().slice(0, 10);
+  const olaylar: { date: string; tur: string }[] = [
+    ...rows.map((t) => ({ date: t.tradeDate, tur: 'Alış' })),
+    ...rows.flatMap((t) => (t.sellDate !== null && t.sellDate <= bugunISO
+      ? [{ date: t.sellDate, tur: 'Satış' }] : [])),
+  ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const sonOlay = olaylar.at(-1);
+  const last = sonOlay?.date;
 
   // Seçenekler kullanıcının kendi işlemlerinden: hiç işlemi olmayan bir fonu
   // filtrede göstermenin anlamı yok.
@@ -3302,7 +3327,8 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
       metric('Açık Pozisyon', String(open.length), `${String(rows.length)} İşlem Kaydı`, 'portfolio'),
       metric('Fon', String(funds.size), 'Açık Pozisyondaki Farklı Fon', 'fund'),
       metric('Platform', String(platforms.size), 'Banka / Aracı', 'money'),
-      metric('Son İşlem', last ?? '—', 'Alış Tarihi', 'transactions'),
+      metric('Son İşlem', last === undefined ? '—' : gunAd(last),
+        sonOlay === undefined ? '—' : sonOlay.tur, 'transactions'),
     ]),
     panel(
       'Fon Hareketleri',

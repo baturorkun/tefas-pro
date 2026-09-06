@@ -5,8 +5,22 @@
  * ucu yalnız varlık sınıfı veriyor (Hisse Senedi %88,23) ve TEFAS kalem
  * düzeyinde veri yayımlamıyor — ölçülerek doğrulandı.
  *
- * Cloudflare koruması yok: düz fetch yetiyor. Tek özel başlık `x-device-id`;
- * bir token ucu (`/api/app-token`) var ama bu çağrılar için gerekmiyor.
+ * Düz `fetch` kullanılıyor; tek özel başlık `x-device-id`. Bir token ucu
+ * (`/api/app-token`) var ama bu çağrılar için gerekmiyor.
+ *
+ * ÖNEMLİ: kaynak veri merkezi IP'lerini engelliyor. Ölçülen üç durum:
+ *
+ *     düz fetch + ev IP'si        200, veri geliyor
+ *     düz fetch + sunucu IP'si    403, Cloudflare hata sayfası
+ *     impit     + her IP          401 "BLOCKED"
+ *
+ * Fintables'taki impit çözümü burada işe yaramıyor, tersine yerelde de
+ * kırıyor: kaynak Chrome parmak izini taklit eden istemciyi tanıyıp
+ * engelliyor. Tarayıcı User-Agent'ı da 403'ü değiştirmiyor — engel istemcide
+ * değil IP'de.
+ *
+ * Sonuç: bu toplama sunucudan koşamıyor. Zamanlanmış koşumda 39 fonun 39'u
+ * da 403 alıyor ve tablolar boş kalıyor.
  *
  * İki ayrı zaman ekseni:
  *   - distribution  ay sonu ağırlıkları, fon başına bir istek
