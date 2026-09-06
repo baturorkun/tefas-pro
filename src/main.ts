@@ -342,7 +342,9 @@ function moneyCell(raw: string | null): HTMLElement {
     return el('span', {}, [kisa]);
   }
   return el('span', {
-    title: `${Number(raw).toLocaleString('tr-TR', { maximumFractionDigits: 2 })} ₺`,
+    // Tam tutar da kuruşsuz: kısaltmanın açığı "ne kadar" sorusuna cevap,
+    // kuruş hanesi değil.
+    title: `${Number(raw).toLocaleString('tr-TR', { maximumFractionDigits: 0 })} ₺`,
   }, [kisa]);
 }
 
@@ -351,12 +353,15 @@ function money(raw: string | null): string {
   const n = Number(raw);
   if (!Number.isFinite(n)) return '—';
   const abs = Math.abs(n);
-  const fmt = (v: number, suffix: string): string =>
-    `${v.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} ${suffix}`;
+  const fmt = (v: number, suffix: string, digits = 2): string =>
+    `${v.toLocaleString('tr-TR', { maximumFractionDigits: digits })} ${suffix}`;
   if (abs >= 1e9) return fmt(n / 1e9, 'mr ₺');
   if (abs >= 1e6) return fmt(n / 1e6, 'm ₺');
   if (abs >= 1e3) return fmt(n / 1e3, 'b ₺');
-  return fmt(n, '₺');
+  // Kuruş yazılmıyor. Kısaltmalardaki virgül başka şey: "3,77 m ₺" içindeki
+  // iki hane 770 bin lira demek, atılırsa bilgi gider. Kuruş ise portföy
+  // ölçeğinde gürültü — kimse 15,71 ile 16 arasındaki farka bakmıyor.
+  return fmt(n, '₺', 0);
 }
 
 const AY_ADLARI = [
@@ -835,6 +840,8 @@ function comboFilter(opts: {
 
 import { planFifoSale } from './fifo.js';
 import { NOTE_MAX } from './limits.js';
+import { toolEtiket } from './assistant-labels.js';
+import { sseAyir } from './sse.js';
 import { orderFromSettlement, settlementFromOrder } from './settlement.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -2948,21 +2955,110 @@ async function stocksView(): Promise<Node[]> {
 /**
  * Asistan ekranı: doğal dille soru sorma.
  *
- * Konuşma modül düzeyinde tutuluyor — ekran değiştirip dönünce geçmiş
- * duruyor. Sunucuda saklanmıyor: soru ve cevaplar kullanıcının kendi
- * verisinden türüyor ve kalıcı bir kayıt tutmanın karşılığı yok.
+ * Konuşma sunucuda saklanıyor (RQ-0041). Saklanan yalnız görünen metin;
+ * tool sonuçları saklanmıyor çünkü onlar o anki portföy durumu — dünkü
+ * rakamları geri yükleyip modele vermek bugünkü soruyu dünün verisiyle
+ * cevaplamak olurdu. Devam eden konuşmada tool'lar yeniden çağrılıyor.
  */
 interface SohbetParca {
   role: 'user' | 'model';
   parts: { text: string }[];
 }
 
+interface KonusmaOzet {
+  id: number;
+  title: string;
+  updatedAt: string;
+  messages: number;
+}
+
+interface AsistanAdim {
+  step: string | null;
+  label: string | null;
+  turn: number;
+}
+
+interface AsistanCevap {
+  text: string;
+  usedTools: string[];
+  conversationId: number | null;
+}
+
 let sohbet: SohbetParca[] = [];
 let sohbetAraclar: string[][] = [];
 let sohbetMesgul = false;
 let sohbetHata: string | null = null;
+/** Sunucudaki konuşmanın kimliği; null ise bir sonraki soruda açılır. */
+let sohbetId: number | null = null;
+let sohbetAdim: string | null = null;
+/**
+ * Bekleme balonunun canlı düğümü.
+ *
+ * Adım değiştikçe tüm ekranı yeniden çizmek yerine bu düğümün metni
+ * değiştiriliyor: yeniden çizim listeyi zıplatır ve odağı kaybettirir.
+ * Düğüm koparsa (ekran değişip dönüldüyse) durum `sohbetAdim`'da duruyor
+ * ve yeni çizimde oradan okunuyor.
+ */
+let sohbetBekleEl: HTMLElement | null = null;
+
+function sohbetAdimYaz(metin: string): void {
+  sohbetAdim = metin;
+  if (sohbetBekleEl !== null) sohbetBekleEl.textContent = metin;
+}
+
+/**
+ * Asistan uçunu akış olarak okur.
+ *
+ * Reddetme kolları (oturum, günlük sınır, anahtar yokluğu) hâlâ JSON ve
+ * durum kodlu: akış başladıktan sonra durum kodu değiştirilemeyeceği için
+ * sunucu onları akıştan önce yolluyor. Burada da önce `res.ok` bakılıyor.
+ */
+async function asistanAkis(
+  govde: unknown,
+  onAdim: (a: AsistanAdim) => void,
+): Promise<AsistanCevap> {
+  const res = await fetch('/api/assistant', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(govde),
+  });
+  if (!res.ok || res.body === null) {
+    const hata = (await res.json().catch(() => null)) as { error?: unknown } | null;
+    throw new Error(
+      typeof hata?.error === 'string' ? hata.error : `HTTP ${String(res.status)}`,
+    );
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let tampon = '';
+  let sonuc: (AsistanCevap & { error?: string }) | null = null;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    tampon += decoder.decode(value, { stream: true });
+    const ayrik = sseAyir<
+      (AsistanAdim & { done?: boolean }) | (AsistanCevap & { done: true; error?: string })
+    >(tampon);
+    tampon = ayrik.kalan;
+    for (const veri of ayrik.olaylar) {
+      if ('done' in veri && veri.done === true) {
+        sonuc = veri as AsistanCevap & { error?: string };
+      } else {
+        onAdim(veri as AsistanAdim);
+      }
+    }
+  }
+  // Akış bitiş olayı gelmeden kapandıysa bağlantı koptu demektir. Sessizce
+  // "cevap yok" bırakmak arayüzü kilitli gösterirdi.
+  if (sonuc === null) throw new Error('Bağlantı kesildi; soruyu yeniden sorabilirsin.');
+  if (typeof sonuc.error === 'string') throw new Error(sonuc.error);
+  return sonuc;
+}
 
 async function chatView(reload: () => void): Promise<Node[]> {
+  const gecmisListe = (await api('/api/assistant/conversations')) as KonusmaOzet[];
+
   const girdi = el('input', {
     class: 'chat-input', placeholder: 'Sorunu yaz…', spellcheck: 'false',
     ...(sohbetMesgul ? { disabled: 'true' } : {}),
@@ -2979,20 +3075,28 @@ async function chatView(reload: () => void): Promise<Node[]> {
     sohbetAraclar.push([]);
     sohbetMesgul = true;
     sohbetHata = null;
+    sohbetAdim = 'Düşünüyor…';
     reload();
     void (async () => {
       try {
-        const r = (await api('/api/assistant', {
-          method: 'POST',
-          body: JSON.stringify({ history: sohbet }),
-        })) as { text: string; usedTools: string[] };
+        const r = await asistanAkis(
+          { history: sohbet, ...(sohbetId === null ? {} : { conversationId: sohbetId }) },
+          (a) => {
+            sohbetAdimYaz(
+              a.label === null ? 'Düşünüyor…' : `${a.label} okunuyor…`,
+            );
+          },
+        );
         sohbet.push({ role: 'model', parts: [{ text: r.text }] });
         sohbetAraclar.push(r.usedTools);
+        sohbetId = r.conversationId;
       } catch (err) {
         // Soru geçmişte kalıyor: kullanıcı yeniden yazmak zorunda olmasın.
         sohbetHata = err instanceof Error ? err.message : 'Cevap alınamadı.';
       } finally {
         sohbetMesgul = false;
+        sohbetAdim = null;
+        sohbetBekleEl = null;
         reload();
       }
     })();
@@ -3011,34 +3115,212 @@ async function chatView(reload: () => void): Promise<Node[]> {
       // Hangi tool'ların çağrıldığı görünür: cevabın nereden geldiği
       // gizlenirse kullanıcı doğruluğunu değerlendiremez.
       ...(araclar.length === 0 ? [] : [
-        el('div', { class: 'chat-tools' }, [`ⓘ ${araclar.join(' · ')}`]),
+        el('div', { class: 'chat-tools' }, [
+          `ⓘ ${araclar.map(toolEtiket).join(' · ')}`,
+        ]),
       ]),
     ]);
   });
 
+  if (sohbetMesgul) {
+    sohbetBekleEl = el('div', { class: 'chat-msg chat-model chat-wait' }, [
+      sohbetAdim ?? 'Düşünüyor…',
+    ]) as HTMLElement;
+  }
+
+  // İlk dört örnek her zaman görünür, gerisi konu başlıkları altında
+  // katlanmış duruyor. Hepsi birden düğme olarak dizilseydi ekran yirmi
+  // küsur rozetle dolar ve hangisinin ne olduğu okunmazdı; sorulabileceğin
+  // şeyin genişliğini göstermek de aynı derecede gerekli.
   const ornekler = [
     'Portföyüm ne durumda?',
     'En çok hangi hissedeyim?',
-    'Paramın ne kadarı hisse senedinde?',
+    'Salı günleri mi daha çok alım yaptım?',
     'Geçen ay ne kazandım?',
+  ];
+  const ornekGruplari: { baslik: string; sorular: string[] }[] = [
+    {
+      baslik: 'Portföy',
+      sorular: [
+        'Toplam ne kadar kâr ettim?',
+        'Cebimden çıkan para ne kadar?',
+        'Bugün portföyüm ne kadar değişti?',
+        'Paramın ne kadarı hisse senedinde?',
+        'Varlık dağılımım nasıl?',
+      ],
+    },
+    {
+      baslik: 'Fonlar',
+      sorular: [
+        'Hangi fonum en çok kazandırdı?',
+        'Zararda olan fonlarım hangileri?',
+        'DOH ne kadar kârda?',
+        'TLY fonunun içinde ne var?',
+        'En uzun süredir hangi fondayım?',
+      ],
+    },
+    {
+      baslik: 'Hisseler',
+      sorular: [
+        'Hangi hisseye en çok maruzum?',
+        'Kaç farklı hisseye yayılmışım?',
+        'Aynı hisse kaç fonumda birden var?',
+      ],
+    },
+    {
+      baslik: 'İşlemler',
+      sorular: [
+        'Ayda kaç işlem yapıyorum?',
+        'Hangi bankaya en çok para koydum?',
+        'Kaç pozisyonum kapandı?',
+        'Bu yıl kaç alım yaptım?',
+        'En son hangi işlemi yaptım?',
+      ],
+    },
+    {
+      // Takip listesindeki ve hiç almadığın fonlar da veride: hisse
+      // kırılımı tracked_fund üzerinden geliyor, yalnız açık pozisyonlardan
+      // değil. Örnekler bunu göstermezse kimse denemeyi akıl etmez.
+      baslik: 'Takip listem ve diğer fonlar',
+      sorular: [
+        'İçinde THYAO olan fonları listele',
+        'Takip listemde hangi fonlar var?',
+        'PBR fonunun içinde ne var?',
+        'Almadığım hangi fonlarda ASELS var?',
+      ],
+    },
+    {
+      baslik: 'Getiri',
+      sorular: [
+        'Son 3 ayda ne kazandım?',
+        'Bu yılın getirisi ne?',
+        'Kapanan pozisyonlarımdan ne kadar kâr çıktı?',
+      ],
+    },
+  ];
+
+  const ornekDugme = (o: string): HTMLElement => {
+    const b = el('button', { type: 'button', class: 'chat-sample' }, [o]);
+    b.addEventListener('click', () => { girdi.value = o; sor(); });
+    return b;
+  };
+
+  const yeniKonusma = (): void => {
+    sohbet = [];
+    sohbetAraclar = [];
+    sohbetHata = null;
+    sohbetId = null;
+    reload();
+  };
+
+  const konusmaYukle = (id: number): void => {
+    void (async () => {
+      try {
+        const m = (await api(`/api/assistant/conversations/${String(id)}`)) as
+          { role: 'user' | 'model'; text: string; toolNames: string[] }[];
+        sohbet = m.map((x) => ({ role: x.role, parts: [{ text: x.text }] }));
+        sohbetAraclar = m.map((x) => x.toolNames);
+        sohbetId = id;
+        sohbetHata = null;
+      } catch (err) {
+        sohbetHata = err instanceof Error ? err.message : 'Konuşma açılamadı.';
+      }
+      reload();
+    })();
+  };
+
+  const konusmaSilDugme = (k: KonusmaOzet): HTMLElement => {
+    const b = el('button', {
+      class: 'gecmis-sil', type: 'button', title: 'Konuşmayı sil',
+      'aria-label': `${k.title} konuşmasını sil`,
+    }, [icon('delete', 15)]) as HTMLElement;
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void (async () => {
+        // Tarayıcının confirm'i yerine projenin modal'ı: diğer silmeler
+        // böyle onaylanıyor ve neyin silineceğini satır satır gösteriyor.
+        const ok = await confirmDelete({
+          title: 'Konuşma silinsin mi?',
+          detail: [k.title, `${gunAd(k.updatedAt.slice(0, 10))} · ${String(k.messages)} mesaj`],
+          warning: 'Bu işlem geri alınamaz.',
+          confirmLabel: 'Sil',
+        });
+        if (!ok) return;
+        try {
+          await api(`/api/assistant/conversations/${String(k.id)}`, { method: 'DELETE' });
+          // Açık olan konuşma silindiyse ekran da boşalmalı; yoksa var
+          // olmayan bir kayda yazmaya çalışırdık.
+          if (sohbetId === k.id) { sohbet = []; sohbetAraclar = []; sohbetId = null; }
+        } catch (err) {
+          sohbetHata = err instanceof Error ? err.message : 'Silinemedi.';
+        }
+        reload();
+      })();
+    });
+    return b;
+  };
+
+  const gecmisSatir = (k: KonusmaOzet): HTMLElement => {
+    const ac = el('button', { class: 'gecmis-ac', type: 'button' }, [
+      el('span', { class: 'gecmis-baslik' }, [k.title]),
+      el('span', { class: 'gecmis-alt' }, [
+        `${gunAd(k.updatedAt.slice(0, 10))} · ${String(k.messages)} mesaj`,
+      ]),
+    ]);
+    ac.addEventListener('click', () => { konusmaYukle(k.id); });
+    return el('li', {
+      class: `gecmis-satir${sohbetId === k.id ? ' gecmis-acik' : ''}`,
+    }, [ac, konusmaSilDugme(k)]);
+  };
+
+  // Liste sınırsız uzuyordu: otuz konuşmada Geçmiş paneli sayfanın tamamını
+  // kaplıyor, asıl ekran olan sohbet yukarıda küçük bir kutuya dönüyordu.
+  // Yeniler görünür, eskiler katlanmış durur — örnek sorularla aynı desen.
+  const GECMIS_GORUNEN = 8;
+  const yeniler = gecmisListe.slice(0, GECMIS_GORUNEN);
+  const eskiler = gecmisListe.slice(GECMIS_GORUNEN);
+
+  const gecmisPanel = gecmisListe.length === 0 ? [] : [
+    panel(
+      'Geçmiş',
+      `${String(gecmisListe.length)} konuşma`,
+      el('div', { class: 'panel-body' }, [
+        el('ul', { class: 'gecmis-liste' }, yeniler.map(gecmisSatir)),
+        ...(eskiler.length === 0 ? [] : [
+          el('details', { class: 'ornek-katman' }, [
+            el('summary', {}, [`Daha eski konuşmalar (${String(eskiler.length)})`]),
+            el('ul', { class: 'gecmis-liste' }, eskiler.map(gecmisSatir)),
+          ]),
+        ]),
+      ]),
+    ),
   ];
 
   return [
     panel(
       'Asistan',
-      'kendi verin üzerinden soru sor',
+      'Portföyün ve Takip Listene Soru Sor',
       el('div', { class: 'panel-body chat-body' }, [
         ...(sohbet.length === 0
           ? [el('div', { class: 'chat-empty' }, [
               el('p', {}, ['Portföyün hakkında soru sorabilirsin. Örnekler:']),
-              el('div', { class: 'chat-samples' }, ornekler.map((o) => {
-                const b = el('button', { type: 'button', class: 'chat-sample' }, [o]);
-                b.addEventListener('click', () => { girdi.value = o; sor(); });
-                return b;
-              })),
+              el('div', { class: 'chat-samples' }, ornekler.map(ornekDugme)),
+              // <details>: açılıp kapanmayı tarayıcı yönetiyor, durum
+              // yeniden çizimde kaybolmuyor ve klavyeyle erişilebilir.
+              el('details', { class: 'ornek-katman' }, [
+                el('summary', {}, ['Daha fazla soru örneği']),
+                el('p', { class: 'ornek-not' }, [
+                  'Sorular portföyünle sınırlı değil: takip listendeki ve hiç '
+                  + 'almadığın fonların içeriğini de sorabilirsin.',
+                ]),
+                ...ornekGruplari.flatMap((g) => [
+                  el('div', { class: 'ornek-baslik' }, [g.baslik]),
+                  el('div', { class: 'chat-samples' }, g.sorular.map(ornekDugme)),
+                ]),
+              ]),
             ])]
           : balonlar),
-        ...(sohbetMesgul ? [el('div', { class: 'chat-msg chat-model chat-wait' }, ['…'])] : []),
+        ...(sohbetBekleEl === null ? [] : [sohbetBekleEl]),
         ...(sohbetHata === null ? [] : [
           el('p', { class: 'panel-note panel-note-warn' }, [sohbetHata]),
         ]),
@@ -3046,15 +3328,11 @@ async function chatView(reload: () => void): Promise<Node[]> {
       ]),
       sohbet.length === 0 ? undefined : (() => {
         const t = el('button', { class: 'btn-ghost', type: 'button' }, ['Yeni konuşma']);
-        t.addEventListener('click', () => {
-          sohbet = [];
-          sohbetAraclar = [];
-          sohbetHata = null;
-          reload();
-        });
+        t.addEventListener('click', yeniKonusma);
         return t;
       })(),
     ),
+    ...gecmisPanel,
     el('p', { class: 'panel-note' }, [
       'Cevaplar senin verinden üretilir; ekranlardaki hesapların aynısı kullanılır. '
       + 'Hisse ağırlıkları fonların aylık açıklamasından gelir ve bir aya kadar eski '

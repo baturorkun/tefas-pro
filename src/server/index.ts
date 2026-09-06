@@ -18,6 +18,7 @@ import { FintablesClient } from '../sources/fintables.js';
 import { makePool } from '../db/pool.js';
 import { currentVersion } from '../version.js';
 import { NOTE_MAX } from '../limits.js';
+import { toolEtiket } from '../assistant-labels.js';
 import { ask, chatbotFromEnv } from './assistant.js';
 import type { Content } from '../sources/gemini.js';
 import { isValidHoliday } from '../settlement.js';
@@ -34,6 +35,7 @@ import {
   optDate,
   optString,
   optText,
+  openSse,
   readJson,
   reqDate,
   reqNumber,
@@ -58,6 +60,11 @@ import {
   deleteTransaction,
   fifoBlocker,
   findSessionUser,
+  konusmaAc,
+  konusmaMesajlari,
+  konusmaSil,
+  konusmalar,
+  konusmayaYaz,
   findUserByUsername,
   fundHasData,
   fundValor,
@@ -118,6 +125,10 @@ const STATIC: Record<string, { file: string; type: string }> = {
   '/settlement.js': { file: 'dist/settlement.js', type: 'text/javascript; charset=utf-8' },
   '/fifo.js': { file: 'dist/fifo.js', type: 'text/javascript; charset=utf-8' },
   '/limits.js': { file: 'dist/limits.js', type: 'text/javascript; charset=utf-8' },
+  '/assistant-labels.js': {
+    file: 'dist/assistant-labels.js', type: 'text/javascript; charset=utf-8',
+  },
+  '/sse.js': { file: 'dist/sse.js', type: 'text/javascript; charset=utf-8' },
   '/styles.css': { file: 'src/styles.css', type: 'text/css; charset=utf-8' },
 };
 
@@ -542,18 +553,86 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         }
         await writeUserSetting(pool, user.id, 'assistant.usage',
           { date: bugun, count: sayi + 1 });
+
+        // Buradan sonrası SSE. Tüm reddetme kolları yukarıda ve JSON: durum
+        // kodu bir kez yazılıyor, akış başladıktan sonra 429 dönmek mümkün
+        // olmazdı.
+        const gonder = openSse(res);
+        // Sekme kapanırsa döngüyü sürdürmenin anlamı yok: her tur bir dış
+        // API çağrısı ve kimsenin okumayacağı bir cevaba para ödeniyor.
+        //
+        // Dinleme `res` üzerinde, `req` üzerinde değil: istek gövdesi zaten
+        // okunmuş durumda ve `req` "close" olayını isteğin tamamlanmasında
+        // veriyor — dinleyici bağlandığında olay çoktan geçmiş oluyor.
+        // Ölçüldü: `req` ile kopuş hiç yakalanmıyordu, sekme kapandıktan
+        // sonra döngü sonuna kadar koşup geçmişe bir konuşma yazıyordu.
+        // `res` "close" ise akış sürerken yalnız bağlantı düşünce gelir.
+        let kopuk = false;
+        res.on('close', () => { kopuk = true; });
+        const sonSoru = sonKullaniciMetni(gecmis as Content[]);
+        const istenenId = body['conversationId'];
         try {
           // Kullanıcı kimliği oturumdan; istekten değil. Modelin de tool
           // şemalarında böyle bir alanı yok.
-          const cevap = await ask(pool, user.id, gemini, gecmis as Content[]);
-          sendJson(res, 200, cevap);
+          const cevap = await ask(pool, user.id, gemini, gecmis as Content[], {
+            onAdim: (a) => {
+              if (kopuk) return;
+              gonder({
+                step: a.tool,
+                label: a.tool === null ? null : toolEtiket(a.tool),
+                turn: a.tur,
+              });
+            },
+            iptal: () => kopuk,
+          });
+
+          // Bağlantı koptuysa kaydedilecek bir cevap yok: döngü yarıda
+          // durdu ve elde kalan metin "İstek yarıda bırakıldı." Onu geçmişe
+          // yazmak, kullanıcının hiç görmediği bir cevabı konuşmaya koymak
+          // olurdu. Ölçüldü: sekme kapanınca geçmişe boş bir konuşma düşüyordu.
+          if (kopuk) {
+            res.end();
+            return;
+          }
+          // Konuşma cevap alındıktan sonra açılıyor: hata hâlinde geriye
+          // boş bir kayıt kalmasın.
+          let id = typeof istenenId === 'number' ? istenenId : null;
+          if (id === null) id = await konusmaAc(pool, user.id, sonSoru);
+          // Başkasının kimliği gönderildiyse yazma reddedilir; o konuşmaya
+          // yazmak yerine istemciye "kaydedilmedi" denir.
+          const yazildi = await konusmayaYaz(pool, user.id, id, sonSoru, cevap);
+          if (!kopuk) gonder({ ...cevap, conversationId: yazildi ? id : null, done: true });
         } catch (err) {
           // Sağlayıcı hatası kullanıcıya olduğu gibi verilmez: anahtar parçası
           // ya da iç ayrıntı taşıyabilir. Günlüğe tam hâli, kullanıcıya kısası.
           console.error('asistan hatası:', err);
-          sendJson(res, 502, { error: 'Asistan şu an cevap veremiyor.' });
+          if (!kopuk) gonder({ error: 'Asistan şu an cevap veremiyor.', done: true });
         }
+        res.end();
         return;
+      }
+
+      if (path === '/api/assistant/conversations' && method === 'GET') {
+        sendJson(res, 200, await konusmalar(pool, user.id));
+        return;
+      }
+
+      const konusmaKimlik = matchPath('/api/assistant/conversations/:id', path);
+      if (konusmaKimlik !== null) {
+        const id = Number(konusmaKimlik);
+        if (!Number.isInteger(id) || id <= 0) {
+          sendJson(res, 400, { error: 'Geçersiz konuşma kimliği.' });
+          return;
+        }
+        if (method === 'GET') {
+          sendJson(res, 200, await konusmaMesajlari(pool, user.id, id));
+          return;
+        }
+        if (method === 'DELETE') {
+          const done = await konusmaSil(pool, user.id, id);
+          sendJson(res, done ? 200 : 404, done ? { ok: true } : { error: 'Konuşma bulunamadı.' });
+          return;
+        }
       }
 
       if (path === '/api/stocks' && method === 'GET') {
@@ -793,4 +872,24 @@ if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
     console.error(err);
     process.exitCode = 1;
   });
+}
+
+/**
+ * Konuşmanın başlığı ve kaydedilecek soru: son kullanıcı mesajı.
+ *
+ * Geçmişin tamamı değil son soru saklanıyor çünkü önceki turlar zaten kendi
+ * kayıtlarında duruyor; hepsini yeniden yazmak konuşmayı katlardı.
+ */
+function sonKullaniciMetni(gecmis: readonly Content[]): string {
+  for (let i = gecmis.length - 1; i >= 0; i -= 1) {
+    const m = gecmis[i];
+    if (m?.role !== 'user') continue;
+    const metin = (m.parts ?? [])
+      .map((x) => ('text' in x ? x.text : ''))
+      .filter((x) => x !== '')
+      .join('\n')
+      .trim();
+    if (metin !== '') return metin;
+  }
+  return 'Konuşma';
 }

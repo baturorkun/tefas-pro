@@ -67,6 +67,40 @@ grep -q "for v in CHATBOT_MODEL CHATBOT_PROVIDER CHATBOT_DAILY_LIMIT" "${D}" \
   || fail "isteğe bağlı ayarlar runtime.env'e yazılmıyor"
 printf 'PASS: anahtar ve isteğe bağlı ayarlar deploy ile sunucuya geçiyor\n'
 
+# Yerel geliştirme ortamı da anahtarı görmeli. Ölçüldü: anahtar .env'de
+# duruyordu ama compose dosyası container'a aktarmıyordu; 8282'deki uygulama
+# "CHATBOT_API_KEY yok" diyordu. Deploy'daki hatanın aynısı, bu kez yerelde.
+C="${PROJECT_ROOT}/db/compose.yaml"
+for v in CHATBOT_API_KEY CHATBOT_MODEL CHATBOT_PROVIDER CHATBOT_DAILY_LIMIT; do
+  grep -q "$v: \${$v:-}" "${C}" || fail "$v dev container'ına aktarılmıyor"
+done
+# Aktarım ancak .env kabuğa alınmışsa değer taşır; compose değişken yerine
+# koymayı ortamdan okuyor.
+grep -q "scripts/dev-up.sh" "${PROJECT_ROOT}/package.json" || fail "dev betiği bağlı değil"
+grep -qE '^\s*\. \./\.env$' "${PROJECT_ROOT}/scripts/dev-up.sh" || fail ".env kabuğa alınmıyor"
+printf 'PASS: asistan ayarları yerel dev container.ına da geçiyor\n'
+
+# Sağlayıcı boş tur döndürünce bir kez daha denenmeli. Ölçüldü: aynı soruya
+# sekiz denemenin ikisinde model finishReason=STOP ile hiç parça döndürmedi —
+# ne metin ne çağrı, çıktı token'ı sıfır. Kullanıcı bunu "Cevap üretilemedi"
+# diye görüyordu. Sebep de günlüğe yazılmalı: sessiz ve aralıklı bir arıza
+# başka türlü teşhis edilemiyor.
+G="${PROJECT_ROOT}/src/sources/gemini.ts"
+grep -q "return this.tekTur(system, contents, tools);" "${G}" \
+  || fail "boş turda yeniden denenmiyor"
+grep -q "console.warn('gemini boş tur" "${G}" || fail "boş tur günlüğe yazılmıyor"
+# Günlüğe yanıtın tamamı yazılmamalı: kullanıcının portföy verisi ve sorusu
+# oradan sızardı.
+awk '/^function ozetle/,/^}/' "${G}" | grep -q "JSON.stringify(raw" \
+  && fail "boş tur günlüğüne yanıtın tamamı yazılıyor"
+printf 'PASS: boş tur yeniden deneniyor ve sebebi günlükte\n'
+
+# Boş değer "tanımsız" sayılmalı. Compose `${CHATBOT_MODEL:-}` yazınca boş
+# string geçiyor; ayrı bir değer sayılsaydı boş bir PROVIDER ucu tümden
+# kapatır, boş bir MODEL var olmayan modele istek atardı.
+grep -q "v === undefined || v === ''" "${A}" || fail "boş değer tanımsız sayılmıyor"
+printf 'PASS: boş ortam değişkeni tanımsız sayılıyor\n'
+
 # Ortam değişkeni adları sağlayıcıdan bağımsız olmalı. "gemini" adı .env,
 # .env.example ve deploy dosyasına sızarsa sağlayıcı değiştirmek üç ayrı yerde
 # yeniden adlandırma demek olur — oysa kural "sağlayıcıya özel her şey tek
@@ -83,8 +117,64 @@ printf 'PASS: ortam değişkenleri sağlayıcıdan bağımsız, bilinmeyen sağl
 
 # Model uzun listeleri kendisi saymamalı. Ölçüldü: 103 işlemi bir kez 14, bir
 # kez 77 diye bildirdi ve ikisinde de cevap kesin göründüğü için yanlışlık
-# fark edilmedi. Toplu sayım veritabanında yapılmalı; model yapamıyorsa
-# yapamadığını söylemeli.
+# fark edilmedi. Toplu sayım veritabanında yapılıyor.
+R="${PROJECT_ROOT}/src/server/repository.ts"
 grep -q "Uzun listeleri kendin SAYMA" "${A}" || fail "toplu sayım yasağı yok"
-grep -q "aracım yok" "${A}" || fail "yapamadığını söyleme yönergesi yok"
-printf 'PASS: model uzun listeleri kendisi saymıyor\n'
+grep -q "islem_sayimi" "${A}" || fail "sayım tool'u yok"
+grep -q "export async function islemSayimi" "${R}" || fail "sayım fonksiyonu yok"
+printf 'PASS: model uzun listeleri saymıyor, sayım veritabanında\n'
+
+# Serbest SQL yok. Modelin yazdığı bir sorgu çalıştırılsaydı salt-okunur rol,
+# zaman aşımı ve satır limiti gerekirdi; hiçbiri yok. Sayım tool'u bunun
+# yerine SABİT boyut ve ölçü alıyor: ad tabloda yoksa hata veriyor, dolayısıyla
+# modelin yazdığı metin hiçbir zaman SQL'e girmiyor.
+printf '%s' "${sema}" | grep -qiE "\bsql\b|query|sorgu" \
+  && fail "tool şemasında serbest sorgu alanı var"
+grep -q "const b = BOYUT\[grupla as keyof typeof BOYUT\]" "${R}" \
+  || fail "gruplama adı sabit tablodan çözülmüyor"
+grep -q "const o = OLCU\[olcu as keyof typeof OLCU\]" "${R}" \
+  || fail "ölçü adı sabit tablodan çözülmüyor"
+grep -q "Bilinmeyen gruplama" "${R}" || fail "tanınmayan boyut hata vermiyor"
+grep -q "Bilinmeyen ölçü" "${R}" || fail "tanınmayan ölçü hata vermiyor"
+# Filtreler parametreli: fon kodu ve tarih doğrudan metne gömülmemeli.
+awk '/export async function islemSayimi/,/^}/' "${R}" \
+  | grep -qE '\$\{filtre\.' && fail "filtre değeri sorguya gömülüyor"
+printf 'PASS: serbest SQL yok; boyut ve ölçü sabit, filtre parametreli\n'
+
+# Kopan bağlantı akış üzerinden yakalanmalı. `req` "close" olayını isteğin
+# tamamlanmasında veriyor: gövde okunduktan sonra bağlanan dinleyici olayı
+# hiç görmez. Ölçüldü — sekme kapandıktan sonra döngü sonuna kadar koşup
+# kullanıcının görmediği bir cevabı geçmişe yazıyordu.
+awk "/path === '\/api\/assistant' && method === 'POST'/,/^      if \(path === '\/api\/assistant\/conversations'/" "${I}" \
+  > /tmp/asistan-uc.txt
+grep -q "res.on('close'" /tmp/asistan-uc.txt || fail "kopuş res üzerinden dinlenmiyor"
+grep -q "req.on('close'" /tmp/asistan-uc.txt && fail "kopuş req üzerinden dinleniyor"
+grep -q "iptal: () => kopuk" /tmp/asistan-uc.txt || fail "kopuşta döngü durdurulmuyor"
+grep -q "if (kopuk) {" /tmp/asistan-uc.txt || fail "kopuşta konuşma yine kaydediliyor"
+rm -f /tmp/asistan-uc.txt
+printf 'PASS: bağlantı kopunca döngü duruyor ve geçmişe yazılmıyor\n'
+
+# Konuşma geçmişinde tool SONUÇLARI saklanmamalı: onlar o anki portföy
+# durumudur. Eski bir sonucu geri yükleyip modele vermek, dünkü rakamlarla
+# bugünkü soruyu cevaplamak olurdu.
+M="${PROJECT_ROOT}/db/migrations/036_assistant_conversation.sql"
+grep -q "tool_names" "${M}" || fail "tool adları saklanmıyor"
+grep -qiE "functionResponse|tool_result|result +jsonb" "${M}" \
+  && fail "migration tool sonucu saklıyor"
+awk '/export async function konusmayaYaz/,/^}/' "${R}" | grep -qi "functionResponse" \
+  && fail "konuşmaya tool sonucu yazılıyor"
+# Hesap silinince konuşmaları da gitmeli.
+grep -q "REFERENCES app_user(id) ON DELETE CASCADE" "${M}" \
+  || fail "konuşmalar hesaba bağlı silinmiyor"
+grep -q "REFERENCES assistant_conversation(id) ON DELETE CASCADE" "${M}" \
+  || fail "mesajlar konuşmayla birlikte silinmiyor"
+printf 'PASS: yalnız metin saklanıyor; hesap silinince konuşmalar da gidiyor\n'
+
+# Konuşma başkasının olamaz: okuma, yazma ve silme user_id koşulu taşımalı.
+# Kimlik ayrı bir sorguya bırakılsaydı, unutulduğunda sessizce başkasının
+# konuşması okunurdu.
+for f in konusmaMesajlari konusmayaYaz konusmaSil; do
+  awk "/export async function ${f}/,/^}/" "${R}" | grep -q 'user_id = \$' \
+    || fail "${f} kullanıcı kontrolü yapmıyor"
+done
+printf 'PASS: konuşmalar yalnız sahibine açık\n'

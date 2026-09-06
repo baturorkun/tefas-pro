@@ -37,6 +37,30 @@ export function sendJson(
 }
 
 /**
+ * SSE akışı açar ve olay yazan bir fonksiyon döndürür.
+ *
+ * Uzun süren bir istekte tek JSON yanıtı beklemek yerine sunucu ara adımları
+ * yollayabiliyor. `Content-Length` yok: gövde bittiğinde değil, bağlantı
+ * kapandığında biter.
+ *
+ * `X-Accel-Buffering: no` bugün önümüzde proxy olmadığı için gereksiz, ama
+ * bir gün konursa akışın tamponlanıp tek parça hâlinde gelmesini önler —
+ * o bozulma sessiz olur, akış çalışıyor görünür yalnız geç gelir.
+ */
+export function openSse(res: ServerResponse): (data: unknown) => void {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  return (data: unknown): void => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+}
+
+/**
  * `/api/transactions/:id` gibi tek parametreli yolları eşler.
  * Dönen değer eşleşmezse null, eşleşirse yakalanan parça.
  */

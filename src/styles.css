@@ -73,15 +73,27 @@ body {
     var(--bg);
 }
 
+/* Izgara: alanlar arası boşluk tek kaynaktan gelsin. Form düz bir blok
+   olduğu için çocuklar uç uca yığılıyordu — "Parola" etiketi üstteki
+   girdiye, "Giriş yap" düğmesi de parola girdisine yapışıktı. */
 .login-card {
   width: min(23rem, 100%);
+  display: grid;
+  gap: 1.15rem;
   padding: 2rem;
   background: var(--bg-raised);
   border: 1px solid var(--line);
   border-radius: 12px;
 }
 
-.login-card .brand { margin-bottom: 1.75rem; }
+/* Marka ve düğme alan grubunun dışında ve onu çerçeveliyor; ızgara
+   boşluğunun üstüne biraz daha ekleniyor. Kart içindeki tek margin'ler
+   bunlar, ikisi de bilerek. */
+.login-card .brand { margin-bottom: .6rem; }
+.login-card .btn-block { margin-top: .35rem; }
+/* Bu ikisinin kendi margin'i ızgara boşluğuyla üst üste binerdi. */
+.login-card .hint { margin-bottom: 0; }
+.login-card .error { margin-top: 0; }
 
 .brand { display: flex; align-items: center; gap: .6rem; }
 .brand-sub { display: block; font-size: .72rem; color: var(--muted-dim); font-weight: 400; }
@@ -244,7 +256,9 @@ button {
                    background: var(--panel-hover); }
 .btn-danger { color: var(--danger); background: transparent; padding: .3rem .5rem; }
 .btn-danger:hover { background: var(--danger-tint); }
-.btn-block { width: 100%; justify-content: center; }
+/* Girdilerle aynı yükseklik: altlarında duran tam genişlikte bir düğme,
+   onlardan alçak olunca sütun aşağı doğru inceliyor gibi görünüyor. */
+.btn-block { width: 100%; justify-content: center; min-height: 2.875rem; }
 
 /* ─── Tablo ────────────────────────────────────────────────────────────── */
 
@@ -841,7 +855,9 @@ textarea:focus  { outline: none; border-color: var(--accent);
 .chat-user   { align-self: flex-end; background: var(--accent-tint); color: var(--text-strong); }
 .chat-model  { align-self: flex-start; background: var(--bg-raised);
                border: 1px solid var(--line-soft); }
-.chat-wait   { color: var(--muted); letter-spacing: .3em; }
+/* Bekleme balonu artık adım adını yazıyor ("Fon listesi okunuyor…"); harf
+   aralığı üç nokta içindi, sözcüklerde okumayı zorlaştırıyor. */
+.chat-wait   { color: var(--muted); font-style: italic; }
 /* Çağrılan tool'lar: cevabın kaynağı görünür olmalı, ama cevabın önüne
    geçmemeli — küçük ve soluk. */
 .chat-tools  { margin-top: .5rem; padding-top: .4rem; border-top: 1px solid var(--line-soft);
@@ -854,3 +870,40 @@ textarea:focus  { outline: none; border-color: var(--accent);
                background: transparent; color: var(--text); font: inherit; font-size: .8rem;
                cursor: pointer; }
 .chat-sample:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Örnek soruların gerisi katlanmış duruyor: yirmi küsur rozet birden
+   dizilseydi ekran dolar, hangisinin ne olduğu okunmazdı. */
+.ornek-katman { margin-top: 1rem; }
+.ornek-katman > summary {
+  display: inline-block; padding: 4px 0; color: var(--muted);
+  font-size: .82rem; cursor: pointer; list-style: none;
+}
+.ornek-katman > summary::-webkit-details-marker { display: none; }
+/* Üçgen kendimiz çiziyoruz: tarayıcının varsayılan işareti hizayı bozuyor. */
+.ornek-katman > summary::before { content: '▸ '; color: var(--muted-dim); }
+.ornek-katman[open] > summary::before { content: '▾ '; }
+.ornek-katman > summary:hover { color: var(--accent); }
+.ornek-not { margin: .6rem 0 0; color: var(--muted-dim); font-size: .78rem;
+             line-height: 1.5; }
+.ornek-baslik {
+  margin: .85rem 0 .4rem; color: var(--muted-dim);
+  font-size: .7rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+}
+
+/* Asistan geçmişi: konuşma listesi. Satır tıklanınca açılır, sağdaki düğme
+   siler — silme düğmesi satırın tıklamasını yutmasın diye ayrı düğüm. */
+.gecmis-liste  { list-style: none; margin: 0; padding: 0; display: flex;
+                 flex-direction: column; gap: 2px; }
+.gecmis-satir  { display: flex; align-items: center; gap: 6px;
+                 border-radius: var(--radius); }
+.gecmis-satir:hover { background: var(--bg-raised); }
+.gecmis-acik   { background: var(--accent-tint); }
+.gecmis-ac     { flex: 1; display: flex; flex-direction: column; gap: 2px;
+                 padding: 8px 10px; border: 0; background: transparent;
+                 font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.gecmis-baslik { font-size: .85rem; overflow: hidden; text-overflow: ellipsis;
+                 white-space: nowrap; }
+.gecmis-alt    { font-size: .72rem; color: var(--muted-dim); }
+.gecmis-sil    { padding: 6px 8px; border: 0; background: transparent;
+                 color: var(--muted-dim); cursor: pointer; border-radius: var(--radius); }
+.gecmis-sil:hover { color: var(--danger); background: var(--danger-tint); }

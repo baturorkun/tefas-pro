@@ -16,12 +16,40 @@ import type pg from 'pg';
 import type { FunctionDeclaration, Content, ToolCall } from '../sources/gemini.js';
 import { GeminiClient } from '../sources/gemini.js';
 import {
-  allocation, closedPositions, fundDetail, listTransactions, periodReturns,
-  portfolioHeadline, portfolioSummary, stockAllocation,
+  allocation, closedPositions, fundDetail, islemSayimi, listTransactions,
+  periodReturns, portfolioHeadline, portfolioSummary, stockAllocation,
+  SAYIM_BOYUTLARI, SAYIM_OLCULERI,
 } from './repository.js';
 
 /** Konuşma başına tur sınırı: sınırsız döngü hem para hem zaman harcar. */
 const MAX_TURN = 8;
+
+/**
+ * Döngünün dışarı verdiği adım.
+ *
+ * Akış modelin token'larından değil sunucunun kendi döngüsünden üretiliyor.
+ * Değerli olan metnin harf harf akması değil, hangi adımda olunduğunun
+ * görünmesi: çok adımlı bir soru 30 saniyeyi aşabiliyor ve o süre boyunca
+ * ekranda tek bir "Düşünüyor…" duruyordu.
+ *
+ * `tool` null ise modele soruluyor; doluysa o tool çalışıyor.
+ */
+export interface Adim {
+  tur: number;
+  tool: string | null;
+}
+
+/**
+ * Akış bağlantısı.
+ *
+ * `iptal` yalnız olay göndermeyi değil DÖNGÜYÜ durduruyor: sekme kapandıktan
+ * sonra her tur bir dış API çağrısı ve kimsenin okumayacağı bir cevaba
+ * ödenen para demek.
+ */
+export interface AskAkis {
+  onAdim?: (adim: Adim) => void;
+  iptal?: () => boolean;
+}
 
 /**
  * Sistem talimatı.
@@ -55,17 +83,28 @@ Kurallar:
 - Hepsini denedikten sonra hâlâ cevaplanamıyorsa: neyi cevaplayamadığını
   gündelik dille söyle ve elindeki veriyle NE söyleyebileceğini öner.
   Tahmin etme, uydurma.
+- Portföy KULLANICININ. "Nkolay'a en çok parayı koydum" değil "koydunuz"
+  yaz; veriden kendi malın gibi bahsetme.
 - Gelecek tahmini yapma. "Bu fon yükselir mi" gibi sorulara geçmiş veriyi
   anlatarak cevap ver, öngörüde bulunma.
-- Uzun listeleri kendin SAYMA ve GRUPLAMA. Bir tool sana yüzlerce satır
-  döndürdüyse, onları gün/ay/fon gibi bir ölçüte göre sayıp özet çıkarma;
-  "bu sayımı yapacak bir aracım yok" de. İki kez ölçüldü: 103 işlemi bir kez
-  14, bir kez 77 diye bildirdin ve ikisinde de cevap kesin göründüğü için
-  yanlışlığı fark edilmedi. Tek tek satır okumak (kaç tanesi X fonundan,
-  şu tarihte ne olmuş) sorun değil; toplu sayım güvenilir olmuyor.
+- Bir gruplama sonucunu aktarırken satırları tool'un verdiği gibi TEK TEK yaz;
+  "şu ikisi de aynı" diye birleştirme. Ölçüldü: beş günlük bir sayımda
+  Pazartesi 20'yi Çarşamba'nın 19'una eşitleyip "ikisi de 19" dedin.
+- Uzun listeleri kendin SAYMA ve GRUPLAMA; bunun için islem_sayimi tool'u var
+  ve sayımı veritabanında yapıyor. İki kez ölçüldü: 103 işlemi bir kez 14,
+  bir kez 77 diye bildirdin ve ikisinde de cevap kesin göründüğü için
+  yanlışlığı fark edilmedi. Tek tek satır okumak (şu tarihte ne olmuş) sorun
+  değil; toplu sayım için tool'u kullan.
 - Hazır bir tool'un döndürdüğü toplamları olduğu gibi kullan; onlar
   veritabanında hesaplanıyor ve doğrular.
-- Kısa ve somut yaz. Rakamları Türkçe biçimde ver (1.234,56).
+- Kısa ve somut yaz.
+- SAYI BİÇİMİ. Tool sonuçları ham geliyor ("3.0700", "9453.4412"); olduğu
+  gibi yapıştırma, Türkçe biçime çevir:
+    para    kuruşsuz, binlik ayraçlı    9.453 TL     ("9.453,44 TL" DEĞİL)
+    yüzde   önde %, virgüllü, iki hane  %3,07        ("3.0700%" DEĞİL)
+    adet    binlik ayraçlı              20.985
+    fiyat   virgüllü, dört hane         2,4303
+  Kuruş portföy ölçeğinde gürültü; yüzde ve fiyat hanesi ise bilgi taşır.
 - Ağırlık verilerinin tarihini belirt: hisse kırılımı aylık açıklamadan gelir
   ve bir aya kadar eski olabilir.`;
 
@@ -125,7 +164,12 @@ const TOOLS: Tool[] = [
         + 'TL karşılığı, portföydeki payı, hangi fonlardan geldiği ve o hissenin '
         + 'haftalık/aylık fiyat getirisi. "ASELS\'te ne kadar param var", "en çok hangi '
         + 'hissedeyim", "hangi fonlarım aynı hisseyi tutuyor" için. ÖNEMLİ: ağırlıklar '
-        + 'fonların AYLIK portföy açıklamasından gelir, bir aya kadar eski olabilir.',
+        + 'fonların AYLIK portföy açıklamasından gelir, bir aya kadar eski olabilir.\n'
+        + 'Liste yalnız senin fonlarını değil TAKİP ETTİĞİN ve hiç almadığın '
+        + 'fonları da kapsar; onlarda owned=false ve value=0 olur. "İçinde THYAO '
+        + 'olan fonları listele" gibi bir soruda bunları ELEME — değeri sıfır '
+        + 'diye atlamak, sorulan şeyin yarısını gizlemek olur. Portföydekilerle '
+        + 'diğerlerini ayrı ayrı yaz.',
       parameters: bos,
     },
     run: (pool, userId) => stockAllocation(pool, userId),
@@ -169,6 +213,41 @@ const TOOLS: Tool[] = [
   },
   {
     decl: {
+      name: 'islem_sayimi',
+      description: 'İşlemleri bir boyuta göre GRUPLAYIP sayar ya da toplar. Sayım '
+        + 'veritabanında yapılır — sen listeyi kendin sayma, bunu kullan.\n'
+        + '"Salı günleri mi daha çok alım yaptım", "ayda kaç işlem yapıyorum", '
+        + '"hangi bankaya en çok para koydum", "kaç pozisyonum kapandı" için.\n'
+        + `grupla: ${SAYIM_BOYUTLARI.join(' | ')}\n`
+        + `olcu: ${SAYIM_OLCULERI.join(' | ')}\n`
+        + 'Getiri ölçüsü YOK: getiri hesabı NAV zincirleme ve nakit akışı '
+        + 'düzeltmesi ister, düz ortalama yanlış sonuç verir. Getiri soruları '
+        + 'için donemsel_getiri ve fon_listesi kullan.',
+      parameters: {
+        type: 'object',
+        properties: {
+          grupla: { type: 'string', enum: SAYIM_BOYUTLARI, description: 'Gruplama boyutu' },
+          olcu: { type: 'string', enum: SAYIM_OLCULERI, description: 'Ölçülecek büyüklük' },
+          fon: { type: 'string', description: 'İsteğe bağlı: yalnız bu fon kodu' },
+          banka: { type: 'string', description: 'İsteğe bağlı: yalnız bu banka' },
+          baslangic: { type: 'string', description: 'İsteğe bağlı: YYYY-MM-DD' },
+          bitis: { type: 'string', description: 'İsteğe bağlı: YYYY-MM-DD' },
+        },
+        required: ['grupla', 'olcu'],
+      },
+    },
+    run: (pool, userId, a) => islemSayimi(
+      pool, userId, String(a['grupla'] ?? ''), String(a['olcu'] ?? ''),
+      {
+        fon: a['fon'] === undefined ? undefined : String(a['fon']),
+        banka: a['banka'] === undefined ? undefined : String(a['banka']),
+        baslangic: a['baslangic'] === undefined ? undefined : String(a['baslangic']),
+        bitis: a['bitis'] === undefined ? undefined : String(a['bitis']),
+      },
+    ),
+  },
+  {
+    decl: {
       name: 'islem_listesi',
       description: 'Ham işlem kayıtları: her alım ayrı satır — fon, banka, adet, alış '
         + 'tarihi, satış tarihi, maliyet, güncel değer, not. "Ne zaman almışım", "kaç '
@@ -201,14 +280,26 @@ export async function ask(
   userId: number,
   gemini: GeminiClient,
   history: readonly Content[],
+  akis: AskAkis = {},
 ): Promise<AssistantReply> {
+  const onAdim = akis.onAdim ?? ((): void => { /* akışsız çağrı: adımlar yutulur */ });
+  const iptal = akis.iptal ?? ((): boolean => false);
   const contents: Content[] = [...history];
   const usedTools: string[] = [];
 
   for (let tur = 0; tur < MAX_TURN; tur += 1) {
+    // Kontrol turun başında: bir sonraki dış çağrıdan hemen önce.
+    if (iptal()) return { text: 'İstek yarıda bırakıldı.', usedTools };
+    onAdim({ tur: tur + 1, tool: null });
     const t = await gemini.generate(SYSTEM, contents, TOOLS.map((x) => x.decl));
     if (t.calls.length === 0) {
-      return { text: t.text ?? 'Cevap üretilemedi.', usedTools };
+      // Metin de yoksa sağlayıcı iki denemede de boş döndü. "Cevap
+      // üretilemedi" kullanıcıya hatanın kendisinde bir kusur varmış gibi
+      // geliyordu; sebebi söylemek ve tekrar denemesini istemek dürüst.
+      return {
+        text: t.text ?? 'Yapay zekâ servisi boş yanıt döndü. Soruyu tekrar sorar mısın?',
+        usedTools,
+      };
     }
 
     contents.push({
@@ -219,6 +310,7 @@ export async function ask(
       ],
     });
 
+    for (const c of t.calls) onAdim({ tur: tur + 1, tool: c.name });
     const sonuclar = await Promise.all(t.calls.map((c) => calistir(pool, userId, c)));
     for (const c of t.calls) usedTools.push(c.name);
     contents.push({
@@ -272,13 +364,23 @@ async function calistir(
  * Anahtar yoksa null döner: yalnız Asistan ekranı kapalı kalır.
  */
 export function chatbotFromEnv(): GeminiClient | null {
-  const saglayici = (process.env['CHATBOT_PROVIDER'] ?? 'gemini').trim().toLowerCase();
+  // Boş değer "tanımsız" sayılıyor. Sebebi: ortam değişkenini şartlı olarak
+  // TANIMLAMAMAK çoğu yerde zor — compose dosyası `${CHATBOT_MODEL:-}` yazar,
+  // kabuk boş string geçirir. Boş string ayrı bir değer sayılsaydı boş bir
+  // CHATBOT_PROVIDER "Desteklenmeyen sağlayıcı" diye uç kapatırdı; boş bir
+  // CHATBOT_MODEL ise var olmayan bir modele istek atardı.
+  const cevre = (ad: string): string | null => {
+    const v = process.env[ad]?.trim();
+    return v === undefined || v === '' ? null : v;
+  };
+
+  const saglayici = (cevre('CHATBOT_PROVIDER') ?? 'gemini').toLowerCase();
   if (saglayici !== 'gemini') {
     throw new Error(
       `Desteklenmeyen CHATBOT_PROVIDER: ${saglayici}. Şu an yalnız "gemini" var.`,
     );
   }
-  const key = process.env['CHATBOT_API_KEY'];
-  if (key === undefined || key.trim() === '') return null;
-  return new GeminiClient(key, process.env['CHATBOT_MODEL'] ?? 'gemini-2.5-flash');
+  const key = cevre('CHATBOT_API_KEY');
+  if (key === null) return null;
+  return new GeminiClient(key, cevre('CHATBOT_MODEL') ?? 'gemini-2.5-flash');
 }

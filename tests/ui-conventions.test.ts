@@ -10,6 +10,21 @@ const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
+/**
+ * Bir `export` bildiriminin gövdesini kaynaktan keser.
+ *
+ * Bitiş sınırı "bir sonraki export": belirli bir sembole bağlanmak, araya
+ * yeni bir fonksiyon eklendiğinde dilimi büyütüp testi ilgisiz koda bakar
+ * hâle getiriyordu. Ölçüldü: islemSayimi eklenince varlık kırılımı testi,
+ * onun içindeki `s.cost` yüzünden patladı.
+ */
+function exportGovdesi(kaynak: string, bildirim: string): string {
+  const bas = kaynak.indexOf(bildirim);
+  if (bas < 0) throw new Error(`bulunamadı: ${bildirim}`);
+  const sonra = kaynak.indexOf('\nexport ', bas + bildirim.length);
+  return kaynak.slice(bas, sonra < 0 ? kaynak.length : sonra);
+}
+
 describe('düğme kuralları', () => {
   it('satır eylemleri metin değil ikon düğmesidir', () => {
     expect(main).not.toMatch(/\}, \['(düzenle|sil|çıkar)'\]\)/);
@@ -805,8 +820,7 @@ describe('fon içeriği', () => {
     // Ağırlıklar %100'ü aşabiliyor; ölçeklemek uydurulan bir yüzdeyi ölçülen
     // gibi gösterirdi. Fark ekranda söyleniyor.
     expect(repo).toContain('export function buildAssetAllocation');
-    const fn = repo.slice(repo.indexOf('export function buildAssetAllocation'),
-                          repo.indexOf('export interface StockFundRow'));
+    const fn = exportGovdesi(repo, 'export function buildAssetAllocation');
     expect(fn).not.toMatch(/normalize|ölçekle|scaleTo100/i);
     expect(main).toContain('yuvarlanmış');
   });
@@ -815,8 +829,7 @@ describe('fon içeriği', () => {
     // Ağırlıklar bugüne ait; geçmişteki maliyete uygulamak "bu sınıfa şu kadar
     // para koydun" diye yanlış bir rakam üretirdi.
     const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
-    const fn = repo.slice(repo.indexOf('export function buildAssetAllocation'),
-                          repo.indexOf('export interface StockFundRow'));
+    const fn = exportGovdesi(repo, 'export function buildAssetAllocation');
     expect(fn).not.toContain('cost');
     expect(fn).not.toContain('gain');
   });
@@ -859,5 +872,40 @@ describe('ikon adları', () => {
     const idler = [...main.matchAll(/\{ id: '([a-z]+)', label:/g)].map((m) => m[1] ?? '');
     expect(idler.length).toBeGreaterThan(8);
     for (const id of idler) expect(tanimli, `menü ikonu yok: ${id}`).toContain(id);
+  });
+
+  it('her asistan tool\'unun okunabilir etiketi var', () => {
+    // Etiketi olmayan tool ham adıyla görünür: beklerken "islem_sayimi
+    // okunuyor…", cevap altında "ⓘ islem_sayimi". Boş ikon kutusuyla aynı
+    // tür sessiz eksik — yeni tool eklenince fark edilmez.
+    const assistant = readFileSync(
+      new URL('../src/server/assistant.ts', import.meta.url), 'utf8');
+    const labels = readFileSync(
+      new URL('../src/assistant-labels.ts', import.meta.url), 'utf8');
+    const tanimli = new Set(
+      [...labels.matchAll(/^ {2}([a-z_]+): '/gm)].map((m) => m[1] ?? ''),
+    );
+    const toollar = [...assistant.matchAll(/^ {6}name: '([a-z_]+)',$/gm)]
+      .map((m) => m[1] ?? '');
+    expect(toollar.length).toBeGreaterThan(5);
+    for (const ad of toollar) expect(tanimli, `tool etiketi yok: ${ad}`).toContain(ad);
+  });
+
+  it('tarayıcının confirm/alert kutuları kullanılmaz', () => {
+    // Silme onayı projenin kendi modal'ıyla alınıyor: neyin silineceğini
+    // satır satır gösteriyor ve uygulamanın görünümünde duruyor. Tarayıcı
+    // kutusu ne gösterebilir ne de biçimlendirilebilir.
+    expect(main).toContain('function confirmDelete');
+    const cagri = [...main.matchAll(/(^|[^a-zA-Z.])(confirm|alert|prompt)\(/gm)];
+    expect(cagri.map((m) => m[2]), 'tarayıcı kutusu kullanılmış').toEqual([]);
+  });
+
+  it('konuşma geçmişinde tool sonucu taşınmaz', () => {
+    // Saklanan ve geri gönderilen yalnız görünen metin. Tool sonuçları o anki
+    // portföy durumu: eskisini modele vermek dünkü rakamlarla bugünkü soruyu
+    // cevaplamak olurdu.
+    const sohbet = /interface SohbetParca \{([\s\S]*?)\n\}/.exec(main)?.[1] ?? '';
+    expect(sohbet).toContain('text');
+    expect(sohbet).not.toMatch(/functionResponse|functionCall|veri/);
   });
 });

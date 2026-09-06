@@ -65,6 +65,14 @@ services:
       SECURE_COOKIE: "false"
       # applehv sanal makinesi üzerinden gelen bind mount'larda inotify
       # olayları güvenilir iletilmiyor: dosya kaydedilir, izleyici fark etmez.
+      # Asistan ayarları. Tanımlanmış ama container'a aktarılmayan değişken
+      # sessiz bir tuzak: anahtar .env'de durur, uygulama "CHATBOT_API_KEY
+      # yok" der. Ölçüldü — önce deploy tarafında, sonra burada. Boş değer
+      # geçmesi sorun değil: sunucu boşu tanımsız sayıyor.
+      CHATBOT_API_KEY: ${CHATBOT_API_KEY:-}
+      CHATBOT_MODEL: ${CHATBOT_MODEL:-}
+      CHATBOT_PROVIDER: ${CHATBOT_PROVIDER:-}
+      CHATBOT_DAILY_LIMIT: ${CHATBOT_DAILY_LIMIT:-}
       CHOKIDAR_USEPOLLING: "1"
       CHOKIDAR_INTERVAL: "500"
       TSC_WATCHFILE: PriorityPollingInterval
