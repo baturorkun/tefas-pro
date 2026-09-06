@@ -18,6 +18,8 @@ import { FintablesClient } from '../sources/fintables.js';
 import { makePool } from '../db/pool.js';
 import { currentVersion } from '../version.js';
 import { NOTE_MAX } from '../limits.js';
+import { ask, geminiFromEnv } from './assistant.js';
+import type { Content } from '../sources/gemini.js';
 import { isValidHoliday } from '../settlement.js';
 import {
   clearCookie,
@@ -44,6 +46,7 @@ import {
   allocation,
   stockAllocation,
   fundDetail,
+  readUserSetting,
   benchmarkCode,
   clearUserSetting,
   closedPositions,
@@ -91,6 +94,8 @@ const PORT = Number(process.env.PORT ?? 8282);
  * sınırlar (127.0.0.1:PORT olarak yayınlanır).
  */
 const HOST = process.env.HOST ?? '127.0.0.1';
+/** Kullanıcı başına günlük soru sınırı. */
+const ASSISTANT_DAILY_LIMIT = Number(process.env['ASSISTANT_DAILY_LIMIT'] ?? 50);
 const SESSION_TTL = Number(process.env.SESSION_TTL ?? 60 * 60 * 12);
 const SECURE_COOKIE = process.env.SECURE_COOKIE === 'true';
 
@@ -504,6 +509,50 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         const d = await fundDetail(pool, user.id, fonEslesme[1] ?? '');
         if (d === null) { sendJson(res, 404, { error: 'Fon bulunamadı.' }); return; }
         sendJson(res, 200, d);
+        return;
+      }
+
+      // Asistan. Anahtar yoksa uç 503 döner; uygulama ve diğer ekranlar
+      // etkilenmez.
+      if (path === '/api/assistant' && method === 'POST') {
+        const gemini = geminiFromEnv();
+        if (gemini === null) {
+          sendJson(res, 503, { error: 'Asistan yapılandırılmamış: GEMINI_API_KEY yok.' });
+          return;
+        }
+        const body = (await readJson(req)) as Record<string, unknown>;
+        const gecmis = body['history'];
+        if (!Array.isArray(gecmis) || gecmis.length === 0) {
+          sendJson(res, 400, { error: 'Soru gerekli.' });
+          return;
+        }
+        // Günlük sınır: her soru bir dış API çağrısı ve birkaç tool turu.
+        // Sayaç kullanıcı ayarlarında tutuluyor; ayrı tablo açmaya değmez ve
+        // yeniden başlatmada sıfırlanmaması gerekiyor.
+        const bugun = new Date().toISOString().slice(0, 10);
+        const kullanim = await readUserSetting<{ date: string; count: number }>(
+          pool, user.id, 'assistant.usage',
+        );
+        const sayi = kullanim !== null && kullanim.date === bugun ? kullanim.count : 0;
+        if (sayi >= ASSISTANT_DAILY_LIMIT) {
+          sendJson(res, 429, {
+            error: `Günlük soru sınırına ulaşıldı (${String(ASSISTANT_DAILY_LIMIT)}).`,
+          });
+          return;
+        }
+        await writeUserSetting(pool, user.id, 'assistant.usage',
+          { date: bugun, count: sayi + 1 });
+        try {
+          // Kullanıcı kimliği oturumdan; istekten değil. Modelin de tool
+          // şemalarında böyle bir alanı yok.
+          const cevap = await ask(pool, user.id, gemini, gecmis as Content[]);
+          sendJson(res, 200, cevap);
+        } catch (err) {
+          // Sağlayıcı hatası kullanıcıya olduğu gibi verilmez: anahtar parçası
+          // ya da iç ayrıntı taşıyabilir. Günlüğe tam hâli, kullanıcıya kısası.
+          console.error('asistan hatası:', err);
+          sendJson(res, 502, { error: 'Asistan şu an cevap veremiyor.' });
+        }
         return;
       }
 

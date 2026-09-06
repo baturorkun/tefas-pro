@@ -564,9 +564,18 @@ describe('FIFO satış', () => {
     // aynı açık orada sürer. Giriş ve parola ekranları hariç: onlarda ikinci
     // istek yeni bir kayıt açmıyor.
     expect(main.match(/tekGonderim\(form, submit, status,/g)?.length).toBe(4);
-    // Tek meşru submit dinleyicisi yardımcının kendisi; başka yerde kalmamalı.
-    const disarisi = main.replace(
-      main.slice(main.indexOf('function tekGonderim'), main.indexOf('function sadeceSayi')), '');
+    // Kural "iki kez gönderilemesin", "tek yardımcı kullanılsın" değil.
+    // Sohbet formu kayıt açmıyor ve kendi kilidini taşıyor: gönderirken hem
+    // düğme hem girdi kapanıyor, hem de erken dönüş var.
+    const chat = main.slice(main.indexOf('async function chatView'),
+                            main.indexOf('async function closedView'));
+    expect(chat).toContain('if (soru === \'\' || sohbetMesgul) return;');
+    expect(chat).toContain('sohbetMesgul = true;');
+    // Bunun dışında submit dinleyicisi yalnız yardımcının içinde olmalı.
+    const disarisi = main
+      .replace(main.slice(main.indexOf('function tekGonderim'),
+                          main.indexOf('function sadeceSayi')), '')
+      .replace(chat, '');
     expect(disarisi).not.toMatch(/form\.addEventListener\('submit'/);
   });
 

@@ -1,6 +1,6 @@
 ---
 id: RQ-0040
-status: draft
+status: ready
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -45,8 +45,22 @@ Bunun yerine `repository.ts`'teki fonksiyonlar tool olarak veriliyor:
 `buildPeriodReturns`, `closedPositions`, `listTransactions`. Bunlar zaten
 ekranların kullandığı fonksiyonlar — asistan ile ekran aynı sayıyı söylüyor.
 
-Öngörülmemiş sorular için salt-okunur bir SQL tool'u da veriliyor, ama son
-çare olarak: kurgulu tool'lar cevaplayabiliyorsa onlar kullanılmalı.
+## Serbest SQL bu RQ'da yok
+
+İlk tasarımda öngörülmemiş sorular için salt-okunur bir SQL tool'u vardı.
+Kapsam dışına alındı: sekiz tool'un neyi karşılamadığı ancak gerçek sorularla
+belli olur ve eksiği tahmin ederek bir güvenlik yüzeyi açmak yanlış sıra.
+
+Sonraki RQ'da yapılacak ve şunları gerektirecek:
+
+    ayrı veritabanı rolü    yalnız SELECT; kısıt GRANT'te olmalı, kodda değil
+    statement_timeout       uzun sorgu kesilir
+    satır limiti            devasa sonuç dönmez
+    son çare kuralı         hazır tool cevaplayabiliyorsa o kullanılmalı
+
+Karşılanmayan soru örneği: "salı günleri mi daha çok alım yaptım". Hangi
+soruların gerçekten eksik kaldığını kullanımdan öğrenip o RQ'yu ona göre
+yazmak, şimdi tahmin etmekten iyi.
 
 ## Güvenlik
 
@@ -93,10 +107,9 @@ geldiği gizlenirse kullanıcı doğruluğunu değerlendiremez.
 - Kullanıcı doğal dille soru sorabilir ve kendi verisinden cevap alır.
 - Model, ekranların kullandığı repository fonksiyonlarını tool olarak çağırır;
   aynı soru ekranla asistanda farklı sayı vermez.
+- Model SQL yazmaz; yalnız tanımlı fonksiyonları çağırır.
+- Cevaplanamayan soruda model cevaplayamadığını söyler, uydurmaz.
 - Tool imzalarında kullanıcı kimliği bulunmaz; sunucu oturumdan koyar.
-- Serbest SQL tool'u yalnız SELECT çalıştırır ve bu kısıt veritabanı rolüyle
-  uygulanır, uygulama kodundaki bir kontrolle değil.
-- SQL tool'una zaman aşımı ve satır limiti uygulanır.
 - Tool sonuçları modele veri olarak verilir; sonuç içinden gelen talimatlar
   uygulanmaz.
 - Konuşma başına tur sınırı ve kullanıcı başına günlük soru sınırı vardır.
