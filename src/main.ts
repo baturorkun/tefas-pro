@@ -1407,6 +1407,37 @@ function pencereKaydirici(
 
 const HISSE_TAKIP_KEY = 'tefas.stocks.watchlist';
 
+/**
+ * Piyasa ekranının bölüm sekmeleri.
+ *
+ * Üç bölüm alt alta dizilince sayfa 2764 px oluyordu — 900 px ekranda 3,1
+ * ekran boyu kaydırma. Pencere kaydırıcıları ilk 222 px'de kaldığı için
+ * kaydırma menzilinin %92'sinde görünmüyordu.
+ */
+type MarketSekme = 'returns' | 'flow' | 'investor';
+const MARKET_SEKME = ['returns', 'flow', 'investor'] as const;
+const MARKET_SEKME_ADI: Record<MarketSekme, string> = {
+  returns: 'Getiri', flow: 'Para Akışı', investor: 'Yatırımcı Sayısı',
+};
+const MARKET_SEKME_KEY = 'tefas.market.section';
+
+function readMarketSekme(): MarketSekme {
+  try {
+    const v = localStorage.getItem(MARKET_SEKME_KEY);
+    return MARKET_SEKME.includes(v as MarketSekme) ? (v as MarketSekme) : 'returns';
+  } catch {
+    return 'returns';
+  }
+}
+
+function writeMarketSekme(value: MarketSekme): void {
+  try {
+    localStorage.setItem(MARKET_SEKME_KEY, value);
+  } catch {
+    // Depolama kapalıysa seçim yalnız bu oturumda yaşar.
+  }
+}
+
 function readHisseTakip(): boolean {
   try {
     return localStorage.getItem(HISSE_TAKIP_KEY) === '1';
@@ -1800,6 +1831,54 @@ async function marketView(reload: () => void): Promise<Node[]> {
   const grid = (nodes: Node[]): HTMLElement => el('div', { class: 'chart-grid' }, nodes);
   const ad = (gun: number): string => PENCERE_ADI[gun] ?? `${String(gun)} gün`;
 
+  const bolum = (id: MarketSekme): HTMLElement => {
+    if (id === 'flow') {
+      return grid([
+        flowPanel(`En çok giriş olan (${ad(sol)})`, kapsam, a.flow.top, 'giriş'),
+        flowPanel(`En çok giriş olan (${ad(sag)})`, kapsam, b.flow.top, 'giriş'),
+        flowPanel(`En çok çıkış olan (${ad(sol)})`, kapsam, a.flow.bottom, 'çıkış'),
+        flowPanel(`En çok çıkış olan (${ad(sag)})`, kapsam, b.flow.bottom, 'çıkış'),
+      ]);
+    }
+    if (id === 'investor') {
+      return grid([
+        investorPanel(`En çok artan (${ad(sol)})`, kapsam, a.investor.top, 'artış'),
+        investorPanel(`En çok artan (${ad(sag)})`, kapsam, b.investor.top, 'artış'),
+        investorPanel(`En çok azalan (${ad(sol)})`, kapsam, a.investor.bottom, 'azalış'),
+        investorPanel(`En çok azalan (${ad(sag)})`, kapsam, b.investor.bottom, 'azalış'),
+      ]);
+    }
+    return grid([
+      chartPanel(`En çok kazandıran (${ad(sol)})`, kapsam, a.returns.top),
+      chartPanel(`En çok kazandıran (${ad(sag)})`, kapsam, b.returns.top),
+      chartPanel(`En çok kaybettiren (${ad(sol)})`, kapsam, a.returns.bottom,
+        { emptyText: 'Bu pencerede ekside kapatan fon yok.' }),
+      chartPanel(`En çok kaybettiren (${ad(sag)})`, kapsam, b.returns.bottom,
+        { emptyText: 'Bu pencerede ekside kapatan fon yok.' }),
+    ]);
+  };
+
+  const govde = el('div', {}, [bolum(readMarketSekme())]);
+  const dugmeler = new Map<MarketSekme, HTMLElement>();
+  const sec = (id: MarketSekme): void => {
+    // Yeniden istek yok: iki pencerenin yanıtı üç bölümü de taşıyor, veri
+    // elde. reload() çağırmak aynı rakamı ikinci kez indirmek olurdu ve
+    // kaydırıcıların yerini de sıfırlardı.
+    writeMarketSekme(id);
+    for (const [k, d] of dugmeler) d.classList.toggle('tab-on', k === id);
+    govde.replaceChildren(bolum(id));
+  };
+  const sekmeler = el('div', { class: 'tabs section-tabs' },
+    MARKET_SEKME.map((id) => {
+      const d = el('button', {
+        type: 'button',
+        class: `tab-btn${readMarketSekme() === id ? ' tab-on' : ''}`,
+      }, [MARKET_SEKME_ADI[id]]);
+      d.addEventListener('click', () => { sec(id); });
+      dugmeler.set(id, d);
+      return d;
+    }));
+
   return [
     watchlistToggle(!onlyOwned, (dahil) => {
       writeOnlyOwned(!dahil);
@@ -1812,29 +1891,8 @@ async function marketView(reload: () => void): Promise<Node[]> {
       pencereKaydirici('Sol', sol, (g) => { writePencere(0, g); reload(); }),
       pencereKaydirici('Sağ', sag, (g) => { writePencere(1, g); reload(); }),
     ]),
-    el('h2', { class: 'section-title' }, ['Getiri']),
-    grid([
-      chartPanel(`En çok kazandıran (${ad(sol)})`, kapsam, a.returns.top),
-      chartPanel(`En çok kazandıran (${ad(sag)})`, kapsam, b.returns.top),
-      chartPanel(`En çok kaybettiren (${ad(sol)})`, kapsam, a.returns.bottom,
-        { emptyText: 'Bu pencerede ekside kapatan fon yok.' }),
-      chartPanel(`En çok kaybettiren (${ad(sag)})`, kapsam, b.returns.bottom,
-        { emptyText: 'Bu pencerede ekside kapatan fon yok.' }),
-    ]),
-    el('h2', { class: 'section-title' }, ['Para Akışı']),
-    grid([
-      flowPanel(`En çok giriş olan (${ad(sol)})`, kapsam, a.flow.top, 'giriş'),
-      flowPanel(`En çok giriş olan (${ad(sag)})`, kapsam, b.flow.top, 'giriş'),
-      flowPanel(`En çok çıkış olan (${ad(sol)})`, kapsam, a.flow.bottom, 'çıkış'),
-      flowPanel(`En çok çıkış olan (${ad(sag)})`, kapsam, b.flow.bottom, 'çıkış'),
-    ]),
-    el('h2', { class: 'section-title' }, ['Yatırımcı Sayısı']),
-    grid([
-      investorPanel(`En çok artan (${ad(sol)})`, kapsam, a.investor.top, 'artış'),
-      investorPanel(`En çok artan (${ad(sag)})`, kapsam, b.investor.top, 'artış'),
-      investorPanel(`En çok azalan (${ad(sol)})`, kapsam, a.investor.bottom, 'azalış'),
-      investorPanel(`En çok azalan (${ad(sag)})`, kapsam, b.investor.bottom, 'azalış'),
-    ]),
+    sekmeler,
+    govde,
   ];
 }
 

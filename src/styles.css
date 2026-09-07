@@ -937,6 +937,12 @@ textarea:focus  { outline: none; border-color: var(--accent);
            font: inherit; font-size: .82rem; cursor: pointer; }
 .tab-btn:hover { color: var(--text); }
 .tab-on  { color: var(--accent); border-bottom-color: var(--accent); }
+/* Bölüm sekmeleri panel başlığındakilerden daha iri: ekranın ana gezinmesi
+   bunlar. Alt çizgi şeridi sekmelerin panellere ait olmadığını, sayfayı
+   böldüğünü gösteriyor. */
+.section-tabs { display: flex; gap: 4px; margin: 20px 0 14px;
+                border-bottom: 1px solid var(--line); }
+.section-tabs .tab-btn { font-size: .9rem; padding: 9px 16px; }
 /* Sayı sekmenin içinde: hangi sekmede ne kadar var, açmadan görünsün. */
 .tab-count { font-family: var(--mono); font-size: .7rem; color: var(--muted-dim); }
 .tab-on .tab-count { color: var(--accent-soft); }
