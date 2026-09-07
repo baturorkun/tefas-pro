@@ -13,25 +13,32 @@
       }
     ]
   },
-  "status": "running",
+  "status": "approved",
   "createdAt": "2026-09-07T21:27:38.525Z",
-  "updatedAt": "2026-09-07T21:27:45.344Z",
+  "updatedAt": "2026-09-07T21:29:41.214Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-09-07T21:27:45.344Z"
+      "status": "passed",
+      "startedAt": "2026-09-07T21:27:45.344Z",
+      "finishedAt": "2026-09-07T21:29:41.018Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "package.json",
+    "src/server/repository.ts",
+    "tests/holding-exit.test.sh"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
-  }
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-09-07T21:29:41.215Z",
+  "approvedBy": "human"
 }
