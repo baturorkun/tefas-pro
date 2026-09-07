@@ -99,6 +99,17 @@ describe('yerleşim', () => {
     expect(main).toContain("class: 'sidebar-user'");
   });
 
+  it('ölçüt sekmeleri iki paneli birden yönetir', () => {
+    // Sekme önce yalnız soldaki panelin içindeydi: sağdaki panel de ölçütle
+    // değişiyordu ama kendi kontrolü olmadığı için neye göre sıralandığı
+    // görünmüyordu. İki panele birer kopya koymak da olurdu; aynı durumu iki
+    // düğme takımıyla göstermek gereksiz.
+    expect(main).toContain("class: 'chart-grid-head'");
+    // Tek yerde çiziliyor: iki çağrı, iki ayrı seçim hâline gelebilirdi.
+    expect([...main.matchAll(/olcutSekmeleri\(\)/g)].length).toBe(1);
+    expect(css).toContain('.chart-grid-head');
+  });
+
   it('kullanıcı menüsü akışta yer kaplamaz', () => {
     // Akışta olsaydı kenar çubuğu 100vh'i aşar ve menü açılınca kullanıcı
     // satırı ekranın altından taşardı — ölçüldü, tıklanan satır görünmez
@@ -738,6 +749,68 @@ describe('menü grupları', () => {
   it('yönetim grubunun adı Admin', () => {
     expect(main).toMatch(/adminOnly: true, crumb: 'Admin'/);
     expect(main).not.toContain("crumb: 'Yönetim'");
+  });
+
+  it('panel sıralama ölçütü sekmeli ve iki liste sunucudan geliyor', () => {
+    // Alımdan beri toplam getiri fonları karşılaştırmıyor: uzun süredir elde
+    // tutulan fon doğal olarak daha çok birikmiş oluyor.
+    expect(main).toContain("type GetiriOlcut = 'total' | 'm1'");
+    expect(main).toContain('let panelOlcut');
+    // İki liste de SUNUCUDA sıralanıp kesilmeli. İstemcide yeniden sıralamak
+    // yanlış olurdu: sunucu ilk onu alımdan beriye göre kesiyor ve o listeye
+    // girememiş bir fon aylık getiride birinci olsa bile görünmezdi.
+    // Ölçüldü — DOH aylık %35,23 ile birinciyken toplamda 11. olduğu için
+    // listeden düşüyordu.
+    expect(main).toContain('const liste = OLCUT_LISTE[panelOlcut]');
+    const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
+    expect(repo).toContain('top1m:');
+    expect(repo).toContain('bottom1m:');
+  });
+
+  it('iki sekme de kullanıcının getirisini gösterir', () => {
+    // Bir ara "Son 1 ay" sekmesi FONUN aylık getirisini gösteriyordu, yanındaki
+    // sekme ise kullanıcının kazancını — aynı panelde iki farklı sahip. DOH son
+    // ayda %35,23 yükselmiş ama pozisyon dokuz günlük ve kazanç %2,96; panel
+    // kullanıcıya kazanmadığı parayı gösteriyordu.
+    const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
+    // Sıralamaya giren alan kullanıcının hesabından gelmeli, fonunkinden değil.
+    expect(repo).toContain('return1m: own1mMap.get(r.fund_code)');
+    expect(repo).toContain('fundReturn1m: r.return_1m');
+    // Hesap lot bazında ve yalnız elde tutulan günleri zincirlemeli.
+    expect(repo).toContain('greatest(s.d - p.gun, l.trade_date)');
+    // Fonun kendi hareketi yalnız ipucunda bağlam olarak kalır.
+    expect(main).toContain('`fon ${signedText(e.fundReturn1m)}`');
+    expect(main).toContain('yalnız elde tuttuğum günler');
+  });
+
+  it('üç pencere de kullanıcının kendi getirisi', () => {
+    const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
+    // Pencereler tek sorguda: iki ayrı çağrı aynı lot listesini iki kez kurar
+    // ve biri değişince diğerini güncellemeyi unutmak kolay olurdu.
+    expect(repo).toContain('VALUES (30), (90)');
+    expect(repo).toContain('greatest(s.d - p.gun, l.trade_date)');
+    // Pencereyi doldurmayan fon elde tutulan süreye düşer; ayrı bir kol
+    // yazılmıyor, `greatest` bunu kendiliğinden yapıyor. THF dokuz günlük ve
+    // üç pencerede de aynı sayıyı gösteriyor.
+    expect(main).toContain("m3: 'Son 3 ay'");
+    expect(main).toContain("m3: { top: 'top3m', bottom: 'bottom3m' }");
+    expect(repo).toContain('top3m:');
+  });
+
+  it('iki grafik paneli aynı ölçütü izler', () => {
+    // Yan yana duran iki panel farklı ölçütle sıralanırsa birbiriyle çelişir:
+    // biri "en çok kazandıran (alımdan beri)", diğeri "en çok kaybettiren
+    // (son 1 ay)" olurdu ve aynı fon iki listede birden görünebilirdi.
+    // Dosyanın tamamında sayılıyor — main.ts'te export yok, dilim almak
+    // sınırı varmış gibi gösterip aslında sona kadar okurdu.
+    // Tek bir tablo hem kazandıran hem kaybettiren listesini seçiyor: ikisi
+    // ayrı yerden okusaydı biri değişince diğeri geride kalabilirdi.
+    for (const olcut of ['total', 'm1', 'm3']) {
+      expect(main, `${olcut} listesi tanımsız`).toMatch(new RegExp(`${olcut}: \\{ top:`));
+    }
+    expect(main).toContain('const liste = OLCUT_LISTE[panelOlcut]');
+    expect(main).toContain('p[liste.top]');
+    expect(main).toContain('p[liste.bottom]');
   });
 
   it('ana listede yalnız gündelik ekranlar var', () => {

@@ -75,6 +75,18 @@ interface RankEntry {
   owned: boolean;
   /** Yalnız pozisyon sıralamasında dolu: o fondaki kâr/zarar, TL. */
   gain?: string | null;
+  /** Kullanıcının son bir aylık getirisi (%), yalnız elde tuttuğu günlerden. */
+  return1m?: string | null;
+  /** Kullanıcının son üç aylık getirisi (%); pencereyi doldurmayanda süre kadar. */
+  return3m?: string | null;
+  /** Fonun kendi son bir aylık getirisi (%). Sıralamaya girmez; ipucunda bağlam. */
+  fundReturn1m?: string | null;
+  /**
+   * Kullanıcının alımdan beri getirisi (%). `returnPct` seçilen ölçüte göre
+   * değiştiği için ayrı taşınıyor: aylık sıralamada returnPct fonun sayısı
+   * oluyor ve kullanıcının kendi kazancı kaybolurdu.
+   */
+  ownPct?: string | null;
   /** Yalnız akış sıralamasında dolu: pencere net akışı, TL. */
   flow?: string | null;
   /** Yalnız yatırımcı sıralamasında dolu: pencere değişimi, kişi. */
@@ -135,8 +147,14 @@ interface Dashboard {
   watchlistRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
   positions: {
     summary: PositionSummary | null;
+    /** Alımdan beri toplam getiriye göre. */
     top: RankEntry[];
     bottom: RankEntry[];
+    /** Fonun kendi son bir aylık getirisine göre; sunucuda sıralanmış. */
+    top1m: RankEntry[];
+    bottom1m: RankEntry[];
+    top3m: RankEntry[];
+    bottom3m: RankEntry[];
   };
   /** Para akışı: `returnPct` oranı (%), `flow` TL tutarını taşır. */
   flowRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
@@ -927,6 +945,16 @@ function barChart(
         `${e.fundCode} — ${e.title ?? ''}`,
         e.owned ? 'portföyümde' : 'takip listemde',
         ...(e.gain == null ? [] : [`${money(e.gain)} kâr/zarar`]),
+        // İki getiri de ipucunda: bar hangisini çiziyorsa çizsin, diğerine
+        // bakmak için sekme değiştirmek gerekmesin. Fonun aylık hareketi ile
+        // kullanıcının kazancı birbirinden çok ayrılabiliyor — DOH aylık
+        // %35,23 yükselirken dokuz günlük sahiplikten gelen kazanç %2,96.
+        ...(e.ownPct == null ? [] : [`alımdan beri ${signedText(e.ownPct)}`]),
+        ...(e.return1m == null ? [] : [`son 1 ayda ${signedText(e.return1m)}`]),
+        ...(e.return3m == null ? [] : [`son 3 ayda ${signedText(e.return3m)}`]),
+        // Fonun kendi hareketi bağlam: fon ne kadar yükselmiş, bunun ne
+        // kadarını yakalamışım. Sıralamaya girmiyor.
+        ...(e.fundReturn1m == null ? [] : [`fon ${signedText(e.fundReturn1m)}`]),
       ].join(' · ')),
       svg('text', { x: '0', y: String(y + 13), class: 'bar-code' }, e.fundCode),
       svg('rect', {
@@ -1215,14 +1243,95 @@ function watchlistToggle(checked: boolean, onChange: (v: boolean) => void): HTML
  * yüzden gün sayısı burada piyasa grafiklerindekinden de kritik: 114 gündür
  * tutulan fon, 5 gündür tutulanın yanında haksız bir avantajla başa geçer.
  */
+/**
+ * Panel sıralama ölçütü.
+ *
+ * "Alımdan beri" ne kazanıldığını söylüyor ama fonları KARŞILAŞTIRMIYOR:
+ * sekiz aydır elde tutulan bir fon, dokuz günlükten doğal olarak daha çok
+ * birikmiş oluyor. Ölçüldü — aynı portföyde alımdan beri TLY %72,09 ile
+ * birinci, son bir ayda ise DOH %35,23 ile birinci ve TLY üçüncü.
+ *
+ * Yıllıklandırma bilinçli olarak yok: dokuz günlük %4,03 yıllığa çevrilince
+ * %397 çıkıyor ve bu sayı bilgi değil, gürültünün kırk katı.
+ *
+ * Modül düzeyinde tutuluyor ki ekran değiştirip dönünce seçim korunsun.
+ */
+type GetiriOlcut = 'total' | 'm1' | 'm3';
+let panelOlcut: GetiriOlcut = 'total';
+
+/**
+ * İki sekme de KULLANICININ getirisi; farkları yalnız pencere.
+ *
+ * Bir ara "Son 1 ay" sekmesi fonun kendi aylık getirisini gösteriyordu ve
+ * yanındaki sekme kullanıcının kazancıydı — aynı panelde iki farklı sahip.
+ * Ölçüldü: DOH son ayda %35,23 yükselmiş ama pozisyon dokuz günlük ve kazanç
+ * %2,96, yani panel kullanıcıya kazanmadığı parayı gösteriyordu.
+ *
+ * Şimdi "Son 1 ay" da kullanıcının sayısı: yalnız fonda bulunduğu günlerin
+ * getirisi zincirleniyor. Fonun kendi hareketi ipucunda bağlam olarak
+ * duruyor — "fon ne kadar yükselmiş, ben bunun ne kadarını yakalamışım".
+ */
+const OLCUT_ETIKET: Record<GetiriOlcut, string> = {
+  total: 'Alımdan beri',
+  m1: 'Son 1 ay',
+  m3: 'Son 3 ay',
+};
+
+const OLCUT_BASLIK: Record<GetiriOlcut, { top: string; bottom: string; meta: string }> = {
+  total: {
+    top: 'En çok kazandıran fonlarım',
+    bottom: 'En çok kaybettiren fonlarım',
+    meta: 'alımdan beri',
+  },
+  m1: {
+    top: 'En çok kazandıran fonlarım',
+    bottom: 'En çok kaybettiren fonlarım',
+    meta: 'son 1 ayda, yalnız elde tuttuğum günler',
+  },
+  m3: {
+    top: 'En çok kazandıran fonlarım',
+    bottom: 'En çok kaybettiren fonlarım',
+    meta: 'son 3 ayda, yalnız elde tuttuğum günler',
+  },
+};
+
+/** Her ölçütün kendi listesi; hepsi sunucuda sıralanıp kesilmiş geliyor. */
+const OLCUT_LISTE: Record<GetiriOlcut, { top: keyof Dashboard['positions']; bottom: keyof Dashboard['positions'] }> = {
+  total: { top: 'top', bottom: 'bottom' },
+  m1: { top: 'top1m', bottom: 'bottom1m' },
+  m3: { top: 'top3m', bottom: 'bottom3m' },
+};
+
 function positionSection(
   p: Dashboard['positions'],
   onlyOwned: boolean,
   /** Cepten çıkan para: maliyet eksi gerçekleşen kâr. Üstteki özetten gelir. */
   netCapital: string | null,
+  reload: () => void,
 ): Node[] {
   const s = p.summary;
   const kapsam = onlyOwned ? 'yalnız portföyüm' : 'takip listem dahil, almış gibi';
+
+  const baslik = OLCUT_BASLIK[panelOlcut];
+  // İki liste de sunucudan hazır geliyor. İstemcide yeniden sıralamak yanlış
+  // olurdu: sunucu ilk onu alımdan beriye göre kesiyor ve o listeye girememiş
+  // bir fon aylık getiride birinci olsa bile görünmezdi.
+  const liste = OLCUT_LISTE[panelOlcut];
+  const kazandiran = p[liste.top] as RankEntry[];
+  const kaybettiren = p[liste.bottom] as RankEntry[];
+  const bosMetin = panelOlcut === 'total'
+    ? 'Henüz ölçülebilir fon yok.'
+    : 'Bu pencerede ölçülebilir fon yok.';
+
+  const olcutSekmeleri = (): HTMLElement => el('div', { class: 'tabs' },
+    (['total', 'm1', 'm3'] as GetiriOlcut[]).map((id) => {
+      const b = el('button', {
+        type: 'button', class: `tab-btn${panelOlcut === id ? ' tab-on' : ''}`,
+      }, [OLCUT_ETIKET[id]]);
+      b.addEventListener('click', () => { panelOlcut = id; reload(); });
+      return b;
+    }));
+
   return [
     // "Pozisyonlarım" yanıltıyordu: liste takip listesindeki fonları da içeriyor
     // ve onlarda pozisyon yok, "almış gibi" hesaplanıyorlar. "Fonlarım" ikisini
@@ -1248,11 +1357,28 @@ function positionSection(
             metric('Açık kâr', money(s.gain), `${String(s.winners)} kârda · ${String(s.losers)} zararda`),
           ]),
         ]),
+    // Sekmeler iki panelin ÜSTÜNDE, ikisini birden yönetiyor.
+    //
+    // Önce yalnız soldaki panelin içindeydi: sağdaki panel de ölçütle
+    // değişiyordu ama kendi kontrolü olmadığı için neye göre sıralandığı
+    // görünmüyordu. İki panele birer kopya koymak da olurdu; aynı durumu iki
+    // düğme takımıyla göstermek gereksiz.
+    //
+    // Ölçüt bölümün tamamına değil bu iki panele ait: üstteki metrik
+    // kutuları (maliyet, net sermaye) pencereden bağımsız, o yüzden sekmeler
+    // "Fonlarım" başlığına değil grafiklerin hemen üstüne konuyor.
+    el('div', { class: 'chart-grid-head' }, [
+      el('span', { class: 'chart-grid-label' }, ['Sıralama']),
+      olcutSekmeleri(),
+    ]),
     el('div', { class: 'chart-grid' }, [
-      chartPanel('En çok kazandıran fonlarım', kapsam, p.top,
-        { emptyText: 'Henüz ölçülebilir fon yok.' }),
-      chartPanel('En çok kaybettiren fonlarım', kapsam, p.bottom,
-        { emptyText: 'Zararda fonum yok.' }),
+      chartPanel(baslik.top, `${kapsam} · ${baslik.meta}`, kazandiran,
+        { emptyText: bosMetin }),
+      chartPanel(baslik.bottom, `${kapsam} · ${baslik.meta}`, kaybettiren, {
+        emptyText: panelOlcut === 'total'
+          ? 'Zararda fonum yok.'
+          : 'Bu pencerede düşen fonum yok.',
+      }),
     ]),
   ];
 }
@@ -1357,7 +1483,7 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
       writeOnlyOwned(!dahil);
       reload();
     }),
-    ...positionSection(d.positions, onlyOwned, p?.netCapital ?? null),
+    ...positionSection(d.positions, onlyOwned, p?.netCapital ?? null, reload),
     await performancePanel(),
   ];
 }
