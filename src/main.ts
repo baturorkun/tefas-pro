@@ -309,7 +309,7 @@ interface PerformanceSeries {
 type ViewId =
   | 'dashboard' | 'portfolio' | 'closed' | 'periods' | 'market'
   | 'allocation' | 'stocks' | 'chat' | 'transactions' | 'watchlist' | 'prefs'
-  | 'profile' | 'users' | 'runs' | 'settings';
+  | 'profile' | 'users' | 'banks' | 'sysfunds' | 'runs' | 'settings';
 
 const root = document.getElementById('app');
 
@@ -548,6 +548,10 @@ const ICON_PATHS: Record<string, string[]> = {
   periods: ['M4 5h16v15H4z', 'M4 10h16', 'M9 5V3M15 5V3', 'M8 14h3M13 14h3'],
   runs: ['M12 8v4l3 2', 'M12 3a9 9 0 1 0 9 9 9 9 0 0 0-9-9z'],
   prefs: ['M4 7h10M18 7h2M4 17h2M10 17h10', 'M16 5v4M8 15v4'],
+  // Banka: kasa/bina cephesi. `money` para işareti ve banka listesi değil.
+  banks: ['M3 9h18', 'M5 9v9M9 9v9M15 9v9M19 9v9', 'M3 21h18', 'm12 3 9 6H3z'],
+  // Sistem fonları: fon çubukları + dişli, "sistemin topladığı fonlar".
+  sysfunds: ['M4 19h16', 'M7 19v-6M12 19V8', 'M17 19v-4', 'M17 6.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z'],
   // Profil: tek kişi silueti. `users` üç kişilik, hesabı temsil etmiyor.
   profile: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M5 20a7 7 0 0 1 14 0'],
   // Kullanıcı menüsünün oku. Menü yukarı açıldığı için yukarı bakıyor;
@@ -1593,6 +1597,131 @@ async function marketView(reload: () => void): Promise<Node[]> {
  * Kullanımdaki banka silinemez. Asıl güvence veritabanındaki foreign key;
  * buradaki kontrol yalnız kullanıcıya sebebini söylemek için.
  */
+interface SystemFundRow {
+  fundCode: string;
+  title: string | null;
+  note: string | null;
+  addedAt: string;
+  addedBy: string | null;
+  holders: number;
+  watchers: number;
+}
+
+/**
+ * Sistem fon listesi: verisi toplansın istenen ama kimsenin takip listesinde
+ * görünmemesi gereken fonlar.
+ *
+ * Bankalar panelinin deseni: aynı ekranda iki farklı ekle/sil biçimi olmasın.
+ */
+function systemFundPanel(funds: SystemFundRow[], reload: () => void): HTMLElement {
+  const input = el('input', {
+    placeholder: 'Fon kodu', maxlength: '16', spellcheck: 'false',
+  }) as HTMLInputElement;
+  const note = el('input', {
+    placeholder: 'Neden (isteğe bağlı)', maxlength: '200',
+  }) as HTMLInputElement;
+  const status = el('span', { class: 'status' });
+  const add = el('button', { class: 'btn-primary' }, [icon('add'), 'Ekle']);
+
+  const ekle = (): void => {
+    const fundCode = input.value.trim().toUpperCase();
+    if (fundCode === '') {
+      status.textContent = 'Fon kodu boş olamaz.';
+      return;
+    }
+    void (async () => {
+      try {
+        status.textContent = 'Ekleniyor…';
+        const r = (await api('/api/admin/funds', {
+          method: 'POST',
+          body: JSON.stringify({ fundCode, note: note.value }),
+        })) as { added: boolean };
+        if (!r.added) {
+          status.textContent = `${fundCode} zaten listede.`;
+          return;
+        }
+        input.value = '';
+        note.value = '';
+        reload();
+      } catch (err) {
+        status.textContent = err instanceof Error ? err.message : 'Eklenemedi.';
+      }
+    })();
+  };
+  add.addEventListener('click', ekle);
+  for (const alan of [input, note]) {
+    alan.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Enter') { e.preventDefault(); ekle(); }
+    });
+  }
+
+  const rows = funds.map((f) => {
+    const sil = iconButton('delete', 'Listeden çıkar', 'danger');
+    sil.addEventListener('click', () => {
+      void (async () => {
+        const ok = await confirmDelete({
+          title: 'Sistem listesinden çıkar',
+          detail: [`${f.fundCode}${f.title === null ? '' : ` — ${f.title}`}`],
+          // Toplanmış veri silinmiyor; bu, kararı rahatlatan bir bilgi ve
+          // söylenmezse kullanıcı geri dönüşü olmayan bir şey yapıyor sanır.
+          warning: 'Toplanmış fiyat verisi silinmez; fon yalnız bundan sonra '
+            + 'toplanmaz.',
+          hint: f.holders + f.watchers === 0
+            ? undefined
+            : `Bu fon ${[
+              ...(f.holders === 0 ? [] : [`${String(f.holders)} kullanıcının portföyünde`]),
+              ...(f.watchers === 0 ? [] : [`${String(f.watchers)} kullanıcının takip listesinde`]),
+            ].join(' ve ')}; toplanmaya devam edecek.`,
+          confirmLabel: 'Listeden Çıkar',
+        });
+        if (!ok) return;
+        try {
+          await api(`/api/admin/funds/${encodeURIComponent(f.fundCode)}`, { method: 'DELETE' });
+          reload();
+        } catch (err) {
+          status.textContent = err instanceof Error ? err.message : 'Çıkarılamadı.';
+        }
+      })();
+    });
+    return el('tr', {}, [
+      el('td', {}, [
+        el('span', { class: 'fund-code' }, [f.fundCode]),
+        el('span', { class: 'fund-title' }, [f.title ?? '']),
+      ]),
+      el('td', {}, [f.note ?? '—']),
+      // Açık pozisyon ile takip ayrı sayılıyor: biri parasını koymuş, diğeri
+      // izliyor. Tek "kullanıcıda da var" rozeti ikisini aynı kefeye
+      // koyuyordu ve fonu herkes sattığında da aynı şeyi yazıyordu.
+      el('td', {}, f.holders === 0 && f.watchers === 0
+        ? [badge('Yalnız sistem', 'closed')]
+        : [
+          ...(f.holders === 0 ? [] : [badge(`${String(f.holders)} portföyde`, 'open')]),
+          ...(f.watchers === 0 ? [] : [badge(`${String(f.watchers)} takipte`, 'watch')]),
+        ]),
+      el('td', { class: 'num' }, [gunAd(f.addedAt.slice(0, 10))]),
+      el('td', {}, [f.addedBy ?? '—']),
+      el('td', { class: 'actions' }, [sil]),
+    ]);
+  });
+
+  return panel(
+    'Sistem Fonları',
+    `${String(funds.length)} fon · verisi toplanır, kimsenin takip listesinde görünmez`,
+    el('div', { class: 'panel-body' }, [
+      el('p', { class: 'settings-note' }, [
+        'Buraya eklenen fonların verisi toplanır ve Piyasa ekranında görünürler, '
+        + 'ama hiçbir kullanıcının Takip Listem ekranına girmezler. Liste '
+        + 'kullanıcıya bağlı değildir: ekleyen hesap silinse bile kayıt durur.',
+      ]),
+      el('div', { class: 'settings-actions settings-add' }, [input, note, add]),
+      funds.length === 0
+        ? el('div', { class: 'empty-state' }, ['Sistem listesinde fon yok.'])
+        : table(['Fon', 'Not', 'Kullanıcılar', 'Eklendi', 'Ekleyen', ''], rows),
+      status,
+    ]),
+  );
+}
+
 function bankPanel(banks: BankRow[], reload: () => void): HTMLElement {
   const input = el('input', { placeholder: 'Banka adı', maxlength: '60' }) as HTMLInputElement;
   const status = el('span', { class: 'status' });
@@ -1954,6 +2083,36 @@ async function runsView(): Promise<Node[]> {
  * günler fiyat verisinden anlaşılabilir ama emir verilirken ileriki günlerin
  * verisi henüz yok; bu yüzden elle tutuluyor.
  */
+/** Bankalar: işlem formunun seçtiği liste. Ayarlar'dan ayrıldı. */
+async function banksView(reload: () => void): Promise<Node[]> {
+  const banks = (await api('/api/banks')) as BankRow[];
+  const kullanilan = banks.filter((b) => b.usage > 0).length;
+  return [
+    el('div', { class: 'metric-grid' }, [
+      metric('Banka', String(banks.length), 'Tanımlı', 'banks'),
+      metric('Kullanımda', String(kullanilan),
+        `${String(banks.length - kullanilan)} tanesi boş`, 'transactions'),
+    ]),
+    bankPanel(banks, reload),
+  ];
+}
+
+/** Sistem fonları: verisi toplanan ama kimsenin listesinde olmayan fonlar. */
+async function sysFundsView(reload: () => void): Promise<Node[]> {
+  const funds = (await api('/api/admin/funds')) as SystemFundRow[];
+  const yalniz = funds.filter((f) => f.holders + f.watchers === 0).length;
+  return [
+    el('div', { class: 'metric-grid' }, [
+      metric('Sistem Fonu', String(funds.length), 'Toplama listesinde', 'sysfunds'),
+      // Ayrımı göstermek gerekiyor: kullanıcıda da olan bir fon zaten
+      // toplanıyordu, listeden çıkarmak onu durdurmaz.
+      metric('Yalnız Sistemde', String(yalniz),
+        `${String(funds.length - yalniz)} tanesi kullanıcıda da var`, 'fund'),
+    ]),
+    systemFundPanel(funds, reload),
+  ];
+}
+
 async function settingsView(reload: () => void): Promise<Node[]> {
   const data = (await api('/api/admin/settings')) as { holidays: string[]; benchmark: string };
   const area = el('textarea', { rows: '14', spellcheck: 'false' }) as HTMLTextAreaElement;
@@ -1987,8 +2146,6 @@ async function settingsView(reload: () => void): Promise<Node[]> {
     })();
   });
 
-  const banks = (await api('/api/banks')) as BankRow[];
-
   const sabit = data.holidays.filter((d) => d.length === 5);
   const yillik = data.holidays.filter((d) => d.length > 5);
   const yil = new Set(yillik.map((d) => d.slice(0, 4)));
@@ -2005,8 +2162,7 @@ async function settingsView(reload: () => void): Promise<Node[]> {
         'gün',
       ),
       metric('Benchmark', data.benchmark, 'Karşılaştırma Fonu', 'chart'),
-      metric('Banka', String(banks.length),
-        `${String(banks.filter((b) => b.usage > 0).length)} tanesi kullanımda`, 'money'),
+
     ]),
     panel(
       'Benchmark',
@@ -2019,7 +2175,6 @@ async function settingsView(reload: () => void): Promise<Node[]> {
         field('Fon Kodu', benchInput, 'TEFAS kodu.'),
       ]),
     ),
-    bankPanel(banks, reload),
     panel(
       'Resmî Tatiller',
       'her satıra bir tarih',
@@ -4461,6 +4616,11 @@ const VIEWS: {
   // çünkü ekran yönlendirmesi, breadcrumb ve ikon hep bu tablodan okunuyor.
   { id: 'profile', label: 'Profil', adminOnly: false, crumb: 'Hesabım', inUserMenu: true },
   { id: 'users', label: 'Kullanıcılar', adminOnly: true, crumb: 'Admin', inUserMenu: true },
+  // Bankalar ve Sistem Fonları Ayarlar'dan çıkarıldı: ikisi de liste yönetimi
+  // (ekle/çıkar), oysa Ayarlar tek değerli ayarların yeri — benchmark, tatil
+  // takvimi. Üç ayrı işi tek ekranda toplamak sayfayı uzatıyordu.
+  { id: 'banks', label: 'Bankalar', adminOnly: true, crumb: 'Admin', inUserMenu: true },
+  { id: 'sysfunds', label: 'Sistem Fonları', adminOnly: true, crumb: 'Admin', inUserMenu: true },
   { id: 'runs', label: 'Collector Log', adminOnly: true, crumb: 'Admin', inUserMenu: true },
   { id: 'settings', label: 'Ayarlar', adminOnly: true, crumb: 'Admin', inUserMenu: true },
 ];
@@ -4625,6 +4785,8 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     else if (current.id === 'watchlist') bodyNodes = await watchlistView(reload);
     else if (current.id === 'prefs') bodyNodes = await prefsView(reload);
     else if (current.id === 'profile') bodyNodes = await profileView(me, reload);
+    else if (current.id === 'banks') bodyNodes = await banksView(reload);
+    else if (current.id === 'sysfunds') bodyNodes = await sysFundsView(reload);
     else if (current.id === 'runs') bodyNodes = await runsView();
     else if (current.id === 'settings') bodyNodes = await settingsView(reload);
     else bodyNodes = await usersView(reload);

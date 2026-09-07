@@ -65,8 +65,11 @@ import {
   konusmaMesajlari,
   konusmaSil,
   konusmalar,
+  addSystemFund,
   konusmayaYaz,
+  listSystemFunds,
   pendingPurchases,
+  removeSystemFund,
   updateProfile,
   findUserByUsername,
   fundHasData,
@@ -823,6 +826,32 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
           sendJson(res, 403, { error: 'Bu işlem için admin yetkisi gerekir.' });
           return;
         }
+        // Sistem fon listesi: kullanıcıya bağlı değil, yalnız toplama kapsamı.
+        if (path === '/api/admin/funds' && method === 'GET') {
+          sendJson(res, 200, await listSystemFunds(pool));
+          return;
+        }
+        if (path === '/api/admin/funds' && method === 'POST') {
+          const b = asRecord(await readJson(req));
+          const fundCode = reqString(b, 'fundCode').toUpperCase();
+          // Tanınmayan kod kaydedilemez: foreign key zaten engellerdi ama
+          // mesajı anlaşılır olsun ve fon evrenden çekilip kaydedilsin.
+          await ensureFundKnown(pool, client, fundCode);
+          const eklendi = await addSystemFund(
+            pool, fundCode, optString(b, 'note'), user.id,
+          );
+          triggerFundCollection(pool, client, fundCode);
+          sendJson(res, eklendi ? 201 : 200, { fundCode, added: eklendi });
+          return;
+        }
+        const sysFund = matchPath('/api/admin/funds/:code', path);
+        if (sysFund !== null && method === 'DELETE') {
+          const done = await removeSystemFund(pool, decodeURIComponent(sysFund).toUpperCase());
+          sendJson(res, done ? 200 : 404,
+            done ? { ok: true } : { error: 'Fon sistem listesinde yok.' });
+          return;
+        }
+
         if (path === '/api/admin/settings' && method === 'GET') {
           sendJson(res, 200, {
             holidays: await holidays(pool),
