@@ -1299,6 +1299,110 @@ const ONLY_OWNED_KEY = 'tefas.dashboard.onlyOwned';
  * localStorage erişimi try/catch içinde: gizli sekmede veya site verisi
  * kapalıyken okuma da yazma da exception atar ve panel hiç açılmazdı.
  */
+/**
+ * Piyasa pencerelerinin durakları.
+ *
+ * Düz 1-180 aralığı olsaydı kısa pencereler ezilirdi: 1-7 gün bandı çubuğun
+ * %4'ü olur ve 3 günü tutturmak imkânsızlaşırdı. Duraklar eşit genişlikte,
+ * kaydırıcı değere yapışıyor.
+ */
+const PIYASA_PENCERE = [1, 2, 3, 5, 7, 15, 30, 60, 90, 180] as const;
+
+/** Gün sayısının tanıdık karşılığı; yalnız tam oturanlarda yazılıyor. */
+const PENCERE_ADI: Record<number, string> = {
+  7: '1 hafta', 15: '2 hafta', 30: '1 ay', 60: '2 ay', 90: '3 ay', 180: '6 ay',
+};
+
+/**
+ * Çubuğun üstünde duran kısa ölçek. Boş bir kaydırıcıda durakların nerede
+ * olduğu görünmüyordu; sürükleyip bırakmadan hangi değere gittiğin belli
+ * olmuyordu.
+ */
+const PENCERE_KISA: Record<number, string> = {
+  1: '1g', 2: '2g', 3: '3g', 5: '5g', 7: '1h', 15: '2h',
+  30: '1a', 60: '2a', 90: '3a', 180: '6a',
+};
+
+function pencereEtiket(gun: number): string {
+  const ad = PENCERE_ADI[gun];
+  return ad === undefined ? `${String(gun)} gün` : `${String(gun)} gün · ${ad}`;
+}
+
+const PIYASA_KEY = ['tefas.market.left', 'tefas.market.right'] as const;
+
+function readPencere(yan: 0 | 1): number {
+  // Varsayılanlar 7 ve 30: ilk açılışta ekran eski davranışını koruyor.
+  const varsayilan = yan === 0 ? 7 : 30;
+  try {
+    const v = Number(localStorage.getItem(PIYASA_KEY[yan]));
+    return PIYASA_PENCERE.includes(v as typeof PIYASA_PENCERE[number]) ? v : varsayilan;
+  } catch {
+    return varsayilan;
+  }
+}
+
+function writePencere(yan: 0 | 1, gun: number): void {
+  try {
+    localStorage.setItem(PIYASA_KEY[yan], String(gun));
+  } catch {
+    // Saklanamıyorsa görünüm yine doğru, yalnız yenilemede varsayılana döner.
+  }
+}
+
+/**
+ * Duraklı kaydırıcı: değer değil, duraklar listesindeki SIRA taşınıyor.
+ *
+ * Doğrudan gün sayısını taşısaydı çubuk doğrusal olur ve kısa pencereler
+ * birbirine yapışırdı. İstek sürükleme BİTİNCE atılıyor (`change`), sürüklerken
+ * yalnız etiket güncelleniyor — her adımda istek on çağrı demek olurdu.
+ */
+function pencereKaydirici(
+  etiketMetni: string, gun: number, onChange: (g: number) => void,
+): HTMLElement {
+  const i = Math.max(0, PIYASA_PENCERE.indexOf(gun as typeof PIYASA_PENCERE[number]));
+  const input = el('input', {
+    type: 'range', min: '0', max: String(PIYASA_PENCERE.length - 1), step: '1',
+    class: 'pencere-range', 'aria-label': `${etiketMetni} pencere`,
+  }) as HTMLInputElement;
+  input.value = String(i);
+  // Ölçek etiketleri duraklarla aynı hizada: konum i/(n-1) oranında, çünkü
+  // range girdisinin başparmağı da orada duruyor. Eşit sütunlu bir ızgara
+  // etiketleri yarım durak kaydırırdı.
+  const son = PIYASA_PENCERE.length - 1;
+  const olcek = el('div', { class: 'pencere-olcek' }, PIYASA_PENCERE.map((g, i) => {
+    const b = el('button', {
+      type: 'button',
+      class: `pencere-durak${g === gun ? ' pencere-durak-on' : ''}`,
+      style: `left:${String((i / son) * 100)}%`,
+      title: pencereEtiket(g),
+    }, [PENCERE_KISA[g] ?? String(g)]);
+    // Etikete tıklamak da seçiyor: sürüklemek zorunda kalmadan tek tıkla
+    // istenen durağa gitmek mümkün olsun.
+    b.addEventListener('click', () => { onChange(g); });
+    return b;
+  }));
+
+  // Sürüklerken yalnız vurgu geziyor; istek bırakınca atılıyor.
+  const guncelle = (): void => {
+    const g = PIYASA_PENCERE[Number(input.value)] ?? gun;
+    Array.from(olcek.children).forEach((d, j) => {
+      d.classList.toggle('pencere-durak-on', PIYASA_PENCERE[j] === g);
+    });
+  };
+  input.addEventListener('input', guncelle);
+  input.addEventListener('change', () => {
+    onChange(PIYASA_PENCERE[Number(input.value)] ?? gun);
+  });
+
+  // Ne "Sol/Sağ" yazısı ne de sağda değer etiketi var: kaydırıcı yönettiği
+  // sütunun tam üstünde duruyor, seçili durak ölçekte vurgulu ve paneller
+  // pencereyi başlıklarında söylüyor. Üçü de aynı bilgiyi tekrar ediyordu.
+  // Gün karşılığı durağın title'ında duruyor.
+  return el('div', { class: 'pencere-kutu' }, [
+    el('div', { class: 'pencere-cubuk' }, [olcek, input]),
+  ]);
+}
+
 function readOnlyOwned(): boolean {
   try {
     return localStorage.getItem(ONLY_OWNED_KEY) === '1';
@@ -1654,41 +1758,62 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
  * oluyor" sorusunu cevaplar. Veri aynı `/api/dashboard` yanıtından gelir,
  * sunucuda yeni uç yok.
  */
+interface MarketRanks {
+  returns: { top: RankEntry[]; bottom: RankEntry[] };
+  flow: { top: RankEntry[]; bottom: RankEntry[] };
+  investor: { top: RankEntry[]; bottom: RankEntry[] };
+}
+
 async function marketView(reload: () => void): Promise<Node[]> {
   const onlyOwned = readOnlyOwned();
-  const d = (await api(`/api/dashboard${onlyOwned ? '?onlyOwned=1' : ''}`)) as Dashboard;
+  const sol = readPencere(0);
+  const sag = readPencere(1);
+  const q = (gun: number): string =>
+    `/api/market?days=${String(gun)}${onlyOwned ? '&onlyOwned=1' : ''}`;
+  // İki pencere paralel çekiliyor: sıralı istek ekranı iki kat bekletirdi.
+  const [a, b] = await Promise.all([
+    api(q(sol)) as Promise<MarketRanks>,
+    api(q(sag)) as Promise<MarketRanks>,
+  ]);
+
   const kapsam = onlyOwned ? 'yalnız portföyüm' : 'takip edilen fonlar';
   const grid = (nodes: Node[]): HTMLElement => el('div', { class: 'chart-grid' }, nodes);
+  const ad = (gun: number): string => PENCERE_ADI[gun] ?? `${String(gun)} gün`;
 
   return [
     watchlistToggle(!onlyOwned, (dahil) => {
       writeOnlyOwned(!dahil);
       reload();
     }),
+    // Tek şerit, iki kaydırıcı: soldaki bütün sol panelleri, sağdaki bütün
+    // sağ panelleri yönetiyor. Ekranın amacı iki pencereyi yan yana
+    // karşılaştırmak, o yüzden sol/sağ ayrımı korunuyor.
+    el('div', { class: 'pencere-serit' }, [
+      pencereKaydirici('Sol', sol, (g) => { writePencere(0, g); reload(); }),
+      pencereKaydirici('Sağ', sag, (g) => { writePencere(1, g); reload(); }),
+    ]),
     el('h2', { class: 'section-title' }, ['Getiri']),
     grid([
-      chartPanel('En çok kazandıran (1 hafta)', kapsam, d.watchlistRanks['1w']?.top ?? []),
-      chartPanel('En çok kazandıran (1 ay)', kapsam, d.watchlistRanks['1m']?.top ?? []),
-      chartPanel('En çok kaybettiren (1 hafta)', kapsam,
-        d.watchlistRanks['1w']?.bottom ?? [],
-        { emptyText: 'Haftayı ekside kapatan fon yok.' }),
-      chartPanel('En çok kaybettiren (1 ay)', kapsam,
-        d.watchlistRanks['1m']?.bottom ?? [],
-        { emptyText: 'Ayı ekside kapatan fon yok.' }),
+      chartPanel(`En çok kazandıran (${ad(sol)})`, kapsam, a.returns.top),
+      chartPanel(`En çok kazandıran (${ad(sag)})`, kapsam, b.returns.top),
+      chartPanel(`En çok kaybettiren (${ad(sol)})`, kapsam, a.returns.bottom,
+        { emptyText: 'Bu pencerede ekside kapatan fon yok.' }),
+      chartPanel(`En çok kaybettiren (${ad(sag)})`, kapsam, b.returns.bottom,
+        { emptyText: 'Bu pencerede ekside kapatan fon yok.' }),
     ]),
     el('h2', { class: 'section-title' }, ['Para Akışı']),
     grid([
-      flowPanel('En çok giriş olan (1 hafta)', kapsam, d.flowRanks['1w']?.top ?? [], 'giriş'),
-      flowPanel('En çok giriş olan (1 ay)', kapsam, d.flowRanks['1m']?.top ?? [], 'giriş'),
-      flowPanel('En çok çıkış olan (1 hafta)', kapsam, d.flowRanks['1w']?.bottom ?? [], 'çıkış'),
-      flowPanel('En çok çıkış olan (1 ay)', kapsam, d.flowRanks['1m']?.bottom ?? [], 'çıkış'),
+      flowPanel(`En çok giriş olan (${ad(sol)})`, kapsam, a.flow.top, 'giriş'),
+      flowPanel(`En çok giriş olan (${ad(sag)})`, kapsam, b.flow.top, 'giriş'),
+      flowPanel(`En çok çıkış olan (${ad(sol)})`, kapsam, a.flow.bottom, 'çıkış'),
+      flowPanel(`En çok çıkış olan (${ad(sag)})`, kapsam, b.flow.bottom, 'çıkış'),
     ]),
     el('h2', { class: 'section-title' }, ['Yatırımcı Sayısı']),
     grid([
-      investorPanel('En çok artan (1 hafta)', kapsam, d.investorRanks['1w']?.top ?? [], 'artış'),
-      investorPanel('En çok artan (1 ay)', kapsam, d.investorRanks['1m']?.top ?? [], 'artış'),
-      investorPanel('En çok azalan (1 hafta)', kapsam, d.investorRanks['1w']?.bottom ?? [], 'azalış'),
-      investorPanel('En çok azalan (1 ay)', kapsam, d.investorRanks['1m']?.bottom ?? [], 'azalış'),
+      investorPanel(`En çok artan (${ad(sol)})`, kapsam, a.investor.top, 'artış'),
+      investorPanel(`En çok artan (${ad(sag)})`, kapsam, b.investor.top, 'artış'),
+      investorPanel(`En çok azalan (${ad(sol)})`, kapsam, a.investor.bottom, 'azalış'),
+      investorPanel(`En çok azalan (${ad(sag)})`, kapsam, b.investor.bottom, 'azalış'),
     ]),
   ];
 }

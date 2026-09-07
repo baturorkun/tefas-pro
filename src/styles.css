@@ -720,6 +720,57 @@ textarea:focus  { outline: none; border-color: var(--accent);
 .modal-actions  { display: flex; justify-content: flex-end; gap: .6rem;
                   margin-top: 1.1rem; }
 
+/* Piyasa pencere şeridi: iki kaydırıcı, sol ve sağ sütun için. Sütunlarla
+   aynı ızgara — kaydırıcı yönettiği panellerin tam üstünde durur. */
+.pencere-serit  { display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+                  margin-bottom: 14px; }
+.pencere-kutu   { display: flex; align-items: flex-end; gap: 14px;
+                  padding: 10px 16px 12px; border: 1px solid var(--line-soft);
+                  border-radius: var(--radius); background: var(--bg-raised); }
+.pencere-cubuk  { position: relative; flex: 1; padding-top: 18px; }
+/* Ölçek çubuğun ÜSTÜNDE, duraklarla aynı hizada: konum i/(n-1) oranında,
+   çünkü range başparmağı da orada duruyor. Eşit sütunlu ızgara etiketleri
+   yarım durak kaydırırdı. */
+.pencere-olcek  { position: absolute; inset: 0 0 auto 0; height: 16px; }
+.pencere-durak  { position: absolute; top: 0; transform: translateX(-50%);
+                  padding: 0 3px; border: 0; background: transparent;
+                  color: var(--muted-dim); font: inherit; font-size: 10px;
+                  font-family: var(--mono); cursor: pointer; line-height: 1; }
+.pencere-durak:hover   { color: var(--text); }
+.pencere-durak-on      { color: var(--accent); font-weight: 700; }
+/* Kalın çubuk: ince çizgide durakların nereye denk geldiği okunmuyordu.
+   Yalnız height vermek yetmiyor — native range'in izi ayrıca biçimlenmeli,
+   yoksa tarayıcı kendi ince izini çizmeye devam ediyor. */
+.pencere-range  { -webkit-appearance: none; appearance: none;
+                  display: block; width: 100%; height: 14px; padding: 0;
+                  border: 0; background: transparent; cursor: pointer; }
+/* İz belirgin bir gri: --panel arka planla neredeyse aynı tondaydı ve çubuk
+   14px olmasına rağmen ince görünüyordu. */
+.pencere-range::-webkit-slider-runnable-track {
+  height: 14px; border-radius: 7px; background: var(--line);
+  border: 1px solid var(--line-soft);
+}
+.pencere-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 18px; height: 18px; margin-top: -3px; border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--bg-raised);
+  box-shadow: 0 1px 4px rgb(0 0 0 / .5);
+}
+.pencere-range::-moz-range-track {
+  height: 14px; border-radius: 7px; background: var(--line);
+  border: 1px solid var(--line-soft);
+}
+.pencere-range::-moz-range-progress {
+  height: 14px; border-radius: 7px 0 0 7px; background: var(--accent-tint);
+}
+.pencere-range::-moz-range-thumb {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--bg-raised);
+}
+.pencere-range:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+@media (max-width: 900px) { .pencere-serit { grid-template-columns: 1fr; } }
+
 .chart-toolbar { display: flex; align-items: center; justify-content: space-between;
                  gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
 

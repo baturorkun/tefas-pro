@@ -112,6 +112,24 @@ describe('yerleşim', () => {
     expect(main).toContain("fonSekme = 'daily';");
   });
 
+  it('piyasa pencereleri iki kaydırıcıyla yönetilir', () => {
+    // Sol/sağ ayrımı korunuyor: ekranın amacı iki pencereyi yan yana
+    // karşılaştırmak. Tek pencereye indirmek o karşılaştırmayı yok ederdi.
+    expect(main).toContain("pencereKaydirici('Sol'");
+    expect(main).toContain("pencereKaydirici('Sağ'");
+    // Varsayılanlar 7 ve 30: ilk açılışta ekran eski davranışını korur.
+    expect(main).toContain("const varsayilan = yan === 0 ? 7 : 30;");
+    // İstek sürükleme BİTİNCE atılıyor; her adımda atmak on çağrı olurdu.
+    // Sürüklerken yalnız vurgu geziyor (input -> guncelle); istek bırakınca
+    // atılıyor (change -> onChange). Her adımda istek on çağrı olurdu.
+    expect(main).toContain("input.addEventListener('input', guncelle);");
+    expect(main).toMatch(/addEventListener\('change', \(\) => \{\s*onChange/);
+    // Durak etiketine tıklamak da seçiyor: sürüklemek zorunlu değil.
+    expect(main).toContain("b.addEventListener('click', () => { onChange(g); });");
+    // Kaydırıcı gün sayısını değil duraklar listesindeki SIRAYI taşıyor.
+    expect(main).toContain("max: String(PIYASA_PENCERE.length - 1)");
+  });
+
   it('benchmark alt panelde bar başına işaretle gösterilir', () => {
     // Birleşik çizgi denendi ve elendi: barların arasında zikzak yapıyor,
     // hangi parçanın hangi güne ait olduğu okunmuyordu. Bar başına işaret
@@ -298,10 +316,19 @@ describe('ekran ayrımı', () => {
     expect(dash).not.toContain('investorPanel(');
   });
 
-  it('piyasa ekranı mevcut ucu kullanır, yeni uç açılmaz', () => {
+  it('piyasa kendi ucundan besleniyor, dashboard sıralama üretmiyor', () => {
+    // Eski kural "Piyasa dashboard ucunu kullansın, yeni uç açılmasın" idi ve
+    // o zaman doğruydu: aynı veriyi iki uçtan servis etmenin anlamı yoktu.
+    // Serbest pencere onu aştı — /api/dashboard sabit 1w/1m view'larından
+    // besleniyor ve başka bir pencere soramıyor.
     const market = main.slice(main.indexOf('async function marketView'));
-    expect(market).toContain("api(`/api/dashboard");
-    expect(main).not.toContain("api('/api/market')");
+    expect(market).toContain('/api/market?days=');
+    // Sıralamalar dashboard yükünden çıkarıldı: Panel onları kullanmıyordu ve
+    // her açılışta üç sorgu boşa koşuyordu.
+    const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
+    expect(repo).not.toContain('watchlistRanks');
+    expect(repo).not.toContain('flowRanks');
+    expect(repo).not.toContain('investorRanks');
   });
 
   it('takip listesi anahtarı her iki ekranda da bulunur', () => {
