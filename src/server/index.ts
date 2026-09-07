@@ -66,6 +66,7 @@ import {
   konusmaSil,
   konusmalar,
   konusmayaYaz,
+  pendingPurchases,
   updateProfile,
   findUserByUsername,
   fundHasData,
@@ -497,7 +498,19 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         await ensureFundKnown(pool, client, fundCode);
         await addToWatchlist(pool, user.id, fundCode, note);
         triggerFundCollection(pool, client, fundCode);
-        sendJson(res, 201, { fundCode });
+        // Takip listesi "sahip olmadığım fonlar" demek: açık pozisyonu olan
+        // fon listede GÖRÜNMEZ (analytics.watchlist_visible). Kayıt yine de
+        // duruyor ve pozisyon kapanınca listeye dönüyor — yani ekleme boşa
+        // gitmiyor. Eksik olan haberdi: uç 201 dönüyor, satır yazılıyor, liste
+        // onu göstermiyor ve hiçbir yerde sebebi yazmıyordu. Kullanıcı yanlış
+        // tıkladığını sanıp tekrar deniyordu.
+        const acik = await pool.query(
+          `SELECT 1 FROM portfolio_transaction
+            WHERE user_id = $1 AND fund_code = $2
+              AND (sell_date IS NULL OR sell_date > CURRENT_DATE)`,
+          [user.id, fundCode],
+        );
+        sendJson(res, 201, { fundCode, hidden: (acik.rowCount ?? 0) > 0 });
         return;
       }
 
@@ -505,6 +518,13 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
       if (wlCode !== null && method === 'DELETE') {
         const done = await removeFromWatchlist(pool, user.id, wlCode.toUpperCase());
         sendJson(res, done ? 200 : 404, done ? { ok: true } : { error: 'Takip listesinde yok.' });
+        return;
+      }
+
+      // Fiyatı henüz açıklanmamış alımlar. Portföy görünümlerine girmiyorlar
+      // ve sebebi hiçbir yerde yazmıyordu.
+      if (path === '/api/portfolio/pending' && method === 'GET') {
+        sendJson(res, 200, await pendingPurchases(pool, user.id));
         return;
       }
 

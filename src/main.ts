@@ -1243,6 +1243,35 @@ function watchlistToggle(checked: boolean, onChange: (v: boolean) => void): HTML
  * yüzden gün sayısı burada piyasa grafiklerindekinden de kritik: 114 gündür
  * tutulan fon, 5 gündür tutulanın yanında haksız bir avantajla başa geçer.
  */
+interface BekleyenAlim {
+  count: number;
+  funds: string[];
+  firstDate: string | null;
+  dataDate: string | null;
+}
+
+/**
+ * Fiyatı henüz açıklanmamış alımların uyarısı.
+ *
+ * TEFAS'ta bugün verilen emir ertesi iş gününün fiyatından işlem görüyor, o
+ * yüzden ileri tarihli alım normal. Ama değerleme son veri gününe kadar
+ * yapıldığı için bu satırlar portföy görünümlerine hiç girmiyor: Fon
+ * Hareketleri'nde duruyorlar, Portföyüm ve Panel'de yoklar. Ölçüldü —
+ * sekiz alım eklendi, yeni fon (CKL) listede hiç görünmedi ve panel maliyeti
+ * onlar hariç hesaplandı; hiçbir yerde sebebi yazmıyordu.
+ *
+ * Tutar yazılmıyor: fiyat açıklanmadığı için maliyet de bilinmiyor.
+ */
+function bekleyenAlimNotu(b: BekleyenAlim | null): HTMLElement[] {
+  if (b === null || b.count === 0) return [];
+  return [el('p', { class: 'panel-note panel-note-warn' }, [
+    `${String(b.count)} alım (${b.funds.join(', ')}) ${gunAd(b.firstDate)} tarihli ve `
+    + `fiyatı henüz açıklanmadı; son veri günü ${gunAd(b.dataDate)}. `
+    + 'Kayıtlar Fon Hareketleri\'nde duruyor ama fiyat gelene kadar buradaki '
+    + 'toplamlara girmiyorlar.',
+  ])];
+}
+
 /**
  * Panel sıralama ölçütü.
  *
@@ -1308,6 +1337,8 @@ function positionSection(
   /** Cepten çıkan para: maliyet eksi gerçekleşen kâr. Üstteki özetten gelir. */
   netCapital: string | null,
   reload: () => void,
+  /** Takip listesi anahtarı ve renk açıklaması; sekmelerle aynı şeride girer. */
+  arac: HTMLElement,
 ): Node[] {
   const s = p.summary;
   const kapsam = onlyOwned ? 'yalnız portföyüm' : 'takip listem dahil, almış gibi';
@@ -1367,9 +1398,21 @@ function positionSection(
     // Ölçüt bölümün tamamına değil bu iki panele ait: üstteki metrik
     // kutuları (maliyet, net sermaye) pencereden bağımsız, o yüzden sekmeler
     // "Fonlarım" başlığına değil grafiklerin hemen üstüne konuyor.
+    // Bu iki paneli yöneten HER ŞEY tek şeritte: sıralama ölçütü, takip
+    // listesi anahtarı ve renk açıklaması.
+    //
+    // Anahtar önce yukarıdaydı, "Fonlarım" başlığının da üstünde. İki sorun
+    // vardı: aynı iki paneli yöneten iki kontrol araya bir başlık ve dört
+    // kutu girerek ayrılıyordu, ve o dört kutu (maliyet, net sermaye,
+    // gerçekleşmiş, açık kâr) anahtardan ETKİLENMİYOR — özet yalnız gerçek
+    // pozisyonlardan hesaplanıyor, takip listesi simülasyonlarını saymıyor.
+    // Yani anahtar, etkilemediği kutuların üstünde duruyordu.
     el('div', { class: 'chart-grid-head' }, [
-      el('span', { class: 'chart-grid-label' }, ['Sıralama']),
-      olcutSekmeleri(),
+      el('div', { class: 'chart-grid-olcut' }, [
+        el('span', { class: 'chart-grid-label' }, ['Sıralama']),
+        olcutSekmeleri(),
+      ]),
+      arac,
     ]),
     el('div', { class: 'chart-grid' }, [
       chartPanel(baslik.top, `${kapsam} · ${baslik.meta}`, kazandiran,
@@ -1415,7 +1458,10 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
   // Toggle kapalıyken sıralama sunucuda baştan daraltılır, grafikte bar
   // gizlenmez: gizleseydik top-10'da üç bar kalır, başlık yalan olurdu.
   const onlyOwned = readOnlyOwned();
-  const d = (await api(`/api/dashboard${onlyOwned ? '?onlyOwned=1' : ''}`)) as Dashboard;
+  const [d, bekleyen] = await Promise.all([
+    api(`/api/dashboard${onlyOwned ? '?onlyOwned=1' : ''}`) as Promise<Dashboard>,
+    api('/api/portfolio/pending') as Promise<BekleyenAlim>,
+  ]);
   const m = d.metrics;
   const run = m.lastRun;
   const p = m.portfolio ?? null;
@@ -1479,11 +1525,12 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
           : `${pct(Number(p.totalPct))} · ${money(p.realizedGain)} kapanan dahil`,
         'money'),
     ]),
-    watchlistToggle(!onlyOwned, (dahil) => {
-      writeOnlyOwned(!dahil);
-      reload();
-    }),
-    ...positionSection(d.positions, onlyOwned, p?.netCapital ?? null, reload),
+    ...positionSection(d.positions, onlyOwned, p?.netCapital ?? null, reload,
+      watchlistToggle(!onlyOwned, (dahil) => {
+        writeOnlyOwned(!dahil);
+        reload();
+      })),
+    ...bekleyenAlimNotu(bekleyen),
     await performancePanel(),
   ];
 }
@@ -4028,7 +4075,10 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
  * satırı yok. Düzenleme "Fon Hareketleri"nde, işlem başına.
  */
 async function portfolioView(): Promise<Node[]> {
-  const rows = (await api('/api/portfolio')) as PortfolioRow[];
+  const [rows, bekleyen] = await Promise.all([
+    api('/api/portfolio') as Promise<PortfolioRow[]>,
+    api('/api/portfolio/pending') as Promise<BekleyenAlim>,
+  ]);
   const sum = (f: (r: PortfolioRow) => number): number => rows.reduce((a, r) => a + f(r), 0);
   const cost = sum((r) => Number(r.cost));
   const value = sum((r) => Number(r.value));
@@ -4097,11 +4147,16 @@ async function portfolioView(): Promise<Node[]> {
     panel(
       'Portföyüm',
       'Açık Pozisyonlar, Fon Başına',
-      table(
-        ['Fon', 'Gün %', '1 Ay %', '3 Ay %', 'Süre', 'Adet', 'Maliyet ₺', 'Değer ₺',
-          'K/Z', 'K/Z %', ''],
-        [...body, foot],
-      ),
+      el('div', {}, [
+        table(
+          ['Fon', 'Gün %', '1 Ay %', '3 Ay %', 'Süre', 'Adet', 'Maliyet ₺', 'Değer ₺',
+            'K/Z', 'K/Z %', ''],
+          [...body, foot],
+        ),
+        // Tablonun ALTINDA: tabloda olmayan satırları anlatıyor, üstte
+        // dursaydı tablodakiler hakkında bir uyarı gibi okunurdu.
+        ...bekleyenAlimNotu(bekleyen),
+      ]),
     ),
   ];
 }
@@ -4121,10 +4176,19 @@ function watchlistForm(onDone: () => void): { body: HTMLElement; submit: HTMLBut
   ]);
   submit.setAttribute('form', 'watch-form');
   tekGonderim(form, submit, status, async () => {
-    await api('/api/watchlist', {
+    const r = (await api('/api/watchlist', {
       method: 'POST',
       body: JSON.stringify({ fundCode: fundCode.value, note: note.value }),
-    });
+    })) as { fundCode: string; hidden?: boolean };
+    // Fon portföyde ise kayıt yazıldı ama listede görünmeyecek. Pencereyi
+    // kapatıp sessizce dönmek "eklenmedi" gibi okunuyordu; burada durup
+    // sebebini söylüyoruz.
+    if (r.hidden === true) {
+      status.className = 'status status-warn';
+      status.textContent = `${r.fundCode} portföyünde açık pozisyonun olduğu için `
+        + 'takip listesinde görünmeyecek. Kaydedildi; fonu sattığında listene dönecek.';
+      return;
+    }
     onDone();
   }, 'Eklenemedi.');
   return { body: form, submit };
