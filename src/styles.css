@@ -501,6 +501,11 @@ td.dim { color: var(--muted-dim); }
 .perf-bar-neg    { fill: var(--danger); opacity: .75; }
 .perf-axis-y     { fill: var(--muted-dim); font-size: 11px; font-family: var(--mono); text-anchor: end; }
 .perf-axis-x     { fill: var(--muted-dim); font-size: 11px; text-anchor: end; }
+/* Bar ucundaki günlük yüzde. Artıda barın üstünden yukarı, eksinde altından
+   aşağı doğru yazılır; text-anchor bu yüzden ikisinde farklı. */
+.perf-bar-label     { font-size: 10px; font-family: var(--mono); }
+.perf-bar-label-pos { fill: var(--accent-soft); text-anchor: start; }
+.perf-bar-label-neg { fill: var(--danger); text-anchor: end; }
 .perf-body       { padding-top: 0; }
 /* Toolbar panel gövdesinin dışında duruyor; yatay boşluğu kendisi vermeli,
    yoksa dönem getirisi panelin sağ kenarına yapışır. */

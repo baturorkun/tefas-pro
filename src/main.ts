@@ -1126,6 +1126,25 @@ function performanceChart(points: PerformancePoint[]): SVGSVGElement {
       svg('title', {}, `${p.date}  ${v >= 0 ? '+' : ''}${v.toFixed(2)}%  ·  ${money(p.value)}`),
     );
     root.append(bar);
+
+    // Barın ucuna yüzde. Dik yazılıyor, alttaki tarihlerle aynı açı: yatay
+    // yazsaydı 30 etiket yan yana sığmaz, üst üste binerdi.
+    //
+    // % işareti yok: eksenin iki ucunda zaten "+x,x%" yazıyor ve otuz kez
+    // tekrarlamak etiketleri uzatmaktan başka bir şey yapmıyor.
+    const lx = x(i);
+    // Etiket barın DIŞINDA: artıda üstünde, eksinde altında. İçine yazılsaydı
+    // kısa barlarda taşar, uzun barlarda dolgunun üstünde okunmazdı.
+    const ly = v >= 0 ? y - 6 : y + 6;
+    root.append(
+      svg('text', {
+        x: String(lx), y: String(ly),
+        class: `perf-bar-label ${v >= 0 ? 'perf-bar-label-pos' : 'perf-bar-label-neg'}`,
+        transform: `rotate(-60 ${String(lx)} ${String(ly)})`,
+      }, `${v > 0 ? '+' : ''}${v.toLocaleString('tr-TR', {
+        minimumFractionDigits: 2, maximumFractionDigits: 2,
+      })}`),
+    );
   });
 
   // ── Tarih etiketleri.
