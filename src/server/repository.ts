@@ -2526,6 +2526,82 @@ export async function fundValor(
   return { buy: row.buy_valor_days ?? 0, sell: row.sell_valor_days ?? 0 };
 }
 
+/* ── Sistem fon listesi ─────────────────────────────────────────────────── */
+
+export interface SystemFundRow {
+  fundCode: string;
+  title: string | null;
+  note: string | null;
+  addedAt: string;
+  /** Ekleyen kullanıcı; hesap silinmişse null. Sahiplik değil, iz. */
+  addedBy: string | null;
+  /** Açık pozisyonu olan kullanıcı sayısı. */
+  holders: number;
+  /**
+   * Takip listesinde tutan kullanıcı sayısı; açık pozisyonu olanlar HARİÇ.
+   *
+   * Ayrım watchlist_visible ile aynı: fonu alan kullanıcının takip satırı
+   * duruyor ama listesinde görünmüyor, çünkü takip listesi "sahip olmadığım
+   * fonlar" demek. Onu burada da takipçi saymak aynı kullanıcıyı iki sütunda
+   * birden göstermek olurdu.
+   */
+  watchers: number;
+}
+
+export async function listSystemFunds(pool: pg.Pool): Promise<SystemFundRow[]> {
+  // İki sayı ayrı: "kullanıcıda da var" tek boolean iken açık pozisyon ile
+  // takip listesini aynı kefeye koyuyordu, oysa ikisi farklı şey — biri
+  // parasını koymuş, diğeri izliyor. Fonu herkes sattıysa iki sayı da sıfır
+  // olur ve fon "yalnız sistemde" görünür; bu da doğru bilgi.
+  const r = await pool.query<{
+    fund_code: string; title: string | null; note: string | null;
+    added_at: Date; added_by: string | null; holders: string; watchers: string;
+  }>(
+    `SELECT s.fund_code, d.title, s.note, s.added_at, u.username AS added_by,
+            (SELECT count(DISTINCT t.user_id) FROM portfolio_transaction t
+              WHERE t.fund_code = s.fund_code AND t.sell_date IS NULL)::text AS holders,
+            (SELECT count(*) FROM analytics.watchlist_visible w
+              WHERE w.fund_code = s.fund_code)::text AS watchers
+       FROM system_fund s
+       LEFT JOIN dim_fund d ON d.fund_code = s.fund_code
+       LEFT JOIN app_user u ON u.id = s.added_by
+      ORDER BY s.fund_code`,
+  );
+  return r.rows.map((x) => ({
+    fundCode: x.fund_code,
+    title: x.title,
+    note: x.note,
+    addedAt: x.added_at.toISOString(),
+    addedBy: x.added_by,
+    holders: Number(x.holders),
+    watchers: Number(x.watchers),
+  }));
+}
+
+/** Ekler. Zaten varsa sessizce geçer; iki kez eklemek hata değil. */
+export async function addSystemFund(
+  pool: pg.Pool, fundCode: string, note: string | null, addedBy: number,
+): Promise<boolean> {
+  const r = await pool.query(
+    `INSERT INTO system_fund (fund_code, note, added_by) VALUES ($1, $2, $3)
+     ON CONFLICT (fund_code) DO NOTHING`,
+    [fundCode, note, addedBy],
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+/**
+ * Listeden çıkarır.
+ *
+ * Toplanmış fiyat verisi SİLİNMEZ: fon yalnız bundan sonra toplanmaz. Aksi
+ * hâlde bir tıkla aylarca veri kaybedilebilirdi ve geri getirmenin yolu
+ * dış kaynaktan yeniden çekmek olurdu.
+ */
+export async function removeSystemFund(pool: pg.Pool, fundCode: string): Promise<boolean> {
+  const r = await pool.query('DELETE FROM system_fund WHERE fund_code = $1', [fundCode]);
+  return (r.rowCount ?? 0) > 0;
+}
+
 /**
  * Son veri gününden SONRAYA tarihli alımlar.
  *

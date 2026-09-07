@@ -99,6 +99,59 @@ describe('yerleşim', () => {
     expect(main).toContain("class: 'sidebar-user'");
   });
 
+  it('liste yönetimi Ayarlar\'dan ayrı ekranlarda', () => {
+    // Ayarlar tek değerli ayarların yeri (benchmark, tatil takvimi); banka ve
+    // sistem fonu ise ekle/çıkar listesi. Üçü tek ekranda toplanınca sayfa
+    // uzuyordu ve üç ayrı iş aynı başlık altında görünüyordu.
+    const ayarlar = /async function settingsView[\s\S]*?\n\}/.exec(main)?.[0] ?? '';
+    expect(ayarlar).not.toContain('bankPanel(');
+    expect(ayarlar).not.toContain('systemFundPanel(');
+    expect(main).toContain('async function banksView');
+    expect(main).toContain('async function sysFundsView');
+    for (const id of ['banks', 'sysfunds']) {
+      expect(main, `${id} menüde yok`).toMatch(new RegExp(`id: '${id}',.*inUserMenu: true`));
+    }
+  });
+
+  it('sistem fon listesi kullanıcıya bağlı değil', () => {
+    // Admin bir ROL, kimlik değil: hesabın silinmesi toplama kapsamını
+    // daraltmamalı. user_watchlist'te CASCADE doğru (satır kullanıcıya ait),
+    // burada SET NULL doğru (kayıt sisteme ait, added_by yalnız iz).
+    const mig = readFileSync(
+      new URL('../db/migrations/039_system_fund.sql', import.meta.url), 'utf8');
+    expect(mig).toContain('added_by  integer REFERENCES app_user(id) ON DELETE SET NULL');
+    expect(mig).not.toMatch(/added_by[^\n]*ON DELETE CASCADE/);
+    // tracked_fund'a dal olarak girer; collector ve Piyasa kapsamı bu view'dan
+    // okuduğu için başka yerde değişiklik gerekmez.
+    expect(mig).toContain('SELECT fund_code FROM system_fund');
+    // Listeden çıkarmak toplanmış veriyi silmez. Bu bir tercih değil
+    // zorunluluk: analytics.closed_position kapanan pozisyonun kârını satış
+    // tarihindeki TEFAS fiyatından hesaplıyor ve fact_fund_daily'ye bağımlı.
+    // Veri silinseydi geçmişteki kapanmış işlemlerin kârı hesaplanamazdı —
+    // ölçüldü, VPS tamamen satılmış durumda ve 175 fiyat satırından
+    // -126.585 TL gerçekleşmiş zarar hesaplanıyor.
+    const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
+    const sil = exportGovdesi(repo, 'export async function removeSystemFund');
+    expect(sil).toContain('DELETE FROM system_fund');
+    expect(sil).not.toContain('fact_fund_daily');
+  });
+
+  it('açık pozisyon ile takip ayrı sayılır', () => {
+    // Tek "kullanıcıda da var" rozeti ikisini aynı kefeye koyuyordu: biri
+    // parasını koymuş, diğeri izliyor. Ayrıca fonu herkes sattığında da aynı
+    // şeyi yazıyordu, oysa doğru bilgi "artık kimse tutmuyor".
+    const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
+    const fn = exportGovdesi(repo, 'export async function listSystemFunds');
+    expect(fn).toContain('count(DISTINCT t.user_id)');
+    // Takipçi sayısı watchlist_visible'dan: fonu alan kullanıcının takip
+    // satırı duruyor ama listesinde görünmüyor, onu takipçi saymak aynı
+    // kullanıcıyı iki sütunda birden göstermek olurdu.
+    expect(fn).toContain('analytics.watchlist_visible');
+    expect(repo).not.toContain('alsoUserTracked');
+    expect(main).toContain("badge(`${String(f.holders)} portföyde`");
+    expect(main).toContain("badge(`${String(f.watchers)} takipte`");
+  });
+
   it('grafikleri yöneten kontroller tek şeritte', () => {
     // Takip listesi anahtarı önce "Fonlarım" başlığının da üstündeydi: aynı
     // iki paneli yöneten iki kontrol araya bir başlık ve dört kutu girerek
@@ -855,7 +908,7 @@ describe('menü grupları', () => {
     const listede = [...main.matchAll(/\{ id: '([a-z]+)', label: [^}]*\}/g)]
       .filter((m) => !m[0].includes('inUserMenu'))
       .map((m) => m[1] ?? '');
-    for (const yasak of ['users', 'runs', 'settings', 'profile']) {
+    for (const yasak of ['users', 'runs', 'settings', 'profile', 'banks', 'sysfunds']) {
       expect(listede, `${yasak} ana listede`).not.toContain(yasak);
     }
     expect(listede).toContain('dashboard');
