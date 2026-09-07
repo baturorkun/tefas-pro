@@ -1287,7 +1287,13 @@ export async function dashboard(
               winners: Number(ps.winners),
               losers: Number(ps.losers),
             },
-      top: positionRows.slice(0, RANK_LIMIT),
+      // Kazananlar listesi de yalnız ARTIDA olanları alıyor. Filtresizken
+      // ilk on satır sıralamadan geliyordu ve kârda on fondan azı varsa
+      // zarardakiler listeyi dolduruyordu: fatih'in beş fonundan dördü kârda,
+      // PPS -%22,66 ile "en çok kazandıran" panelinde ve aynı anda "en çok
+      // kaybettiren" panelinde görünüyordu. Aynı gerekçe kaybedenler için
+      // aşağıda zaten yazılıydı; kazananlar tarafına uygulanmamıştı.
+      top: positionRows.filter((r) => Number(r.returnPct) > 0).slice(0, RANK_LIMIT),
       bottom: positionLosers.slice(-RANK_LIMIT).reverse(),
       top1m: monthRows.filter((r) => Number(r.returnPct) > 0).slice(0, RANK_LIMIT),
       bottom1m: monthLosers.slice(-RANK_LIMIT).reverse(),

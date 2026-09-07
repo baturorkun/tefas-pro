@@ -112,6 +112,18 @@ describe('yerleşim', () => {
     expect(main).toContain("fonSekme = 'daily';");
   });
 
+  it('kazananlar listesi yalnız artıda olanları alır', () => {
+    // Filtresizken ilk on satır sıralamadan geliyordu: kârda on fondan azı
+    // varsa zarardakiler listeyi dolduruyor ve aynı fon hem "en çok
+    // kazandıran" hem "en çok kaybettiren" panelinde görünüyordu. Ölçüldü —
+    // beş fonun dördü kârda, PPS -%22,66 ile iki panelde birden çıkıyordu.
+    const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
+    for (const alan of ['top', 'top1m', 'top3m']) {
+      expect(repo, `${alan} pozitif filtresi taşımıyor`)
+        .toMatch(new RegExp(`${alan}: \\w+\\.filter\\(\\(r\\) => Number\\(r\\.returnPct\\) > 0\\)`));
+    }
+  });
+
   it('piyasa pencereleri iki kaydırıcıyla yönetilir', () => {
     // Sol/sağ ayrımı korunuyor: ekranın amacı iki pencereyi yan yana
     // karşılaştırmak. Tek pencereye indirmek o karşılaştırmayı yok ederdi.
