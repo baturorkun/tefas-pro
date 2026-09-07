@@ -12,13 +12,12 @@ SA="$(awk '/^export async function stockAllocation/,/^}/' "${R}")"
 # Varsayılan yalnız sahip olunan fonlar. Ölçüldü: takip listesi de girince
 # 686 hissenin 207'si listede 0 TL değerle duruyordu.
 grep -q "includeWatchlist = false" <<<"${SA}" || fail "varsayılan kapsam açık"
-grep -q "includeWatchlist || x.ownedFunds > 0" <<<"${SA}" \
+grep -q "WHERE user_id = \$1 AND \$2::boolean" <<<"${SA}" \
   || fail "kapsam ayıklaması yok"
 
-# Sayımlar anahtardan bağımsız: "kaç fonumda, kaç tanesi takipte" sorusunun
-# cevabı seçilen kapsama göre değişmemeli. Bu yüzden SQL bütün takip edilen
-# fonları getirir, ayıklama sonrasında yapılır.
-grep -q "\$2::boolean" <<<"${SA}" && fail "kapsam SQL'de ayıklanıyor, sayımlar eksilir"
+# Anahtar bütün ekranı belirler: kapalıyken fon kırılımı ve sayımlar da
+# yalnız sahip olunan fonları anlatır. Kapsam dışı fonu sütunda saymak,
+# ekranın "burada takip listesi yok" sözüyle çelişiyordu.
 grep -q "ownedFunds: b.funds.filter((f) => f.owned).length" <<<"${SA}" \
   || fail "sahip olunan fon sayımı yok"
 grep -q "watchFunds: b.funds.filter((f) => !f.owned).length" <<<"${SA}" \
@@ -29,7 +28,7 @@ grep -q "watchFunds: b.funds.filter((f) => !f.owned).length" <<<"${SA}" \
 # Ölçüldü: 42 fonun 2'si (AAK, CVL) batur'un hiçbir listesinde yokken
 # hisseleri ekrana giriyordu.
 grep -q "FROM analytics.tracked_fund" <<<"${SA}" && fail "kapsam collector evreninden geliyor"
-grep -q "FROM analytics.watchlist_visible WHERE user_id = \$1" <<<"${SA}" \
+grep -q "FROM analytics.watchlist_visible" <<<"${SA}" \
   || fail "takip listesi kullanıcıya özel değil"
 
 # Sahiplik açık işlemden gelir, değerden değil. İleri tarihli alımın fiyatı

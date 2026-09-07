@@ -2166,9 +2166,10 @@ export async function stockAllocation(
    * Tamamen gizlemek de yanlış olurdu: "içinde THYAO olan fonları listele"
    * gibi sorularda takip listesindeki fonlar da isteniyor.
    *
-   * Anahtar yalnız satırın listelenip listelenmeyeceğini belirler. Sayımlar
-   * her iki durumda da bütün takip edilen fonlar üzerinden yapılır, çünkü
-   * "kaç fonumda, kaç tanesi takipte" sorusunun cevabı anahtardan bağımsız.
+   * Anahtar bütün ekranı belirler, yalnız satır listesini değil: kapalıyken
+   * fon kırılımı, sayımlar ve tarih aralığı da sahip olunan fonları anlatır.
+   * Kapsam dışı bir fonu sütunda saymak, ekranın "burada takip listesi yok"
+   * sözüyle çelişiyordu.
    */
   includeWatchlist = false,
 ): Promise<StockAllocation> {
@@ -2191,7 +2192,8 @@ export async function stockAllocation(
        SELECT fund_code FROM portfolio_transaction
         WHERE user_id = $1 AND (sell_date IS NULL OR sell_date > current_date)
        UNION
-       SELECT fund_code FROM analytics.watchlist_visible WHERE user_id = $1),
+       SELECT fund_code FROM analytics.watchlist_visible
+        WHERE user_id = $1 AND $2::boolean),
      deger AS (
        -- Takip listesindekilerin değer katkısı sıfır, çünkü position_slice'ta
        -- satırları yok; kapsam ayıklaması SQL'de değil, sayımlar
@@ -2244,7 +2246,7 @@ export async function stockAllocation(
        JOIN deger d ON d.fund_code = h.fund_code
        LEFT JOIN dim_fund f ON f.fund_code = h.fund_code
        LEFT JOIN fiyat p ON p.stock_code = h.stock_code`,
-    [userId],
+    [userId, includeWatchlist],
   );
 
   const toplam = await pool.query<{ value: string }>(
@@ -2297,7 +2299,6 @@ export async function stockAllocation(
       return1w: b.return1w,
       return1m: b.return1m,
     }))
-    .filter((x) => includeWatchlist || x.ownedFunds > 0)
     .sort((a, b) => Number(b.value) - Number(a.value));
 
   // Tarih aralığı listelenen satırları anlatmalı: kapsam daraldığında

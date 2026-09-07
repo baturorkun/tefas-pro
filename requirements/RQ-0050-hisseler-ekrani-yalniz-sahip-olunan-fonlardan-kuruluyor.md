@@ -83,7 +83,10 @@ görünmesini istemişti. Anahtar Panel ve Piyasa'daki ile aynı desen.
 
 - Hisseler listesi varsayılan olarak yalnız sahip olunan fonlardan kurulur.
 - Sahip olunmayan fonlardan gelen hisseler varsayılan görünümde listelenmez.
-- Fon sayısı sütunu portföydeki ve takipteki fonları ayrı gösterir.
+- Anahtar bütün ekranı belirler: kapalıyken fon kırılımı, sayımlar ve tarih
+  aralığı da yalnız sahip olunan fonları anlatır.
+- Kapsam sütunu anahtar açıkken portföydeki ve takipteki fonları ayrı
+  gösterir; kapalıyken yalnız portföydekini yazar.
 - Değer ve ağırlık hesabı değişmez; takip fonları katkı vermez.
 - Bir anahtarla takip listesindeki fonların hisseleri de görünür.
 - Anahtarın varsayılanı kapalı ve seçim sayfa yenilendiğinde korunur.
