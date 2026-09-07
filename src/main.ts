@@ -4405,7 +4405,7 @@ async function closedView(): Promise<Node[]> {
   };
 
   const sekmeler = el('div', { class: 'tabs' },
-    ([['fund', 'Fon', fonListe.length], ['tx', 'İşlem', rows.length]] as const)
+    ([['fund', 'Fonlar', fonListe.length], ['tx', 'İşlemler', rows.length]] as const)
       .map(([id, etiket, sayi]) => {
         const d = el('button', {
           type: 'button',

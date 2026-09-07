@@ -11,8 +11,8 @@ CV="$(awk '/^async function closedView/,/^}/' "${M}")"
 # satış tarihine göre sıralı olduğu için bir fonun bacakları yan yana bile
 # değil; VPS'in -126.585 TL'si yedi satıra bölünmüştü.
 grep -q "class: 'tabs'" <<<"${CV}" || fail "sekme yok"
-grep -q "\['fund', 'Fon'" <<<"${CV}" || fail "fon sekmesi yok"
-grep -q "\['tx', 'İşlem'" <<<"${CV}" || fail "işlem sekmesi yok"
+grep -q "\['fund', 'Fonlar'" <<<"${CV}" || fail "fon sekmesi yok"
+grep -q "\['tx', 'İşlemler'" <<<"${CV}" || fail "işlem sekmesi yok"
 
 SEC="$(awk '/const sec = \(id: KapananSekme\)/,/^  };/' <<<"${CV}" | grep -v '^ *//')"
 grep -q "api(" <<<"${SEC}" && fail "sekme değişimi veriyi yeniden çekiyor"
