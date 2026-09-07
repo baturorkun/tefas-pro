@@ -13,25 +13,32 @@
       }
     ]
   },
-  "status": "running",
+  "status": "approved",
   "createdAt": "2026-09-07T22:06:25.399Z",
-  "updatedAt": "2026-09-07T22:06:32.084Z",
+  "updatedAt": "2026-09-07T22:09:27.359Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-09-07T22:06:32.084Z"
+      "status": "passed",
+      "startedAt": "2026-09-07T22:06:32.084Z",
+      "finishedAt": "2026-09-07T22:09:27.155Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "package.json",
+    "src/main.ts",
+    "tests/closed-fund-summary.test.sh"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
-  }
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-09-07T22:09:27.360Z",
+  "approvedBy": "human"
 }
