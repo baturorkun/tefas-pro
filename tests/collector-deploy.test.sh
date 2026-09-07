@@ -48,3 +48,14 @@ printf 'PASS: zamanlama varsayılanı hafta içi 10:30\n'
 grep -q 'podman rmi -f "localhost/tefas-pro-collector:${slot}"' "${WF}" \
   || fail "slot temizliğinde collector image'ı da silinmeli"
 printf 'PASS: slot temizliği collector image'"'"'ını da siliyor\n'
+
+# Container'ı başlatan adım runner'ın "orphan process" temizliğinden muaf.
+# Runner iş bitiminde kendi başlattığı process'leri RUNNER_TRACKING_ID ile
+# etiketleyip öldürüyor; conmon o etiketi taşıyınca container ölüyordu.
+# 2026-09-07'de iki deploy'da ölçüldü, log'da "Terminate orphan process:
+# (conmon)" satırı var. Biri production'ı yatırdı ve podman "Up (unhealthy)"
+# diye kayıtlı ama gerçekte çalışmayan bir container bıraktı.
+awk '/- name: Replace slot container/,/run: \|/' "${WF}" \
+  | grep -q "RUNNER_TRACKING_ID: ''" \
+  || fail "container adımı runner'ın orphan temizliğinden muaf değil"
+printf 'PASS: container conmon süreci deploy sonunda öldürülmüyor\n'

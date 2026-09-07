@@ -215,11 +215,19 @@ jobs:
             --env-file "${RUNNER_WORKSPACE}/tefas-pro-deployments/${SLOT}/runtime.env" \
             --entrypoint node "localhost/tefas-pro-server:${SLOT}" dist/db/migrate.js
 
+      # RUNNER_TRACKING_ID boş: runner iş bitiminde kendi başlattığı
+      # process'leri bu değişkenle etiketleyip öldürüyor. Container'ı gözeten
+      # conmon da o etiketi taşıdığı için ölüyordu — 2026-09-07'de iki kez
+      # ölçüldü, log'da "Terminate orphan process: (conmon)" satırı duruyor.
+      # Sonucu kumar: podman bazen restart politikasıyla toparlıyor, bazen
+      # "Up (unhealthy)" diye kayıtlı ama gerçekte çalışmayan bir container
+      # bırakıyor ve rm -f edilmeden düzelmiyor.
       - name: Replace slot container
         env:
           SLOT: ${{ steps.target.outputs.slot }}
           PORT: ${{ steps.target.outputs.port }}
           NETWORK: ${{ vars.TEFAS_NETWORK || 'tefas-pro-db_default' }}
+          RUNNER_TRACKING_ID: ''
         run: |
           name="tefas-pro-${SLOT}"
           podman rm -f "$name" >/dev/null 2>&1 || true
