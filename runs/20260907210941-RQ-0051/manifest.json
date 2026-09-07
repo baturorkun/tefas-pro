@@ -13,25 +13,34 @@
       }
     ]
   },
-  "status": "running",
+  "status": "approved",
   "createdAt": "2026-09-07T21:09:41.672Z",
-  "updatedAt": "2026-09-07T21:09:48.953Z",
+  "updatedAt": "2026-09-07T21:14:21.451Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-09-07T21:09:48.953Z"
+      "status": "passed",
+      "startedAt": "2026-09-07T21:09:48.953Z",
+      "finishedAt": "2026-09-07T21:14:14.953Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "package.json",
+    "requirements/RQ-0051-piyasa-ekrani-sekmelere-ayriliyor.md",
+    "src/main.ts",
+    "src/styles.css",
+    "tests/market-tabs.test.sh"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
-  }
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-09-07T21:14:21.452Z",
+  "approvedBy": "human"
 }
