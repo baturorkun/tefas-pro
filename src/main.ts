@@ -299,11 +299,16 @@ interface PerformancePoint {
   value: string;
   /** Organik günlük getiri (%). Pencerenin ilk gününde null. */
   dailyPct: string | null;
+  /** Aynı para benchmark fonunda dursaydı değeri. Veri yoksa null. */
+  benchValue?: string | null;
 }
 
 interface PerformanceSeries {
   points: PerformancePoint[];
   totalPct: string | null;
+  benchCode: string;
+  benchPct: string | null;
+  benchOwned: boolean;
 }
 
 type ViewId =
@@ -1055,7 +1060,12 @@ function performanceChart(points: PerformancePoint[]): SVGSVGElement {
     preserveAspectRatio: 'xMidYMid meet',
   });
 
-  const values = points.map((p) => Number(p.value));
+  // Benchmark çizgisi de ölçeğe girmeli: yalnız portföy değerlerine göre
+  // ölçeklenirse benchmark kutunun dışına taşar ve kırpılır.
+  const benchValues = points
+    .map((p) => (p.benchValue == null ? null : Number(p.benchValue)))
+    .filter((v): v is number => v !== null);
+  const values = [...points.map((p) => Number(p.value)), ...benchValues];
   const pcts = points.map((p) => (p.dailyPct === null ? 0 : Number(p.dailyPct)));
 
   // Değer ekseni: seriyi kutuya oturtur, tabanı sıfıra çekmez. Portföy değeri
@@ -1100,6 +1110,15 @@ function performanceChart(points: PerformancePoint[]): SVGSVGElement {
     }),
     svg('polyline', { points: line, class: 'perf-line' }),
   );
+
+  // Benchmark ikinci çizgi: kesikli ve soluk, portföy çizgisiyle
+  // karışmasın. Dolgu yok — iki dolgu üst üste binince ikisi de okunmuyor.
+  if (benchValues.length === points.length && points.length > 1) {
+    root.append(svg('polyline', {
+      points: points.map((p, i) => `${String(x(i))},${String(yV(Number(p.benchValue)))}`).join(' '),
+      class: 'perf-bench',
+    }));
+  }
 
   // ── Alt panel: sıfır çizgisi ve günlük barlar
   root.append(
@@ -1204,10 +1223,42 @@ async function performancePanel(): Promise<HTMLElement> {
   const last = series.points[series.points.length - 1];
   const meta = first && last ? `${first.date} → ${last.date}` : 'Son 30 İş Günü';
   const body = el('div', { class: 'panel-body perf-body' }, [performanceChart(series.points)]);
+  // Üç sayı yan yana: senin getirin, benchmark'ın getirisi ve aradaki puan
+  // farkı. Yalnız fark yazılsaydı "neye göre" sorusu havada kalırdı.
+  const fark = series.totalPct === null || series.benchPct === null
+    ? null
+    : (Number(series.totalPct) - Number(series.benchPct)).toFixed(2);
   const toolbar = el('div', { class: 'chart-toolbar perf-toolbar' }, [
     el('span', { class: 'perf-total-label' }, ['Dönem Getirisi']),
     signed(series.totalPct),
+    ...(series.benchPct === null ? [] : [
+      el('span', { class: 'perf-bench-key' }, []),
+      el('span', { class: 'perf-total-label' }, [series.benchCode]),
+      signed(series.benchPct),
+      el('span', { class: 'perf-total-label' }, ['Fark']),
+      signed(fark, ' puan'),
+    ]),
   ]);
+
+  // Benchmark verisi yoksa sebebi yazılıyor: çizgiyi sessizce çizmemek,
+  // kullanıcıya "karşılaştırma yok" demeden bırakmak olurdu.
+  const notlar: HTMLElement[] = [];
+  if (series.benchPct === null) {
+    notlar.push(el('p', { class: 'panel-note' }, [
+      `Karşılaştırma çizilemedi: ${series.benchCode} fonunun bu penceredeki `
+      + 'günlük verisi eksik. Eksik günü atlayıp çizgiyi tamamlamak farkı '
+      + 'olduğundan küçük gösterirdi.',
+    ]));
+  } else if (series.benchOwned) {
+    // Benchmark fonu portföyde de varsa o dilim kendisiyle karşılaştırılıyor
+    // ve farkı sıfıra çekiyor. Hata değil ama söylenmezse sebebi anlaşılmaz.
+    notlar.push(el('p', { class: 'panel-note' }, [
+      `${series.benchCode} senin portföyünde de var; o dilim kendisiyle `
+      + 'karşılaştırıldığı için aradaki farkı sıfıra doğru çekiyor.',
+    ]));
+  }
+  body.append(...notlar);
+
   return panel('Portföy Performansı', meta, body, toolbar);
 }
 

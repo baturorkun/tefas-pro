@@ -61,7 +61,12 @@ describe('buildPerformanceSeries', () => {
   });
 
   it('boş seri çökmez', () => {
-    expect(buildPerformanceSeries([])).toEqual({ points: [], totalPct: null });
+    // Alanlar tek tek: benchmark alanları eklendiğinde toEqual kopmuştu.
+    // Kural "boş girdide nokta yok ve getiri null", alan sayısı değil.
+    const s = buildPerformanceSeries([]);
+    expect(s.points).toEqual([]);
+    expect(s.totalPct).toBeNull();
+    expect(s.benchPct).toBeNull();
   });
 
   it('tek günlük seri toplam getiri üretmez', () => {
@@ -78,5 +83,58 @@ describe('buildPerformanceSeries', () => {
       { date: '2026-03-13', value: '101000', dailyGain: '1000', prevValue: '0' },
     ]);
     expect(points[1]?.dailyPct).toBeNull();
+  });
+});
+
+describe('benchmark çizgisi', () => {
+  const gun = (d: string, value: string, gain: string | null, prev: string | null) =>
+    ({ date: d, value, dailyGain: gain, prevValue: prev });
+
+  it('aynı noktadan başlar ve kendi getirisiyle büyür', () => {
+    // Portföy çizgisi nakit akışından arındırılmış; benchmark'ı ham değerle
+    // çizmek iki çizgiyi farklı sorulara cevap verir hâle getirirdi.
+    const s = buildPerformanceSeries(
+      [gun('2026-01-01', '1000', null, null),
+        gun('2026-01-02', '1010', '10', '1000'),
+        gun('2026-01-03', '1020', '10', '1010')],
+      new Map([['2026-01-02', 1], ['2026-01-03', 1]]),
+      'TP2',
+      false,
+    );
+    expect(s.points[0]?.benchValue).toBe('1000.00');
+    expect(s.points[1]?.benchValue).toBe('1010.00');
+    expect(s.points[2]?.benchValue).toBe('1020.10');
+    expect(s.benchPct).toBe('2.0100');
+    expect(s.benchCode).toBe('TP2');
+  });
+
+  it('eksik gün varsa çizgi hiç üretilmez', () => {
+    // Eksik günü atlayıp çizgiyi tamamlamak, benchmark'ı olduğundan düz
+    // gösterir ve farkı sessizce küçültürdü.
+    const s = buildPerformanceSeries(
+      [gun('2026-01-01', '1000', null, null),
+        gun('2026-01-02', '1010', '10', '1000'),
+        gun('2026-01-03', '1020', '10', '1010')],
+      new Map([['2026-01-02', 1]]),
+      'TP2',
+      false,
+    );
+    expect(s.benchPct).toBeNull();
+    expect(s.points.every((x) => x.benchValue === null)).toBe(true);
+  });
+
+  it('benchmark verisi hiç yoksa seri yine üretilir', () => {
+    const s = buildPerformanceSeries(
+      [gun('2026-01-01', '1000', null, null), gun('2026-01-02', '1010', '10', '1000')],
+      new Map(), 'TP2', false,
+    );
+    expect(s.totalPct).toBe('1.0000');
+    expect(s.benchPct).toBeNull();
+  });
+
+  it('benchmark portföyde ise işaretlenir', () => {
+    const s = buildPerformanceSeries([gun('2026-01-01', '1000', null, null)],
+      new Map(), 'TP2', true);
+    expect(s.benchOwned).toBe(true);
   });
 });
