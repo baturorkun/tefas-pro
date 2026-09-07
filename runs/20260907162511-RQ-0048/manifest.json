@@ -13,9 +13,9 @@
       }
     ]
   },
-  "status": "passed",
+  "status": "approved",
   "createdAt": "2026-09-07T16:25:11.629Z",
-  "updatedAt": "2026-09-07T16:30:54.545Z",
+  "updatedAt": "2026-09-07T16:44:09.356Z",
   "steps": [
     {
       "agent": "handoff",
@@ -39,5 +39,7 @@
     "lint": "skipped",
     "tests": "passed",
     "security": "passed"
-  }
+  },
+  "approvedAt": "2026-09-07T16:44:09.357Z",
+  "approvedBy": "Batur Orkun"
 }
