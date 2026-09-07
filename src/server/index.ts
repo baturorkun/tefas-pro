@@ -69,6 +69,7 @@ import {
   addSystemFund,
   konusmayaYaz,
   listSystemFunds,
+  marketRanks,
   pendingPurchases,
   removeSystemFund,
   updateProfile,
@@ -527,6 +528,21 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
 
       // Fiyatı henüz açıklanmamış alımlar. Portföy görünümlerine girmiyorlar
       // ve sebebi hiçbir yerde yazmıyordu.
+      // Piyasa sıralamaları, istenen pencere için. Ekran iki kez çağırıyor:
+      // sol sütun bir pencere, sağ sütun başka bir pencere.
+      if (path === '/api/market' && method === 'GET') {
+        const raw = url.searchParams.get('days');
+        const gun = raw === null ? 7 : Number(raw);
+        if (!Number.isFinite(gun)) {
+          sendJson(res, 400, { error: 'days sayı olmalı' });
+          return;
+        }
+        sendJson(res, 200, await marketRanks(
+          pool, user.id, gun, url.searchParams.get('onlyOwned') === '1',
+        ));
+        return;
+      }
+
       if (path === '/api/portfolio/pending' && method === 'GET') {
         sendJson(res, 200, await pendingPurchases(pool, user.id));
         return;

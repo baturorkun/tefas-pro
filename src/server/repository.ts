@@ -945,7 +945,6 @@ export interface DashboardData {
     /** Portföyün güncel değeri ve kazancı. Pozisyon yoksa null. */
     portfolio: PortfolioHeadline | null;
   };
-  watchlistRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
   positions: {
     summary: PositionSummary | null;
     /** Alımdan beri toplam getiriye göre. */
@@ -964,10 +963,6 @@ export interface DashboardData {
     top3m: RankEntry[];
     bottom3m: RankEntry[];
   };
-  /** Para akışı: `returnPct` oranı (%), `flow` TL tutarını taşır. */
-  flowRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
-  /** Yatırımcı sayısı: `returnPct` oranı (%), `people` kişi değişimini taşır. */
-  investorRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
 }
 
 const RANK_LIMIT = 10;
@@ -1279,7 +1274,6 @@ export async function dashboard(
       lastRun: run ? { id: run.id, status: run.status, finishedAt: run.finished_at } : null,
       portfolio: await portfolioHeadline(pool, userId),
     },
-    watchlistRanks: { '1w': byWindow('1w'), '1m': byWindow('1m') },
     positions: {
       summary:
         ps?.cost == null
@@ -1300,8 +1294,6 @@ export async function dashboard(
       top3m: quarterRows.filter((r) => Number(r.returnPct) > 0).slice(0, RANK_LIMIT),
       bottom3m: quarterLosers.slice(-RANK_LIMIT).reverse(),
     },
-    flowRanks: { '1w': byFlow('1w'), '1m': byFlow('1m') },
-    investorRanks: { '1w': byInvestor('1w'), '1m': byInvestor('1m') },
   };
 }
 
@@ -2636,6 +2628,176 @@ export async function fundDaily(
   return r.rows.map((x) => ({
     date: x.d, fundPct: x.fund_pct, gain: x.gain, value: x.value,
   }));
+}
+
+/* ── Piyasa sıralamaları (serbest pencere) ──────────────────────────────── */
+
+/**
+ * Piyasa ekranının üç ölçüsü, İSTENEN pencere için.
+ *
+ * Daha önce pencereler `analytics.fund_flow` ve `fund_investor` view'larına
+ * `_1w` / `_1m` diye gömülüydü; başka bir pencere sormanın yolu yoktu. Buradaki
+ * sorgular aynı hesabı yapıyor ama gün sayısı parametre.
+ *
+ * Pencere TAKVİM günü, iş günü değil — view'lardaki `son.d - 7` ile aynı.
+ * "Son 7 gün" tatile denk gelse de aynı şeyi ifade etsin diye.
+ *
+ * Referans günü ölçü başına ayrı: her sütunun kendi son dolu günü. Akış verisi
+ * getiriden bir gün geride kalabiliyor ve tek referans kullanmak o günü boş
+ * gösterirdi.
+ */
+export interface MarketRanks {
+  returns: { top: RankEntry[]; bottom: RankEntry[] };
+  flow: { top: RankEntry[]; bottom: RankEntry[] };
+  investor: { top: RankEntry[]; bottom: RankEntry[] };
+}
+
+/** Kaydırıcının durakları. Ara değer kabul edilmiyor. */
+export const MARKET_WINDOWS = [1, 2, 3, 5, 7, 15, 30, 60, 90, 180] as const;
+
+export function normalizeWindow(days: number): number {
+  const n = Math.trunc(days);
+  // Listede yoksa en yakın durağa çekiliyor: uydurma bir pencereyle hesap
+  // yapmak, kullanıcının seçmediği bir sonucu seçmiş gibi göstermek olurdu.
+  return MARKET_WINDOWS.reduce(
+    (iyi, d) => (Math.abs(d - n) < Math.abs(iyi - n) ? d : iyi),
+    MARKET_WINDOWS[0] as number,
+  );
+}
+
+export async function marketRanks(
+  pool: pg.Pool, userId: number, days: number, onlyOwned = false,
+): Promise<MarketRanks> {
+  const gun = normalizeWindow(days);
+  const sahiplik = `EXISTS (SELECT 1 FROM portfolio_transaction p
+                             WHERE p.user_id = $1 AND p.fund_code = d.fund_code
+                               AND p.sell_date IS NULL)`;
+
+  const [ret, flow, inv] = await Promise.all([
+    // Getiri: günlük getirilerin bileşiği. fund_returns ile aynı yöntem.
+    pool.query<{ fund_code: string; title: string | null; owned: boolean;
+      pct: string | null; days: string; }>(
+      `WITH gunler AS (
+         SELECT trade_date, count(*) AS n FROM fact_fund_daily
+          WHERE daily_return_pct IS NOT NULL GROUP BY trade_date),
+       son AS (
+         -- Referans gün, fonların ÇOĞUNUN veri taşıdığı en son gün.
+         -- max(trade_date) kırılgandı: tek bir fon diğerlerinden önce
+         -- toplanınca (fon eklemek anında toplama tetikliyor) kısa pencereler
+         -- yalnız o fonu gösteriyordu. Ölçüldü — CVL tek başına 7 Eylül'e
+         -- geçmişti, "1 gün" penceresi tek fon döndürüyordu.
+         SELECT max(trade_date) AS d FROM gunler
+          WHERE n >= (SELECT max(n) FROM gunler) / 2)
+       SELECT d.fund_code, f.title, ${sahiplik} AS owned,
+              round((exp(sum(ln(greatest(1 + d.daily_return_pct / 100, 1e-9)))) - 1) * 100, 4)::text AS pct,
+              count(*)::text AS days
+         FROM fact_fund_daily d
+        CROSS JOIN son
+         LEFT JOIN dim_fund f USING (fund_code)
+        WHERE d.daily_return_pct IS NOT NULL AND d.trade_date > son.d - $2::int
+          AND (NOT $3::boolean OR ${sahiplik})
+        GROUP BY d.fund_code, f.title`,
+      [userId, gun, onlyOwned],
+    ),
+    // Akış: net para girişi ve pencere büyüklüğüne oranı.
+    pool.query<{ fund_code: string; title: string | null; owned: boolean;
+      flow: string | null; pct: string | null; days: string; }>(
+      `WITH gunler AS (
+         SELECT trade_date, count(*) AS n FROM fact_fund_daily
+          WHERE net_flow IS NOT NULL GROUP BY trade_date),
+       son AS (
+         -- Referans gün, fonların ÇOĞUNUN veri taşıdığı en son gün.
+         -- max(trade_date) kırılgandı: tek bir fon diğerlerinden önce
+         -- toplanınca (fon eklemek anında toplama tetikliyor) kısa pencereler
+         -- yalnız o fonu gösteriyordu. Ölçüldü — CVL tek başına 7 Eylül'e
+         -- geçmişti, "1 gün" penceresi tek fon döndürüyordu.
+         SELECT max(trade_date) AS d FROM gunler
+          WHERE n >= (SELECT max(n) FROM gunler) / 2)
+       SELECT d.fund_code, f.title, ${sahiplik} AS owned,
+              sum(d.net_flow)::text AS flow,
+              count(*)::text AS days,
+              round(sum(d.net_flow) / nullif(greatest(
+                (array_agg(d.aum ORDER BY d.trade_date) FILTER (WHERE d.aum IS NOT NULL))[1],
+                (array_agg(d.aum ORDER BY d.trade_date DESC) FILTER (WHERE d.aum IS NOT NULL))[1]
+              ), 0) * 100, 2)::text AS pct
+         FROM fact_fund_daily d
+        CROSS JOIN son
+         LEFT JOIN dim_fund f USING (fund_code)
+        WHERE d.net_flow IS NOT NULL AND d.trade_date > son.d - $2::int
+          AND (NOT $3::boolean OR ${sahiplik})
+        GROUP BY d.fund_code, f.title`,
+      [userId, gun, onlyOwned],
+    ),
+    // Yatırımcı sayısı: pencerenin ilk ve son MEVCUT günü arasındaki fark.
+    // Eksik günü atlayıp hesaplamak farkı olduğundan küçük gösterirdi; veri
+    // hiç yoksa fon listeye girmiyor.
+    pool.query<{ fund_code: string; title: string | null; owned: boolean;
+      change: string | null; pct: string | null; days: string; }>(
+      `WITH gunler AS (
+         SELECT trade_date, count(*) AS n FROM fact_fund_daily
+          WHERE investor_count IS NOT NULL GROUP BY trade_date),
+       son AS (
+         -- Referans gün, fonların ÇOĞUNUN veri taşıdığı en son gün.
+         -- max(trade_date) kırılgandı: tek bir fon diğerlerinden önce
+         -- toplanınca (fon eklemek anında toplama tetikliyor) kısa pencereler
+         -- yalnız o fonu gösteriyordu. Ölçüldü — CVL tek başına 7 Eylül'e
+         -- geçmişti, "1 gün" penceresi tek fon döndürüyordu.
+         SELECT max(trade_date) AS d FROM gunler
+          WHERE n >= (SELECT max(n) FROM gunler) / 2),
+       p AS (
+         SELECT d.fund_code,
+                (array_agg(d.investor_count ORDER BY d.trade_date))[1] AS bas,
+                (array_agg(d.investor_count ORDER BY d.trade_date DESC))[1] AS bit,
+                count(*) AS days,
+                bool_or(${sahiplik}) AS owned
+           FROM fact_fund_daily d
+          CROSS JOIN son
+          WHERE d.investor_count IS NOT NULL AND d.trade_date > son.d - $2::int
+            AND (NOT $3::boolean OR ${sahiplik})
+          GROUP BY d.fund_code)
+       SELECT p.fund_code, f.title, p.owned,
+              (p.bit - p.bas)::text AS change,
+              p.days::text AS days,
+              round((p.bit - p.bas)::numeric
+                    / nullif(greatest(p.bas, p.bit), 0)::numeric * 100, 2)::text AS pct
+         FROM p LEFT JOIN dim_fund f USING (fund_code)`,
+      [userId, gun, onlyOwned],
+    ),
+  ]);
+
+  const sirala = (
+    rows: { fundCode: string; title: string | null; owned: boolean;
+      returnPct: string | null; days: number; extra?: Partial<RankEntry> }[],
+  ): { top: RankEntry[]; bottom: RankEntry[] } => {
+    const list = rows
+      .filter((r) => r.returnPct !== null)
+      .map((r): RankEntry => ({
+        fundCode: r.fundCode, title: r.title, owned: r.owned,
+        returnPct: r.returnPct as string, days: r.days, ...r.extra,
+      }))
+      .sort((a, b) => Number(b.returnPct) - Number(a.returnPct));
+    // "En çok kaybettiren" yalnız gerçekten eksideleri listeler; alttan N
+    // almak hepsi artıdayken paneli pozitif değerlerle doldururdu.
+    return {
+      top: list.filter((r) => Number(r.returnPct) > 0).slice(0, RANK_LIMIT),
+      bottom: list.filter((r) => Number(r.returnPct) < 0).slice(-RANK_LIMIT).reverse(),
+    };
+  };
+
+  return {
+    returns: sirala(ret.rows.map((r) => ({
+      fundCode: r.fund_code, title: r.title, owned: r.owned,
+      returnPct: r.pct, days: Number(r.days),
+    }))),
+    flow: sirala(flow.rows.map((r) => ({
+      fundCode: r.fund_code, title: r.title, owned: r.owned,
+      returnPct: r.pct, days: Number(r.days), extra: { flow: r.flow },
+    }))),
+    investor: sirala(inv.rows.map((r) => ({
+      fundCode: r.fund_code, title: r.title, owned: r.owned,
+      returnPct: r.pct, days: Number(r.days), extra: { people: r.change },
+    }))),
+  };
 }
 
 /* ── Sistem fon listesi ─────────────────────────────────────────────────── */
