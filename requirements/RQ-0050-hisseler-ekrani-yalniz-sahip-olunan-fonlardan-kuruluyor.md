@@ -45,6 +45,29 @@ kullanıcı "yedi fonumda var" diye okuyor.
 
 Veri hazır: `StockFundRow.owned` her fon için sahiplik bilgisini taşıyor.
 
+## 3. Fon evreni kullanıcıdan bağımsız
+
+İlk düzeltmeden sonra çıktı: `analytics.tracked_fund` bir kullanıcı sütunu
+taşımıyor, çünkü collector'ın toplayacağı fonları anlatıyor — herkesin takip
+listesi, benchmark'lar ve sistem fon listesi orada.
+
+    tracked_fund (collector evreni)     42
+    batur'un açık pozisyonları          25
+    batur'un takip listesi              15
+    ikisinde de olmayan                  2   AAK, CVL
+
+"Takip listem de gösterilsin" anahtarı bu yüzden kullanıcının kendi listesini
+değil, sistemin bütün fonlarını getiriyordu.
+
+## 4. İleri tarihli satış kapalı sayılıyor
+
+Sahiplik `sell_date IS NULL` ile ölçülüyordu. Açıklık kuralı `position_slice`
+ve `position_leg`'de `sell_date IS NULL OR sell_date > current_date`.
+
+GBZ'nin `sell_date IS NULL` satırı yok — iki işlemin de satış tarihi ileride —
+ama **201.532 TL** açık değeri var. Dar kural onu takip listesine yazıyor,
+varsayılan kapsam da ekrandan düşürüyordu.
+
 ## Çözüm
 
 Sütun iki değer gösterecek: **4 portföyde · 3 takipte**. Takip tarafı bilgi
@@ -65,3 +88,8 @@ görünmesini istemişti. Anahtar Panel ve Piyasa'daki ile aynı desen.
 - Bir anahtarla takip listesindeki fonların hisseleri de görünür.
 - Anahtarın varsayılanı kapalı ve seçim sayfa yenilendiğinde korunur.
 - Sektör görünümü aynı kapsamı kullanır.
+- Kapsam kullanıcının kendi fonlarıyla sınırlıdır: başkasının takip listesi,
+  benchmark ve sistem fonları hiçbir görünümde yer almaz.
+- Takip sayısı kullanıcının kendi takip listesini sayar.
+- İleri tarihli satışı olan fon açık sayılır; kapsam kuralı `position_slice`
+  ile aynı açıklık tanımını kullanır.

@@ -2182,15 +2182,25 @@ export async function stockAllocation(
     `WITH son AS (
        SELECT DISTINCT ON (fund_code) fund_code, as_of_date
          FROM fund_stock_holding ORDER BY fund_code, as_of_date DESC),
+     -- Evren yalnız bu kullanıcının fonları: açık pozisyonları ve kendi takip
+       -- listesi. analytics.tracked_fund kullanılamaz, o collector'ın
+       -- evreni — herkesin listesini, benchmark'ları ve sistem fonlarını
+       -- kapsıyor. Ölçüldü: 42 fonun 2'si (AAK, CVL) batur'un hiçbir
+       -- listesinde yokken hisseleri ekrana giriyordu.
+     kapsam AS (
+       SELECT fund_code FROM portfolio_transaction
+        WHERE user_id = $1 AND (sell_date IS NULL OR sell_date > current_date)
+       UNION
+       SELECT fund_code FROM analytics.watchlist_visible WHERE user_id = $1),
      deger AS (
-       -- Takip edilen bütün fonlar. Takip listesindekilerin değer katkısı
-       -- sıfır, çünkü position_slice'ta satırları yok; kapsam ayıklaması
-       -- SQL'de değil, sayımlar hesaplandıktan sonra yapılıyor.
-       SELECT t.fund_code, coalesce(sum(p.value), 0) AS value
-         FROM analytics.tracked_fund t
+       -- Takip listesindekilerin değer katkısı sıfır, çünkü position_slice'ta
+       -- satırları yok; kapsam ayıklaması SQL'de değil, sayımlar
+       -- hesaplandıktan sonra yapılıyor.
+       SELECT k.fund_code, coalesce(sum(p.value), 0) AS value
+         FROM kapsam k
          LEFT JOIN analytics.position_slice p
-           ON p.fund_code = t.fund_code AND p.user_id = $1 AND p.is_open
-        GROUP BY t.fund_code),
+           ON p.fund_code = k.fund_code AND p.user_id = $1 AND p.is_open
+        GROUP BY k.fund_code),
      -- Getiri pencereleri son kapanıştan geriye bakar. Takvim günü kullanılır,
      -- iş günü değil: "son bir hafta" tatile denk gelse de aynı şeyi ifade
      -- etsin. Pencerenin başındaki kapanış yoksa o getiri null kalır;
@@ -2219,9 +2229,14 @@ export async function stockAllocation(
      SELECT h.stock_code, h.company, h.sector, h.fund_code, f.title,
             h.weight_pct::text, h.prev_weight_pct::text, h.weight_change::text,
             d.value::text AS fund_value,
+            -- Açıklık kuralı position_slice.is_open ile aynı: ileri tarihli
+            -- satış hâlâ açıktır. Ölçüldü — GBZ'nin sell_date IS NULL satırı
+            -- yok ama 201.532 TL açık değeri var; yalnız NULL'a bakan kural
+            -- onu takip listesine yazıp ekrandan düşürüyordu.
             EXISTS (SELECT 1 FROM portfolio_transaction x
                      WHERE x.user_id = $1 AND x.fund_code = h.fund_code
-                       AND x.sell_date IS NULL) AS owned,
+                       AND (x.sell_date IS NULL
+                            OR x.sell_date > current_date)) AS owned,
             to_char(h.as_of_date, 'YYYY-MM-DD') AS as_of_date,
             p.return_1w, p.return_1m
        FROM fund_stock_holding h

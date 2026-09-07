@@ -24,10 +24,21 @@ grep -q "ownedFunds: b.funds.filter((f) => f.owned).length" <<<"${SA}" \
 grep -q "watchFunds: b.funds.filter((f) => !f.owned).length" <<<"${SA}" \
   || fail "takip fonu sayımı yok"
 
+# Evren kullanıcının kendi fonları. analytics.tracked_fund collector'ın
+# evreni: herkesin takip listesi, benchmark'lar ve sistem fonları da içinde.
+# Ölçüldü: 42 fonun 2'si (AAK, CVL) batur'un hiçbir listesinde yokken
+# hisseleri ekrana giriyordu.
+grep -q "FROM analytics.tracked_fund" <<<"${SA}" && fail "kapsam collector evreninden geliyor"
+grep -q "FROM analytics.watchlist_visible WHERE user_id = \$1" <<<"${SA}" \
+  || fail "takip listesi kullanıcıya özel değil"
+
 # Sahiplik açık işlemden gelir, değerden değil. İleri tarihli alımın fiyatı
 # henüz açıklanmadığı için değeri sıfır; değere bakan bir kural onları
-# takip listesine yazardı. Ölçüldü: CKL ve DFI.
-grep -q "sell_date IS NULL) AS owned" <<<"${SA}" || fail "sahiplik işlemden gelmiyor"
+# takip listesine yazardı. Ölçüldü: CKL ve DFI. Açıklık kuralı da
+# position_slice.is_open ile aynı olmalı — GBZ ileri tarihli satışına rağmen
+# 201.532 TL ile açık.
+grep -q "OR x.sell_date > current_date)) AS owned" <<<"${SA}" \
+  || fail "sahiplik işlemden gelmiyor ya da ileri tarihli satışı kapalı sayıyor"
 grep -qE "owned:.*(fund_)?value.*> 0" <<<"${SA}" && fail "sahiplik değere bakıyor"
 printf 'PASS: kapsam sahip olunan fonlarla sınırlı, sayımlar tam\n'
 
