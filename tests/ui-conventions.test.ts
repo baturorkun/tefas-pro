@@ -99,6 +99,56 @@ describe('yerleşim', () => {
     expect(main).toContain("class: 'sidebar-user'");
   });
 
+  it('fon detayı tek sekme şeridinde, boş sekme açılmaz', () => {
+    // Önce Varlık Türü ayrı panel, Hisseler/Sektör ayrı ve kendi içinde
+    // sekmeliydi: aynı pencerede iki farklı düzen kuralı vardı ve pencere
+    // alt alta iki tabloyla uzuyordu.
+    expect(main).toContain("type FonSekme = 'daily' | 'assets' | 'stock' | 'sector'");
+    // Sekme yalnız verisi olana göre: boş sekme açıp "veri yok" yazmak,
+    // kullanıcıyı tıklatıp hiçbir şey göstermemek olurdu.
+    expect(main).toContain("d.assets.length === 0 ? [] : [fonSekmeBtn('assets'");
+    expect(main).toContain("d.stocks.length === 0 ? [] : [");
+    // Seçili sekmenin verisi yoksa Günlük'e düşülür; o her fonda var.
+    expect(main).toContain("fonSekme = 'daily';");
+  });
+
+  it('salt okunur pencerede alt şerit çizilmez', () => {
+    // Fon detayı okunur bir pencere; tek başına duran "Kapat" düğmesi sağ
+    // üstteki çarpının aynısını yapıp altta boş bir şerit kaplıyordu.
+    // Kapatmanın üç yolu zaten var: çarpı, Esc, dışarı tıklama.
+    expect(main).toContain("footer.length === 0 ? [] : [el('div', { class: 'modal-actions' }");
+    expect(main).toContain("openModal(d.fundCode, d.title ?? null, govde, [], 'wide')");
+    // Form pencerelerinde alt düğmeler gerçek bir iş yapıyor, onlar kalmalı.
+    expect(main).toMatch(/openModal\([^)]*\[cancel, submit\]/);
+  });
+
+  it('günlük listede fonun getirisi ile kullanıcının kazancı ayrı', () => {
+    // Yüzde fonun hareketi, TL kullanıcının pozisyonundan. Karıştırılırsa
+    // kullanıcı kazanmadığı parayı kazanmış sanır — aynı hata Panel'de
+    // yaşandı ve RQ-0043'te düzeltildi.
+    expect(main).toContain("table(['Tarih', 'Fonun Günlük %', 'Benim K/Z ₺', 'Pozisyon ₺']");
+    const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
+    const fn = exportGovdesi(repo, 'export async function fundDaily');
+    // Fiyat serisi solda: kullanıcı fonda olmasa da fonun hareketi görünsün.
+    expect(fn).toContain('FROM fact_fund_daily f');
+    expect(fn).toContain('LEFT JOIN analytics.fund_daily u');
+    // Fonda olunmayan gün BOŞ, sıfır değil.
+    expect(main).toContain("g.gain === null");
+  });
+
+  it('fon bazlı günlük kazanç nakit akışından arındırılmış', () => {
+    // O gün fona para eklendiyse değer artışının bir kısmı kazanç değil yeni
+    // paradır. Ham fark yazılsaydı alım yapılan gün dev bir kazanç görünürdü.
+    const mig = readFileSync(
+      new URL('../db/migrations/040_fund_daily.sql', import.meta.url), 'utf8');
+    expect(mig).toContain('value + outflow');
+    expect(mig).toContain('- inflow AS daily_gain');
+    // Eksik fiyat koruması fon başına; portfolio_daily'de portföy geneli ve
+    // o yüzden bu view'ın toplamı olarak yeniden tanımlanmadı.
+    expect(mig).toContain('HAVING count(*) FILTER (WHERE nav IS NULL) = 0');
+    expect(mig).not.toMatch(/CREATE OR REPLACE VIEW analytics\.portfolio_daily/);
+  });
+
   it('fon ekleyen her uç veriyi de tetikler', () => {
     // Alış ekleme ucu fonu tanıtıp takibe alıyor ama toplamayı
     // tetiklemiyordu: yeni fon bir sonraki zamanlanmış koşuma kadar fiyatsız
@@ -1039,7 +1089,10 @@ describe('fon içeriği', () => {
     expect(css).toContain('.modal-card.modal-wide');
     // Geniş pencere: 7 sütunlu ve 80 satıra kadar çıkan tablo form
     // genişliğinde okunmuyor.
-    expect(main).toMatch(/'wide',/);
+    // Geniş pencere: 7 sütunlu ve 80 satıra çıkan tablo form genişliğinde
+    // okunmuyor. Sondaki virgüle bağlanmıyor — çağrı tek satıra inince
+    // kopuyordu, oysa kural "wide olarak açılsın".
+    expect(main).toMatch(/'wide'\s*[,)]/);
   });
 });
 
