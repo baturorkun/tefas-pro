@@ -54,9 +54,14 @@ yanına benchmark'ın aynı dönemdeki getirisi ve aradaki puan farkı gelecek.
 
 ## Kararlar
 
-**Alt bardaki günlük yüzdelere dokunulmuyor.** Oraya ikinci bir bar seti
-koymak otuz günü altmış bara çıkarır ve ikisi de okunmaz olur. Benchmark
-karşılaştırması üst panelin işi.
+**Alt panelde bar başına işaret, ikinci bar seti değil.** Her barın kendi
+üstünde, o günkü benchmark seviyesinde kısa yatay bir çizgi. Bar işaretin
+üstündeyse o gün piyasa yenilmiş, altındaysa geride kalınmış — karşılaştırma
+aynı sütunda okunuyor.
+
+İkinci bar seti otuz günü altmış bara çıkarırdı. Birleşik çizgi de denendi ve
+elendi: barların arasında zikzak yapıyor, hangi parçanın hangi güne ait olduğu
+okunmuyordu.
 
 **Benchmark fonun kendisi portföyde olabilir.** TP2 hem benchmark hem
 kullanıcının pozisyonu; o dilim kendisiyle karşılaştırılıyor ve farkı sıfıra
@@ -77,7 +82,8 @@ sebebi yazılır.
 - Hangi fonun benchmark olduğu ekranda görünür.
 - Benchmark fonu kullanıcının portföyünde de varsa bu durum belirtilir.
 - Benchmark verisi eksikse çizgi çizilmez ve sebebi yazılır.
-- Alt paneldeki günlük yüzde barları değişmez.
+- Alt panelde her barın üstünde o günkü benchmark seviyesi işaretlenir;
+  barların kendisi değişmez.
 - Kullanıcının kendi benchmark seçimi varsa o kullanılır.
 
 ## Not

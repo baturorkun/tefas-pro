@@ -301,6 +301,8 @@ interface PerformancePoint {
   dailyPct: string | null;
   /** Aynı para benchmark fonunda dursaydı değeri. Veri yoksa null. */
   benchValue?: string | null;
+  /** Benchmark fonun o günkü getirisi (%) — alt panelin çizgisi. */
+  benchDailyPct?: string | null;
 }
 
 interface PerformanceSeries {
@@ -1037,7 +1039,7 @@ function chartPanel(
  * performansı görünmez olur. Grafik "ne kadar param var" değil, "param ne
  * kazandırdı" sorusunu cevaplar.
  */
-function performanceChart(points: PerformancePoint[]): SVGSVGElement {
+function performanceChart(points: PerformancePoint[], benchKod = ''): SVGSVGElement {
   // viewBox genişliği panelin gerçek genişliğine yakın seçilir. Bu panel tam
   // genişlikte duruyor; barChart gibi 520 verilseydi SVG üç kat ölçeklenir ve
   // 11px yazı ekranda 30px görünürdü. chart-grid içindeki grafikler iki sütuna
@@ -1080,7 +1082,12 @@ function performanceChart(points: PerformancePoint[]): SVGSVGElement {
   const yV = (v: number): number => PAD_T + ((yTop - v) / (yTop - yBot)) * H_TOP;
 
   // Bar ekseni sıfırda ortalanır: artı ve eksi günler aynı ölçekte okunmalı.
-  const pMax = Math.max(...pcts.map(Math.abs), 0.01);
+  // Benchmark günlük yüzdesi de ölçeğe girmeli: dışarıda kalırsa çizgi
+  // kutunun dışına taşar.
+  const benchPcts = points
+    .map((p) => (p.benchDailyPct == null ? null : Number(p.benchDailyPct)))
+    .filter((v): v is number => v !== null);
+  const pMax = Math.max(...pcts.map(Math.abs), ...benchPcts.map(Math.abs), 0.01);
   const barTop = PAD_T + H_TOP + GAP;
   const zeroY = barTop + H_BOT / 2;
   const yP = (v: number): number => zeroY - (v / pMax) * (H_BOT / 2);
@@ -1175,6 +1182,27 @@ function performanceChart(points: PerformancePoint[]): SVGSVGElement {
     );
   });
 
+  // Alt panelde benchmark BAR BAŞINA kısa yatay çizgi, birleşik çizgi değil.
+  //
+  // Önce polyline denendi: barların arasında zikzak yapıyor ve hangi çizgi
+  // parçasının hangi güne ait olduğu okunmuyordu. Her barın kendi üstünde
+  // duran işaret ise doğrudan karşılaştırma veriyor — bar işaretin üstündeyse
+  // o gün piyasayı yendin, altındaysa geride kaldın.
+  //
+  // Barlardan sonra çiziliyor: SVG'de sonra gelen üstte durur.
+  const isaretW = barW * 1.5;
+  points.forEach((p, i) => {
+    if (p.benchDailyPct == null) return;
+    const by = yP(Number(p.benchDailyPct));
+    const cizgi = svg('line', {
+      x1: String(x(i) - isaretW / 2), y1: String(by),
+      x2: String(x(i) + isaretW / 2), y2: String(by),
+      class: 'perf-bench-tick',
+    });
+    cizgi.append(svg('title', {}, `${p.date} · ${benchKod} ${signedText(p.benchDailyPct)}`));
+    root.append(cizgi);
+  });
+
   // ── Tarih etiketleri.
   //
   // Etiket sayısı sabit değil, yere göre: -60 derecede "09-03" yatayda ~20px
@@ -1222,7 +1250,7 @@ async function performancePanel(): Promise<HTMLElement> {
   const first = series.points[0];
   const last = series.points[series.points.length - 1];
   const meta = first && last ? `${first.date} → ${last.date}` : 'Son 30 İş Günü';
-  const body = el('div', { class: 'panel-body perf-body' }, [performanceChart(series.points)]);
+  const body = el('div', { class: 'panel-body perf-body' }, [performanceChart(series.points, series.benchCode)]);
   // Üç sayı yan yana: senin getirin, benchmark'ın getirisi ve aradaki puan
   // farkı. Yalnız fark yazılsaydı "neye göre" sorusu havada kalırdı.
   const fark = series.totalPct === null || series.benchPct === null

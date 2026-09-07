@@ -1316,6 +1316,8 @@ export interface PerformancePoint {
   dailyPct: string | null;
   /** Aynı paranın benchmark fonunda olsaydı değeri. Veri yoksa null. */
   benchValue?: string | null;
+  /** Benchmark fonun o günkü getirisi (%) — alt panelin çizgisi. */
+  benchDailyPct?: string | null;
 }
 
 export interface PerformanceSeries {
@@ -1394,6 +1396,9 @@ export function buildPerformanceSeries(
       value: adjusted.toFixed(2),
       dailyPct: i === 0 || prev === 0 ? null : ((gain / prev) * 100).toFixed(4),
       benchValue: benchVar ? benchVal.toFixed(2) : null,
+      // Alt panelin çizgisi. İlk gün null: portföyün barı da orada
+      // çizilmiyor, ikisi aynı referans gününü paylaşmalı.
+      benchDailyPct: benchVar && i > 0 ? (bench.get(row.date) ?? 0).toFixed(4) : null,
     };
   });
 

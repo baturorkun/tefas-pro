@@ -112,6 +112,20 @@ describe('yerleşim', () => {
     expect(main).toContain("fonSekme = 'daily';");
   });
 
+  it('benchmark alt panelde bar başına işaretle gösterilir', () => {
+    // Birleşik çizgi denendi ve elendi: barların arasında zikzak yapıyor,
+    // hangi parçanın hangi güne ait olduğu okunmuyordu. Bar başına işaret
+    // karşılaştırmayı aynı sütuna koyuyor.
+    expect(main).toContain("class: 'perf-bench-tick'");
+    expect(main).not.toContain('perf-bench-daily');
+    expect(css).toContain('.perf-bench-tick');
+    // Üst panelde ise tek bir çizgi; iki panel farklı soruya cevap veriyor.
+    expect(main).toContain("class: 'perf-bench'");
+    // Benchmark günlük yüzdesi bar ekseninin ölçeğine giriyor, yoksa işaret
+    // kutunun dışına taşardı.
+    expect(main).toContain('...benchPcts.map(Math.abs)');
+  });
+
   it('salt okunur pencerede alt şerit çizilmez', () => {
     // Fon detayı okunur bir pencere; tek başına duran "Kapat" düğmesi sağ
     // üstteki çarpının aynısını yapıp altta boş bir şerit kaplıyordu.
