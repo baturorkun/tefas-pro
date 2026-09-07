@@ -1955,6 +1955,12 @@ export async function fundDetail(
           ORDER BY d.trade_date DESC LIMIT 1) m ON true
       WHERE h.fund_code = $1
         AND h.as_of_date = (SELECT max(as_of_date) FROM fund_stock_holding WHERE fund_code = $1)
+        -- Ağırlığı sıfır olan satır çıkılmış pozisyon, güncel varlık değil.
+        -- Ölçüldü: son raporlardaki 125 sıfır satırın hepsinin önceki
+        -- ağırlığı pozitif; "yuvarlanmış küçük pozisyon" vakası yok.
+        -- Satır silinmiyor, weight_change "fon bundan çıktı" bilgisini
+        -- taşımaya devam ediyor.
+        AND h.weight_pct > 0
       ORDER BY h.weight_pct DESC`,
     [kod],
   );
@@ -2245,7 +2251,11 @@ export async function stockAllocation(
        JOIN son s ON s.fund_code = h.fund_code AND s.as_of_date = h.as_of_date
        JOIN deger d ON d.fund_code = h.fund_code
        LEFT JOIN dim_fund f ON f.fund_code = h.fund_code
-       LEFT JOIN fiyat p ON p.stock_code = h.stock_code`,
+       LEFT JOIN fiyat p ON p.stock_code = h.stock_code
+      -- fundDetail ile aynı kural: sıfır ağırlık çıkılmış pozisyon.
+      -- Ölçüldü — BARMA "2 fonumda · 0,00 TL" diye listeleniyordu, oysa
+      -- DOH %5,74'ten, THF %3,12'den çıkmıştı.
+      WHERE h.weight_pct > 0`,
     [userId, includeWatchlist],
   );
 
