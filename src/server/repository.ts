@@ -2119,6 +2119,10 @@ export interface StockRow {
   /** Portföy değerine oranı. */
   weightPct: string;
   funds: StockFundRow[];
+  /** Bu hisseyi tutan, kullanıcının SAHİP OLDUĞU fon sayısı. */
+  ownedFunds: number;
+  /** Bu hisseyi tutan, yalnız takip listesindeki fon sayısı. */
+  watchFunds: number;
   /** Son bir haftalık fiyat getirisi; pencere başı kapanışı yoksa null. */
   return1w: string | null;
   /** Son bir aylık fiyat getirisi; fiyat yoksa null. */
@@ -2152,18 +2156,36 @@ export interface StockAllocation {
  */
 export async function stockAllocation(
   pool: pg.Pool, userId: number,
+  /**
+   * Yalnız takip listesinden gelen hisseler de listelensin mi.
+   *
+   * Varsayılan kapalı: ekranın sorusu "hangi hisselerdeyim" ve sahip
+   * olunmayan fon o soruya cevap vermiyor. Ölçüldü — 686 hissenin 207'si
+   * yalnız takip fonlarından geliyordu ve listede 0 TL değerle duruyordu.
+   *
+   * Tamamen gizlemek de yanlış olurdu: "içinde THYAO olan fonları listele"
+   * gibi sorularda takip listesindeki fonlar da isteniyor.
+   *
+   * Anahtar yalnız satırın listelenip listelenmeyeceğini belirler. Sayımlar
+   * her iki durumda da bütün takip edilen fonlar üzerinden yapılır, çünkü
+   * "kaç fonumda, kaç tanesi takipte" sorusunun cevabı anahtardan bağımsız.
+   */
+  includeWatchlist = false,
 ): Promise<StockAllocation> {
   const r = await pool.query<{
     stock_code: string; company: string | null; sector: string | null;
     fund_code: string; title: string | null; weight_pct: string;
     prev_weight_pct: string | null; weight_change: string | null;
-    fund_value: string | null;
+    fund_value: string | null; owned: boolean;
     as_of_date: string; return_1w: string | null; return_1m: string | null;
   }>(
     `WITH son AS (
        SELECT DISTINCT ON (fund_code) fund_code, as_of_date
          FROM fund_stock_holding ORDER BY fund_code, as_of_date DESC),
      deger AS (
+       -- Takip edilen bütün fonlar. Takip listesindekilerin değer katkısı
+       -- sıfır, çünkü position_slice'ta satırları yok; kapsam ayıklaması
+       -- SQL'de değil, sayımlar hesaplandıktan sonra yapılıyor.
        SELECT t.fund_code, coalesce(sum(p.value), 0) AS value
          FROM analytics.tracked_fund t
          LEFT JOIN analytics.position_slice p
@@ -2197,6 +2219,9 @@ export async function stockAllocation(
      SELECT h.stock_code, h.company, h.sector, h.fund_code, f.title,
             h.weight_pct::text, h.prev_weight_pct::text, h.weight_change::text,
             d.value::text AS fund_value,
+            EXISTS (SELECT 1 FROM portfolio_transaction x
+                     WHERE x.user_id = $1 AND x.fund_code = h.fund_code
+                       AND x.sell_date IS NULL) AS owned,
             to_char(h.as_of_date, 'YYYY-MM-DD') AS as_of_date,
             p.return_1w, p.return_1m
        FROM fund_stock_holding h
@@ -2218,9 +2243,7 @@ export async function stockAllocation(
     company: string | null; sector: string | null; value: number;
     funds: StockFundRow[]; return1w: string | null; return1m: string | null;
   }>();
-  const tarihler = new Set<string>();
   for (const x of r.rows) {
-    tarihler.add(x.as_of_date);
     const deger = Number(x.fund_value ?? 0) * (Number(x.weight_pct) / 100);
     const b = bucket.get(x.stock_code)
       ?? {
@@ -2230,7 +2253,7 @@ export async function stockAllocation(
     b.value += deger;
     b.funds.push({
       fundCode: x.fund_code, title: x.title, weightPct: x.weight_pct,
-      value: deger.toFixed(2), owned: Number(x.fund_value ?? 0) > 0,
+      value: deger.toFixed(2), owned: x.owned,
       prevWeightPct: x.prev_weight_pct, weightChange: x.weight_change,
       asOfDate: x.as_of_date,
     });
@@ -2251,12 +2274,23 @@ export async function stockAllocation(
       weightPct: portfolioValue === 0 ? '0.0000'
         : ((b.value / portfolioValue) * 100).toFixed(4),
       funds: b.funds.sort((x, y) => Number(y.value) - Number(x.value)),
+      // İkisi ayrı sayılıyor: tek bir "N fon" sayısı portföydekiyle
+      // takiptekini topluyordu ve kullanıcı hepsine sahipmiş gibi okuyordu.
+      // Ölçüldü — DSTKF'de 7 fon yazıyordu, dördü portföyde üçü takipteydi.
+      ownedFunds: b.funds.filter((f) => f.owned).length,
+      watchFunds: b.funds.filter((f) => !f.owned).length,
       return1w: b.return1w,
       return1m: b.return1m,
     }))
+    .filter((x) => includeWatchlist || x.ownedFunds > 0)
     .sort((a, b) => Number(b.value) - Number(a.value));
 
-  const siraliTarih = [...tarihler].sort();
+  // Tarih aralığı listelenen satırları anlatmalı: kapsam daraldığında
+  // "2 Ağustos – 2 Eylül" yazmaya devam etmek, ekranda olmayan raporları
+  // sayardı.
+  const siraliTarih = [...new Set(
+    stocks.flatMap((x) => x.funds.map((f) => f.asOfDate)),
+  )].sort();
   return {
     stocks,
     classified: stocks.reduce((t, x) => t + Number(x.value), 0).toFixed(2),

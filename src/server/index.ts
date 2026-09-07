@@ -758,7 +758,11 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
       }
 
       if (path === '/api/stocks' && method === 'GET') {
-        sendJson(res, 200, await stockAllocation(pool, user.id));
+        // Varsayılan kapsam yalnız sahip olunan fonlar; anahtar açıkken
+        // takip listesi de giriyor.
+        sendJson(res, 200, await stockAllocation(
+          pool, user.id, url.searchParams.get('watchlist') === '1',
+        ));
         return;
       }
 
