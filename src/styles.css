@@ -503,6 +503,17 @@ td.dim { color: var(--muted-dim); }
 .perf-axis-x     { fill: var(--muted-dim); font-size: 11px; text-anchor: end; }
 /* Bar ucundaki günlük yüzde. Artıda barın üstünden yukarı, eksinde altından
    aşağı doğru yazılır; text-anchor bu yüzden ikisinde farklı. */
+/* Benchmark çizgisi: kesikli ve soluk. Portföy çizgisiyle aynı ağırlıkta
+   olsaydı hangisinin kendi paran olduğu bir bakışta seçilmezdi. */
+/* Başlıktaki benchmark anahtarı: grafikteki kesikli çizginin küçük hâli. */
+.perf-bench-key  { display: inline-block; width: 18px; height: 0;
+                   border-top: 2px dashed var(--muted); opacity: .75;
+                   margin-left: 4px; }
+.perf-bench      { fill: none; stroke: var(--muted); stroke-width: 2;
+                   stroke-dasharray: 6 5; opacity: .75; }
+/* Bar başına benchmark işareti: o günün TP2 seviyesi. Kesiksiz ve kısa —
+   barın üstünde durup doğrudan karşılaştırma veriyor. */
+.perf-bench-tick { stroke: var(--text-strong); stroke-width: 2; opacity: .7; }
 .perf-bar-label     { font-size: 10px; font-family: var(--mono); }
 /* İkisi de barın üstünde ve aynı yönde okunuyor; ayrım yalnız renkte. */
 .perf-bar-label-pos { fill: var(--accent-soft); text-anchor: start; }

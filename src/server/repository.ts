@@ -1314,12 +1314,22 @@ export interface PerformancePoint {
   value: string;
   /** O günün organik getirisi (%) — grafiğin barı. İlk günde null. */
   dailyPct: string | null;
+  /** Aynı paranın benchmark fonunda olsaydı değeri. Veri yoksa null. */
+  benchValue?: string | null;
+  /** Benchmark fonun o günkü getirisi (%) — alt panelin çizgisi. */
+  benchDailyPct?: string | null;
 }
 
 export interface PerformanceSeries {
   points: PerformancePoint[];
   /** Pencere boyunca toplam organik getiri (%). */
   totalPct: string | null;
+  /** Karşılaştırma fonunun kodu. */
+  benchCode: string;
+  /** Benchmark'ın aynı penceredeki getirisi (%); verisi yoksa null. */
+  benchPct: string | null;
+  /** Benchmark fonu kullanıcının kendi portföyünde de var mı. */
+  benchOwned: boolean;
 }
 
 const PERFORMANCE_DEFAULT_DAYS = 30;
@@ -1345,23 +1355,50 @@ export interface PortfolioDailyRow {
  * Hesap SQL yerine burada: pencere fonksiyonuyla yazıldığında doğrulanması
  * çalışan bir veritabanı gerektiriyordu, saf fonksiyon olarak test edilebilir.
  */
-export function buildPerformanceSeries(rows: PortfolioDailyRow[]): PerformanceSeries {
-  if (rows.length === 0) return { points: [], totalPct: null };
+export function buildPerformanceSeries(
+  rows: PortfolioDailyRow[],
+  /** Benchmark fonun günlük getirileri (%), tarihe göre. Boşsa çizgi çizilmez. */
+  bench: Map<string, number> = new Map(),
+  benchCode = '',
+  benchOwned = false,
+): PerformanceSeries {
+  const bos = { points: [], totalPct: null, benchCode, benchPct: null, benchOwned };
+  if (rows.length === 0) return bos;
 
   const first = rows[0];
-  if (!first) return { points: [], totalPct: null };
+  if (!first) return bos;
+
+  // Benchmark çizgisi portföyle AYNI noktadan başlar ve kendi günlük
+  // getirisiyle büyür. Portföy çizgisi zaten nakit akışından arındırılmış —
+  // yeni para eklemek çizgiyi yukarı zıplatmıyor, yalnız organik kazanç
+  // taşıyor. Benchmark'ı ham değerle çizmek iki çizgiyi farklı sorulara
+  // cevap verir hâle getirirdi: biri "param nasıl büyüdü", diğeri "fon ne
+  // kadar büyüdü". Aynı başlangıçtan bileşikleyince ikisi de aynı soruya
+  // cevap veriyor: "bu parayla ne olurdu".
+  //
+  // Pencerede benchmark verisi eksik bir gün varsa o gün 1 katsayıyla
+  // geçiliyor değil — seri hiç üretilmiyor. Eksik günü atlamak çizgiyi
+  // olduğundan düz gösterir ve farkı sessizce küçültürdü.
+  const eksik = rows.some((r, i) => i > 0 && !bench.has(r.date));
+  const benchVar = bench.size > 0 && !eksik;
 
   let adjusted = Number(first.value);
+  let benchVal = Number(first.value);
   const points: PerformancePoint[] = rows.map((row, i) => {
     // Pencerenin ilk günü referans noktasıdır: kendi kazancı pencereden önceki
     // güne aittir, seriye eklenmez ve barı çizilmez.
     if (i > 0) adjusted += Number(row.dailyGain ?? 0);
+    if (i > 0 && benchVar) benchVal *= 1 + (bench.get(row.date) ?? 0) / 100;
     const prev = Number(row.prevValue ?? 0);
     const gain = Number(row.dailyGain ?? 0);
     return {
       date: row.date,
       value: adjusted.toFixed(2),
       dailyPct: i === 0 || prev === 0 ? null : ((gain / prev) * 100).toFixed(4),
+      benchValue: benchVar ? benchVal.toFixed(2) : null,
+      // Alt panelin çizgisi. İlk gün null: portföyün barı da orada
+      // çizilmiyor, ikisi aynı referans gününü paylaşmalı.
+      benchDailyPct: benchVar && i > 0 ? (bench.get(row.date) ?? 0).toFixed(4) : null,
     };
   });
 
@@ -1370,6 +1407,9 @@ export function buildPerformanceSeries(rows: PortfolioDailyRow[]): PerformanceSe
   return {
     points,
     totalPct: start === 0 ? null : (((end - start) / start) * 100).toFixed(4),
+    benchCode,
+    benchPct: benchVar && start !== 0 ? (((benchVal - start) / start) * 100).toFixed(4) : null,
+    benchOwned,
   };
 }
 
@@ -1401,6 +1441,25 @@ export async function portfolioPerformance(
     [userId, limit],
   );
 
+  // Benchmark yalnız pencerenin günleri için çekiliyor; tüm geçmişi almak
+  // gereksiz. Kullanıcının kendi seçimi varsa o, yoksa genel ayar.
+  const { code } = await userBenchmark(pool, userId);
+  const b = await pool.query<{ d: string; pct: string }>(
+    `SELECT to_char(trade_date, 'YYYY-MM-DD') AS d, daily_return_pct::text AS pct
+       FROM fact_fund_daily
+      WHERE fund_code = $1 AND daily_return_pct IS NOT NULL
+        AND trade_date >= $2::date AND trade_date <= $3::date`,
+    [code, r.rows[0]?.d ?? '1970-01-01', r.rows[r.rows.length - 1]?.d ?? '1970-01-01'],
+  );
+  // Benchmark fonu kullanıcının portföyünde de olabilir; o dilim kendisiyle
+  // karşılaştırılıyor ve farkı sıfıra çekiyor. Hata değil ama söylenmezse
+  // fark olduğundan küçük görünür ve sebebi anlaşılmaz.
+  const sahip = await pool.query(
+    `SELECT 1 FROM portfolio_transaction
+      WHERE user_id = $1 AND fund_code = $2 AND sell_date IS NULL LIMIT 1`,
+    [userId, code],
+  );
+
   return buildPerformanceSeries(
     r.rows.map((row) => ({
       date: row.d,
@@ -1408,6 +1467,9 @@ export async function portfolioPerformance(
       dailyGain: row.daily_gain,
       prevValue: row.prev_value,
     })),
+    new Map(b.rows.map((row) => [row.d, Number(row.pct)])),
+    code,
+    (sahip.rowCount ?? 0) > 0,
   );
 }
 
