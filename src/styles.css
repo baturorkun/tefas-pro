@@ -728,6 +728,8 @@ textarea:focus  { outline: none; border-color: var(--accent);
 .status { font-size: .78rem; color: var(--muted-dim); }
 /* Hata durumu okunur olmalı: soluk gri bir "Kaydedilemedi" fark edilmiyordu. */
 .status-error { color: var(--danger); }
+/* Uyarı hata değil: iş yapıldı ama sonucu beklenenden farklı. */
+.status-warn  { color: var(--warn); line-height: 1.5; }
 .hint { font-size: .8rem; color: var(--muted-dim); margin: 0 0 1.25rem; }
 
 /* ─── Dar ekran ────────────────────────────────────────────────────────── */
@@ -817,7 +819,13 @@ textarea:focus  { outline: none; border-color: var(--accent);
 /* Panel başlığındaki eylemler: alış ve satış yan yana, aynı boyda. */
 .panel-actions { display: flex; gap: 8px; align-items: center; }
 /* İki grafik panelini birden yöneten ölçüt şeridi, ikisinin de üstünde. */
-.chart-grid-head  { display: flex; align-items: center; gap: 12px; margin: 0 0 .6rem; }
+/* Grafikleri yöneten her şey burada: solda sıralama ölçütü, sağda takip
+   listesi anahtarı ve renk açıklaması. Dar ekranda alt alta düşerler. */
+.chart-grid-head  { display: flex; align-items: center; justify-content: space-between;
+                    gap: 12px; flex-wrap: wrap; margin: 0 0 .6rem; }
+.chart-grid-olcut { display: flex; align-items: center; gap: 12px; }
+/* Şeridin içindeyken kendi alt boşluğunu bırakmaz. */
+.chart-grid-head .chart-toolbar { margin-bottom: 0; gap: 14px; }
 .chart-grid-label { color: var(--muted-dim); font-size: .72rem; font-weight: 600;
                     letter-spacing: .06em; text-transform: uppercase; }
 

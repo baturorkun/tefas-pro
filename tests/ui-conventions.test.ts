@@ -99,6 +99,42 @@ describe('yerleşim', () => {
     expect(main).toContain("class: 'sidebar-user'");
   });
 
+  it('grafikleri yöneten kontroller tek şeritte', () => {
+    // Takip listesi anahtarı önce "Fonlarım" başlığının da üstündeydi: aynı
+    // iki paneli yöneten iki kontrol araya bir başlık ve dört kutu girerek
+    // ayrılıyordu. Üstelik o kutular anahtardan etkilenmiyor — özet yalnız
+    // gerçek pozisyonlardan hesaplanıyor.
+    expect(main).toContain("el('div', { class: 'chart-grid-head' }, [");
+    expect(main).toContain("class: 'chart-grid-olcut'");
+    // Anahtar positionSection'a parametre olarak giriyor; dashboard gövdesinde
+    // ayrı bir satır olarak kalmamalı.
+    expect(main).toMatch(/positionSection\([^)]*\n\s*watchlistToggle/);
+    expect(css).toContain('.chart-grid-head .chart-toolbar');
+  });
+
+  it('fiyatı açıklanmamış alımlar için tutar uydurulmaz', () => {
+    // İleri tarihli alımın fiyatı yok, maliyeti de bilinmiyor. "0 TL" ya da
+    // adet × son fiyat yazmak olmayan bir rakam uydurmak olurdu; söylenebilen
+    // kaç alım, hangi fonlar ve hangi tarihten itibaren.
+    const repo = readFileSync(new URL('../src/server/repository.ts', import.meta.url), 'utf8');
+    const fn = exportGovdesi(repo, 'export async function pendingPurchases');
+    expect(fn).toContain('array_agg(DISTINCT t.fund_code');
+    expect(fn).not.toMatch(/sum\([^)]*units[^)]*\)/);
+    expect(fn).toContain('t.trade_date > son.d');
+    // Uyarı hem Panel'de hem Portföyüm'de.
+    expect([...main.matchAll(/bekleyenAlimNotu\(bekleyen\)/g)].length).toBe(2);
+  });
+
+  it('portföyde görünmeyen takip kaydı sessiz kalmaz', () => {
+    // Açık pozisyonu olan fon takip listesine eklenince uç 201 dönüyor, satır
+    // yazılıyor ama liste göstermiyor (analytics.watchlist_visible). Gizleme
+    // doğru; eksik olan haberdi.
+    const index = readFileSync(new URL('../src/server/index.ts', import.meta.url), 'utf8');
+    expect(index).toContain('sendJson(res, 201, { fundCode, hidden:');
+    expect(main).toContain("if (r.hidden === true)");
+    expect(main).toContain('sattığında listene dönecek');
+  });
+
   it('ölçüt sekmeleri iki paneli birden yönetir', () => {
     // Sekme önce yalnız soldaki panelin içindeydi: sağdaki panel de ölçütle
     // değişiyordu ama kendi kontrolü olmadığı için neye göre sıralandığı

@@ -2526,6 +2526,56 @@ export async function fundValor(
   return { buy: row.buy_valor_days ?? 0, sell: row.sell_valor_days ?? 0 };
 }
 
+/**
+ * Son veri gününden SONRAYA tarihli alımlar.
+ *
+ * TEFAS'ta bugün verilen emir ertesi iş gününün fiyatından işlem görüyor, o
+ * yüzden ileri tarihli alım normal bir durum. Ama değerleme `alım tarihi →
+ * son veri günü` aralığında yapılıyor; alım tarihi son veri gününden sonraysa
+ * aralık boş kalıyor ve satır portföy görünümlerinden sessizce düşüyor.
+ *
+ * Bu fonksiyon o satırları SAYIYOR, değerlemeye sokmuyor. Fiyatı olmayan bir
+ * pozisyona bugünkü değer atamak uydurma bir rakam üretirdi; doğrusu
+ * "portföyde neden yok" sorusunun cevabını verebilmek.
+ */
+export interface BekleyenAlim {
+  count: number;
+  /** Fon kodları, tekrarsız ve sıralı. */
+  funds: string[];
+  firstDate: string | null;
+  dataDate: string | null;
+}
+
+export async function pendingPurchases(
+  pool: pg.Pool, userId: number,
+): Promise<BekleyenAlim> {
+  // Tutar YOK ve bilinçli: ileri tarihli alımın fiyatı henüz açıklanmadığı
+  // için maliyeti de hesaplanamıyor. "0 TL" ya da adet × son fiyat yazmak
+  // olmayan bir rakam uydurmak olurdu. Söylenebilecek olan kaç alım, hangi
+  // fonlar ve hangi tarihten itibaren.
+  const r = await pool.query<{
+    n: string; funds: string[] | null; first_date: string | null; data_date: string | null;
+  }>(
+    `WITH son AS (
+       SELECT max(trade_date) AS d FROM fact_fund_daily WHERE daily_return_pct IS NOT NULL)
+     SELECT count(*)::text AS n,
+            array_agg(DISTINCT t.fund_code ORDER BY t.fund_code) AS funds,
+            to_char(min(t.trade_date), 'YYYY-MM-DD') AS first_date,
+            to_char((SELECT d FROM son), 'YYYY-MM-DD') AS data_date
+       FROM portfolio_transaction t
+       CROSS JOIN son
+      WHERE t.user_id = $1 AND t.sell_date IS NULL AND t.trade_date > son.d`,
+    [userId],
+  );
+  const x = r.rows[0];
+  return {
+    count: Number(x?.n ?? 0),
+    funds: x?.funds ?? [],
+    firstDate: x?.first_date ?? null,
+    dataDate: x?.data_date ?? null,
+  };
+}
+
 /* ── Asistan konuşmaları ───────────────────────────────────────────────── */
 
 export interface KonusmaOzet {
