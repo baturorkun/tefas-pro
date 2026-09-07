@@ -727,16 +727,19 @@ textarea:focus  { outline: none; border-color: var(--accent);
 .pencere-kutu   { display: flex; align-items: flex-end; gap: 14px;
                   padding: 10px 16px 12px; border: 1px solid var(--line-soft);
                   border-radius: var(--radius); background: var(--bg-raised); }
-.pencere-cubuk  { position: relative; flex: 1; padding-top: 18px; }
+.pencere-cubuk  { position: relative; flex: 1; padding-top: 22px; }
 /* Ölçek çubuğun ÜSTÜNDE, duraklarla aynı hizada: konum i/(n-1) oranında,
    çünkü range başparmağı da orada duruyor. Eşit sütunlu ızgara etiketleri
    yarım durak kaydırırdı. */
-.pencere-olcek  { position: absolute; inset: 0 0 auto 0; height: 16px; }
+.pencere-olcek  { position: absolute; inset: 0 0 auto 0; height: 18px; }
+/* Etiketler okunur olmalı: 10px ve --muted-dim ile "1g" ile "1h" birbirine
+   karışıyordu. Daha büyük punto ve daha açık renk. */
 .pencere-durak  { position: absolute; top: 0; transform: translateX(-50%);
-                  padding: 0 3px; border: 0; background: transparent;
-                  color: var(--muted-dim); font: inherit; font-size: 10px;
-                  font-family: var(--mono); cursor: pointer; line-height: 1; }
-.pencere-durak:hover   { color: var(--text); }
+                  padding: 0 4px; border: 0; background: transparent;
+                  color: var(--muted); font: inherit; font-size: 12px;
+                  font-weight: 600; font-family: var(--mono);
+                  letter-spacing: .02em; cursor: pointer; line-height: 1; }
+.pencere-durak:hover   { color: var(--text-strong); }
 .pencere-durak-on      { color: var(--accent); font-weight: 700; }
 /* Kalın çubuk: ince çizgide durakların nereye denk geldiği okunmuyordu.
    Yalnız height vermek yetmiyor — native range'in izi ayrıca biçimlenmeli,
