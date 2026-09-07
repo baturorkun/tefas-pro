@@ -2526,6 +2526,56 @@ export async function fundValor(
   return { buy: row.buy_valor_days ?? 0, sell: row.sell_valor_days ?? 0 };
 }
 
+/**
+ * Bir fonun son N gününü gün gün: fonun getirisi ve kullanıcının kazancı.
+ *
+ * İKİ SÜTUN İKİ FARKLI ŞEY. `fundPct` fonun kendi günlük hareketi — kimin ne
+ * zaman aldığından bağımsız, herkes için aynı. `gain` kullanıcının o günkü
+ * pozisyonundan geliyor ve nakit akışından arındırılmış.
+ *
+ * Kullanıcının fonda olmadığı günlerde `gain` NULL kalıyor, sıfır değil:
+ * sıfır "o gün hiç kazanmadım" demek, oysa doğrusu "o gün fonda değildim".
+ * Aynı ayrım Panel'de karıştırılmıştı (RQ-0043) ve kullanıcıya kazanmadığı
+ * parayı kazanmış gibi göstermişti.
+ */
+export interface FundDayRow {
+  date: string;
+  /** Fonun o günkü getirisi (%). */
+  fundPct: string | null;
+  /** Kullanıcının o günkü kâr/zararı (TL); fonda değilse null. */
+  gain: string | null;
+  /** Kullanıcının o günkü pozisyon değeri (TL); fonda değilse null. */
+  value: string | null;
+}
+
+export async function fundDaily(
+  pool: pg.Pool, userId: number, fundCode: string, days = 30,
+): Promise<FundDayRow[]> {
+  const limit = Math.min(Math.max(Math.trunc(days) || 30, 1), 365);
+  const r = await pool.query<{
+    d: string; fund_pct: string | null; gain: string | null; value: string | null;
+  }>(
+    // Fiyat serisi solda: kullanıcı fonda olmasa da fonun o günkü hareketi
+    // görünsün. Sağdan birleşseydi liste yalnız pozisyon günlerini gösterir
+    // ve "fon o gün ne yaptı" sorusu cevapsız kalırdı.
+    `SELECT to_char(f.trade_date, 'YYYY-MM-DD') AS d,
+            f.daily_return_pct::text AS fund_pct,
+            u.daily_gain::text AS gain,
+            u.value::text AS value
+       FROM fact_fund_daily f
+       LEFT JOIN analytics.fund_daily u
+              ON u.fund_code = f.fund_code AND u.trade_date = f.trade_date
+             AND u.user_id = $2
+      WHERE f.fund_code = $1 AND f.daily_return_pct IS NOT NULL
+      ORDER BY f.trade_date DESC
+      LIMIT $3`,
+    [fundCode, userId, limit],
+  );
+  return r.rows.map((x) => ({
+    date: x.d, fundPct: x.fund_pct, gain: x.gain, value: x.value,
+  }));
+}
+
 /* ── Sistem fon listesi ─────────────────────────────────────────────────── */
 
 export interface SystemFundRow {

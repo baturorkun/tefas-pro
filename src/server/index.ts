@@ -61,6 +61,7 @@ import {
   changeOwnPassword,
   fifoBlocker,
   findSessionUser,
+  fundDaily,
   konusmaAc,
   konusmaMesajlari,
   konusmaSil,
@@ -723,6 +724,21 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
           sendJson(res, done ? 200 : 404, done ? { ok: true } : { error: 'Konuşma bulunamadı.' });
           return;
         }
+      }
+
+      // Fon detayının günlük sekmesi. days sınırı repository'de.
+      const fundDailyCode = matchPath('/api/funds/:code/daily', path);
+      if (fundDailyCode !== null && method === 'GET') {
+        const raw = url.searchParams.get('days');
+        const gun = raw === null ? undefined : Number(raw);
+        if (raw !== null && !Number.isFinite(gun)) {
+          sendJson(res, 400, { error: 'days sayı olmalı' });
+          return;
+        }
+        sendJson(res, 200, await fundDaily(
+          pool, user.id, decodeURIComponent(fundDailyCode).toUpperCase(), gun,
+        ));
+        return;
       }
 
       if (path === '/api/stocks' && method === 'GET') {
