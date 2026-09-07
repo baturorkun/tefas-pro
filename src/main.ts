@@ -1141,9 +1141,12 @@ function performanceChart(points: PerformancePoint[]): SVGSVGElement {
         x: String(lx), y: String(ly),
         class: `perf-bar-label ${v >= 0 ? 'perf-bar-label-pos' : 'perf-bar-label-neg'}`,
         transform: `rotate(-60 ${String(lx)} ${String(ly)})`,
-      }, `${v > 0 ? '+' : ''}${v.toLocaleString('tr-TR', {
+      // İşaret yok: yön zaten barın kendisinde. Yukarı ve yeşilse artı,
+      // aşağı ve kırmızıysa eksi — işareti ayrıca yazmak aynı bilgiyi ikinci
+      // kez söylemek ve etiketi uzatmak olurdu.
+      }, Math.abs(v).toLocaleString('tr-TR', {
         minimumFractionDigits: 2, maximumFractionDigits: 2,
-      })}`),
+      })),
     );
   });
 
