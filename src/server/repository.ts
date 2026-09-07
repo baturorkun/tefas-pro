@@ -806,6 +806,27 @@ export interface RankEntry {
   owned: boolean;
   /** Yalnız pozisyon sıralamasında dolu: o fondaki kâr/zarar, TL. */
   gain?: string | null;
+  /**
+   * KULLANICININ son bir aylık getirisi (%), yalnız elde tuttuğu günlerden.
+   * `returnPct` alımdan beri, bu ise son bir ay — ikisi de kullanıcının
+   * kendi sayısı, farkları yalnız pencere.
+   */
+  return1m?: string | null;
+  /** Kullanıcının son üç aylık getirisi (%); pencereyi doldurmayan fonda elde
+   * tutulan süre kadar. */
+  return3m?: string | null;
+  /**
+   * Fonun kendi son bir aylık getirisi (%). Sıralamaya GİRMEZ; yalnız
+   * bağlam: fon ne kadar yükselmiş, kullanıcı bunun ne kadarını yakalamış.
+   */
+  fundReturn1m?: string | null;
+  /**
+   * Kullanıcının alımdan beri getirisi (%). Aylık sıralamada `returnPct`
+   * fonun sayısıyla değiştiriliyor; kullanıcının kendi kazancı bu alanda
+   * korunuyor. İkisi çok ayrılabiliyor: fon bir ayda %35,23 yükselirken
+   * dokuz günlük sahiplikten gelen kazanç %2,96.
+   */
+  ownPct?: string | null;
   /** Yalnız akış sıralamasında dolu: pencere net akışı, TL. */
   flow?: string | null;
   /** Yalnız yatırımcı sıralamasında dolu: pencere değişimi, kişi. */
@@ -927,8 +948,21 @@ export interface DashboardData {
   watchlistRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
   positions: {
     summary: PositionSummary | null;
+    /** Alımdan beri toplam getiriye göre. */
     top: RankEntry[];
     bottom: RankEntry[];
+    /**
+     * Fonun kendi son bir aylık getirisine göre. Ayrı alan, çünkü sıralama
+     * ve ilk N kesme SUNUCUDA yapılmalı: istemci alımdan beriye göre kesilmiş
+     * onluyu yeniden sıralasaydı, o listeye girememiş bir fon aylık getiride
+     * birinci olsa bile hiç görünmezdi. Ölçüldü — DOH %35,23 ile aylık
+     * birinciyken toplamda 11. olduğu için listeden düşüyordu.
+     */
+    top1m: RankEntry[];
+    bottom1m: RankEntry[];
+    /** Son üç ay; pencereyi doldurmayan fonda elde tutulan süre kadar. */
+    top3m: RankEntry[];
+    bottom3m: RankEntry[];
   };
   /** Para akışı: `returnPct` oranı (%), `flow` TL tutarını taşır. */
   flowRanks: Record<string, { top: RankEntry[]; bottom: RankEntry[] }>;
@@ -947,7 +981,7 @@ export async function dashboard(
   userId: number,
   onlyOwned = false,
 ): Promise<DashboardData> {
-  const [counts, lastRun, wl, pos, posSum, flow, inv] = await Promise.all([
+  const [counts, lastRun, wl, pos, posSum, own1m, flow, inv] = await Promise.all([
     pool.query<{
       watchlist: string; tracked_funds: string; open_positions: string;
       open_lots: string; watchlist_sold: string; data_date: string | null;
@@ -1008,11 +1042,17 @@ export async function dashboard(
     // açıkken. Kapalıyken satır hiç gelmez, sıralama yeniden hesaplanır.
     pool.query<{
       fund_code: string; title: string | null; simulated: boolean;
-      days: string; return_pct: string; gain: string | null;
+      days: string; return_pct: string; gain: string | null; return_1m: string | null;
     }>(
-      `SELECT fund_code, title, simulated, days::text, return_pct::text, gain::text
-       FROM analytics.position_return
-       WHERE user_id = $1 AND is_open AND (NOT simulated OR NOT $2::boolean)`,
+      // return_1m fonun KENDİ son bir aylık getirisi: kimin ne zaman aldığından
+      // bağımsız. Alımdan beri getiri süreyle kirli — sekiz aydır elde tutulan
+      // bir fon dokuz günlükten doğal olarak daha çok birikmiş oluyor ve panel
+      // bunu karşılaştırma gibi gösteriyordu.
+      `SELECT p.fund_code, p.title, p.simulated, p.days::text,
+              p.return_pct::text, p.gain::text, r.return_1m::text
+       FROM analytics.position_return p
+       LEFT JOIN analytics.fund_returns r USING (fund_code)
+       WHERE p.user_id = $1 AND p.is_open AND (NOT p.simulated OR NOT $2::boolean)`,
       [userId, onlyOwned],
     ),
     // Özet yalnız gerçek pozisyonlardan; simülasyonun TL tutarı yok.
@@ -1032,6 +1072,55 @@ export async function dashboard(
               count(*) FILTER (WHERE is_open AND return_pct < 0)::text AS losers
        FROM analytics.position_return
        WHERE user_id = $1 AND NOT simulated`,
+      [userId],
+    ),
+    // Kullanıcının KENDİ son bir aylık getirisi, fon başına.
+    //
+    // Fonun kendi aylık getirisi burada yanlış olurdu: kullanıcı o ayın
+    // tamamında fonda olmayabiliyor. Ölçüldü — DOH son ayda %35,23 yükselmiş
+    // ama pozisyon dokuz günlük ve kazanç %2,96; on iki kat fark. Panelin
+    // başlığı "kazandıran fonlarım" olduğu için fonun sayısını göstermek
+    // kullanıcıya kazanmadığı parayı kazanmış gibi gösteriyordu.
+    //
+    // Hesap lot bazında: her lot yalnız ELDE TUTULDUĞU günlerin getirisini
+    // zincirliyor (pencere başı ile alım tarihinin geç olanından başlayarak),
+    // sonra fon düzeyinde pencere başı değerine göre ağırlıklanıyor. Tek
+    // lotlu fonlarda sonuç fonun getirisine eşit çıkıyor; pencere içinde alım
+    // yapılmışsa ayrışıyor — TLY'de 26 ve 18 günlük lotlar yüzünden %16,84
+    // ile %17,67 farkı buradan geliyor.
+    //
+    // NAV geçmişi saklanmadığı için fiyat değil günlük getiri zincirleniyor;
+    // analytics.fund_returns da aynı yöntemi kullanıyor.
+    pool.query<{ fund_code: string; gun: number; own_pct: string | null }>(
+      // Pencereler tek sorguda: iki ayrı çağrı aynı lot listesini iki kez
+      // kurardı ve biri değişince diğerini güncellemeyi unutmak kolay olurdu.
+      //
+      // Pencereyi doldurmamış fon kendiliğinden elde tutulan güne düşüyor:
+      // `greatest(pencere başı, alım tarihi)` başlangıcı geç olana çekiyor.
+      // Dokuz günlük bir pozisyonun "son 3 ayı" o dokuz gün oluyor.
+      `WITH son AS (
+         SELECT max(trade_date) AS d FROM fact_fund_daily
+          WHERE daily_return_pct IS NOT NULL),
+       pencere AS (SELECT gun FROM (VALUES (30), (90)) AS v(gun)),
+       lot AS (
+         SELECT s.transaction_id, s.fund_code, s.value, t.trade_date
+           FROM analytics.position_slice s
+           JOIN portfolio_transaction t ON t.id = s.transaction_id
+          WHERE s.user_id = $1 AND s.is_open),
+       lot_carpan AS (
+         SELECT p.gun, l.transaction_id, l.fund_code, l.value,
+                exp(sum(ln(greatest(1 + d.daily_return_pct / 100, 1e-9)))) AS carpan
+           FROM lot l
+          CROSS JOIN pencere p
+          CROSS JOIN son s
+           JOIN fact_fund_daily d ON d.fund_code = l.fund_code
+          WHERE d.daily_return_pct IS NOT NULL
+            AND d.trade_date > greatest(s.d - p.gun, l.trade_date)
+            AND d.trade_date <= s.d
+          GROUP BY p.gun, l.transaction_id, l.fund_code, l.value)
+       SELECT fund_code, gun,
+              round((sum(value) / nullif(sum(value / carpan), 0) - 1) * 100, 4)::text AS own_pct
+         FROM lot_carpan GROUP BY fund_code, gun`,
       [userId],
     ),
     // Para akışı. Sıralama oranla yapıldığı için pencere başı büyüklüğü
@@ -1099,6 +1188,13 @@ export async function dashboard(
     };
   };
 
+  // İki ölçüt de gönderiliyor; sıralamayı arayüz seçiyor. Sunucuda tek ölçüte
+  // karar verilseydi sekme her tıklamada yeni bir istek atardı, oysa ikisi de
+  // aynı satırdan geliyor.
+  const kendiGetiri = (gun: number): Map<string, string | null> =>
+    new Map(own1m.rows.filter((r) => Number(r.gun) === gun).map((r) => [r.fund_code, r.own_pct]));
+  const own1mMap = kendiGetiri(30);
+  const own3mMap = kendiGetiri(90);
   const positionRows = pos.rows
     .map((r): RankEntry => ({
       fundCode: r.fund_code,
@@ -1107,11 +1203,30 @@ export async function dashboard(
       days: Number(r.days),
       owned: !r.simulated,
       gain: r.gain,
+      // Sıralamaya giren SENİN getirin; fonunki yalnız bağlam olarak taşınıyor.
+      return1m: own1mMap.get(r.fund_code) ?? null,
+      return3m: own3mMap.get(r.fund_code) ?? null,
+      fundReturn1m: r.return_1m,
+      ownPct: r.return_pct,
     }))
     .sort((a, b) => Number(b.returnPct) - Number(a.returnPct));
   // Kayıp listesi gerçekten kaybettirenleri gösterir; alttan N almak
   // hepsi artıdayken paneli pozitif değerlerle doldurup başlığı yalanlardı.
   const positionLosers = positionRows.filter((r) => Number(r.returnPct) < 0);
+
+  // Aylık sıralama aynı satırlardan, ama kendi ölçütüyle baştan diziliyor.
+  // `returnPct` alanına aylık getiri yazılıyor: grafik ve yüzde hep o alanı
+  // okuyor, ikinci bir yol açmak birini güncelleyip diğerini unutmaya davet.
+  // Aylık getirisi olmayan fon düşer — sıfır saymak "hiç hareket etmedi"
+  // demek olurdu, oysa doğrusu "ölçülemedi".
+  const pencereye = (alan: 'return1m' | 'return3m'): RankEntry[] => positionRows
+    .filter((r) => r[alan] != null)
+    .map((r): RankEntry => ({ ...r, returnPct: r[alan] as string }))
+    .sort((a, b) => Number(b.returnPct) - Number(a.returnPct));
+  const monthRows = pencereye('return1m');
+  const monthLosers = monthRows.filter((r) => Number(r.returnPct) < 0);
+  const quarterRows = pencereye('return3m');
+  const quarterLosers = quarterRows.filter((r) => Number(r.returnPct) < 0);
   const ps = posSum.rows[0];
 
   const byFlow = (win: '1w' | '1m'): { top: RankEntry[]; bottom: RankEntry[] } => {
@@ -1180,6 +1295,10 @@ export async function dashboard(
             },
       top: positionRows.slice(0, RANK_LIMIT),
       bottom: positionLosers.slice(-RANK_LIMIT).reverse(),
+      top1m: monthRows.filter((r) => Number(r.returnPct) > 0).slice(0, RANK_LIMIT),
+      bottom1m: monthLosers.slice(-RANK_LIMIT).reverse(),
+      top3m: quarterRows.filter((r) => Number(r.returnPct) > 0).slice(0, RANK_LIMIT),
+      bottom3m: quarterLosers.slice(-RANK_LIMIT).reverse(),
     },
     flowRanks: { '1w': byFlow('1w'), '1m': byFlow('1m') },
     investorRanks: { '1w': byInvestor('1w'), '1m': byInvestor('1m') },

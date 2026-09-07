@@ -816,6 +816,10 @@ textarea:focus  { outline: none; border-color: var(--accent);
 
 /* Panel başlığındaki eylemler: alış ve satış yan yana, aynı boyda. */
 .panel-actions { display: flex; gap: 8px; align-items: center; }
+/* İki grafik panelini birden yöneten ölçüt şeridi, ikisinin de üstünde. */
+.chart-grid-head  { display: flex; align-items: center; gap: 12px; margin: 0 0 .6rem; }
+.chart-grid-label { color: var(--muted-dim); font-size: .72rem; font-weight: 600;
+                    letter-spacing: .06em; text-transform: uppercase; }
 
 /* Negatif ağırlık: fon repo ile borçlanmış. Çubuk sıfır genişlikte kalır,
    renk durumu söyler — boş bir hücre "veri yok" gibi okunurdu. */

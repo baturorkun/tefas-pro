@@ -141,6 +141,35 @@ awk '/export async function islemSayimi/,/^}/' "${R}" \
   | grep -qE '\$\{filtre\.' && fail "filtre değeri sorguya gömülüyor"
 printf 'PASS: serbest SQL yok; boyut ve ölçü sabit, filtre parametreli\n'
 
+# Getiri karşılaştırmasında süre söylenmeli. Alımdan beri toplam getiri
+# fonları karşılaştırmıyor: uzun süredir elde tutulan fon doğal olarak daha
+# çok birikmiş oluyor. Ölçüldü — TLY 118 günde %72,09 ile toplamda birinci,
+# fonun son 1 ayı %17,67 ve o pencerede DOH %35,23 ile önde.
+grep -q "GETİRİ KARŞILAŞTIRIRKEN süreyi söyle" "${A}" || fail "süre kuralı yok"
+grep -q "return1m/return3m" "${A}" || fail "aynı-pencere getirisi anlatılmıyor"
+awk "/name: 'fon_listesi'/,/parameters/" "${A}" | grep -q "İKİ FARKLI GETİRİ" \
+  || fail "tool açıklaması iki getiriyi ayırmıyor"
+# Yıllıklandırma yasak: 9 günlük %4, yıllığa çevrilince %397 çıkıyor.
+grep -q "yıllığa ÇEVİRME" "${A}" || fail "yıllıklandırma yasağı yok"
+grep -qiE "annualiz|yıllıklandır\(" "${PROJECT_ROOT}/src/server/repository.ts" \
+  && fail "sunucuda yıllıklandırma var"
+grep -qE "365(\.0)? */" "${PROJECT_ROOT}/src/main.ts" && fail "arayüzde yıllıklandırma var"
+# Fonun getirisi ile kullanıcının kazancı karıştırılmamalı. Ölçüldü: DOH son
+# ayda %35,23 yükselmiş ama kullanıcı fonu 9 gündür tutuyor ve kazancı %2,96 —
+# on iki kat fark. Karıştırılırsa kullanıcı kazanmadığı parayı kazanmış sanır.
+grep -q "KULLANICININ kazancı DEĞİL" "${A}" || fail "fon getirisi/kullanıcı kazancı ayrımı yok"
+printf 'PASS: getiri karşılaştırmasında süre söyleniyor, yıllıklandırma yok\n'
+
+# Tavsiye sorusunda reddedip kesmemeli: reddin kendisi doğru, ama veriye
+# bakmadan reddetmek söylenebilecek her şeyi de birlikte atıyor. Ölçüldü —
+# "100 bin TL gelecek, ne alayım" sorusunda hiçbir tool çağrılmıyordu.
+grep -q "REDDEDİP KESME" "${A}" || fail "tavsiye sorusunda veriye bakma kuralı yok"
+grep -q "İZİN İSTEME" "${A}" || fail "izin isteme yasağı yok"
+grep -q "Kararı" "${A}" || fail "kararı kullanıcıya bırakma yönergesi yok"
+# Tavsiye ve öngörü yine yasak; yumuşak öngörü de öngörüdür.
+grep -q "Performansını sürdürebilir" "${A}" || fail "yumuşak öngörü yasağı yok"
+printf 'PASS: tavsiye sorusunda veriye bakılıyor ama tavsiye verilmiyor\n'
+
 # Kopan bağlantı akış üzerinden yakalanmalı. `req` "close" olayını isteğin
 # tamamlanmasında veriyor: gövde okunduktan sonra bağlanan dinleyici olayı
 # hiç görmez. Ölçüldü — sekme kapandıktan sonra döngü sonuna kadar koşup
