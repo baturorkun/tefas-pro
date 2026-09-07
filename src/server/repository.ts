@@ -1688,7 +1688,12 @@ export async function closedPositions(
             realized_pct::text AS "realizedPct"
      FROM analytics.closed_position
      WHERE user_id = $1
-     ORDER BY sell_date DESC, realized_gain DESC`,
+     -- Alış tarihine göre yeniden eskiye. Satış tarihi sıralaması aynı fonun
+     -- bacaklarını giriş sırasının tersine diziyordu: önce alınan sonra
+     -- satılabiliyor ve liste pozisyonun nasıl kurulduğunu anlatmıyordu.
+     -- İkincil anahtar satış tarihi; aynı gün alınan iki bacak arasında
+     -- rastgele bir sıra kalmasın.
+     ORDER BY buy_date DESC, sell_date DESC, realized_gain DESC`,
     [userId],
   );
   return r.rows as ClosedPositionRow[];

@@ -940,6 +940,11 @@ textarea:focus  { outline: none; border-color: var(--accent);
 /* Bölüm sekmeleri panel başlığındakilerden daha iri: ekranın ana gezinmesi
    bunlar. Alt çizgi şeridi sekmelerin panellere ait olmadığını, sayfayı
    böldüğünü gösteriyor. */
+/* Tıklanabilir satır: fon satırı işlem listesini o fonla açıyor. İmleç ve
+   vurgu olmadan tıklanabilir olduğu görünmüyordu. */
+.row-link { cursor: pointer; }
+.row-link:hover td { background: var(--row-hover, rgba(255, 255, 255, .04)); }
+
 .section-tabs { display: flex; gap: 4px; margin: 20px 0 14px;
                 border-bottom: 1px solid var(--line); }
 .section-tabs .tab-btn { font-size: .9rem; padding: 9px 16px; }

@@ -53,8 +53,23 @@ belli değil.
 
 ## Sıralama ve kapsam
 
-Fon listesi K/Z'ye göre azalan sıralanır: yukarıdan aşağı okuyunca önce ne
-kazandırdığı, sonra ne kaybettirdiği görünür.
+Fon listesi portföye giren tutara göre azalan sıralanır: listenin başında en
+çok para bağlanan fon durur. K/Z'ye göre sıralamak küçük ama şanslı bir
+pozisyonu başa taşıyordu; ölçekle sıralayınca satırın ağırlığı da okunuyor.
+
+İşlem listesi alış tarihine göre yeniden eskiye sıralanır. Satış tarihi
+sıralaması aynı fonun bacaklarını giriş sırasının tersine diziyordu — önce
+alınan sonra satılabiliyor ve liste pozisyonun nasıl kurulduğunu
+anlatmıyordu.
+
+## Filtre ve fon satırından geçiş
+
+Fon satırındaki "7 işlem" bir soru soruyor ama cevabı verecek yol yok:
+kullanıcı işlem sekmesine geçip 53 satır içinde o fonu aramak zorunda.
+
+Fon satırına tıklamak işlem sekmesini o fonla süzülmüş açar. İşlem
+listesinde ayrıca fon ve banka filtresi durur — Fon Hareketleri'ndeki
+desenin aynısı, aynı `comboFilter` bileşeni ve aynı AND kuralı.
 
 Fon satırı yalnız **kapanmış** bacakları toplar. Bir fon satılıp yeniden
 alınmış olabilir — DFI 7 Eylül'de kapandı, 8 Eylül'de yeniden alındı — ve
@@ -69,8 +84,11 @@ sekmesinde zaten duruyor.
 - Kapananlar ekranı fon ve işlem olmak üzere iki sekme gösterir.
 - Fon sekmesi her fon için satır sayısı, alış, satış, K/Z ve K/Z % verir.
 - Fon satırı yalnız kapanmış bacakları toplar; açık pozisyon karışmaz.
-- Fon listesi K/Z'ye göre azalan sıralanır.
+- Fon listesi portföye giren tutara göre azalan sıralanır.
+- İşlem listesi alış tarihine göre yeniden eskiye sıralanır.
+- İşlem listesinde fon ve banka filtresi vardır; ikisi AND ile birleşir.
+- Fon satırına tıklamak işlem sekmesini o fonla süzülmüş açar.
+- Filtreliyken başlık kaç kaydın kaçının görüldüğünü yazar.
 - Varsayılan sekme fon; seçim sayfa yenilendiğinde korunur.
-- İşlem sekmesi bugünkü tabloyla aynı kalır, sıralaması dahil.
 - Sekme değiştirmek `/api/closed`'a yeni istek atmaz.
 - Fon toplamları işlem tablosunun toplam satırıyla birebir tutar.

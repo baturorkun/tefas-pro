@@ -1431,6 +1431,15 @@ const MARKET_SEKME_KEY = 'tefas.market.section';
 type KapananSekme = 'fund' | 'tx';
 const KAPANAN_SEKME_KEY = 'tefas.closed.section';
 
+/**
+ * Kapananlar işlem listesinin filtresi.
+ *
+ * Modül düzeyinde: fon sekmesinden bir fona tıklayınca işlem sekmesi o fonla
+ * açılıyor ve sekme değişimi seçimi silmemeli. Fon Hareketleri'ndeki
+ * `txFiltre` ile aynı gerekçe.
+ */
+const kapananFiltre = { fundCode: '', platform: '' };
+
 function readKapananSekme(): KapananSekme {
   try {
     return localStorage.getItem(KAPANAN_SEKME_KEY) === 'tx' ? 'tx' : 'fund';
@@ -4234,22 +4243,6 @@ async function closedView(): Promise<Node[]> {
   const num = (v: string, digits = 0): string =>
     Number(v).toLocaleString('tr-TR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
-  const body = rows.map((r) => el('tr', {}, [
-    el('td', {}, [
-      el('span', { class: 'fund-code' }, [r.fundCode]),
-      el('span', { class: 'fund-title' }, [r.title ?? '']),
-    ]),
-    el('td', {}, [r.platform]),
-    el('td', { class: 'num' }, [r.buyDate]),
-    el('td', { class: 'num' }, [r.sellDate]),
-    el('td', { class: 'num' }, [`${String(r.heldDays)}g`]),
-    el('td', { class: 'num' }, [num(r.units)]),
-    el('td', { class: 'num' }, [num(r.buyValue)]),
-    el('td', { class: 'num' }, [num(r.sellValue)]),
-    el('td', {}, [signed(r.realizedGain, ' ₺')]),
-    el('td', {}, [signed(r.realizedPct, '')]),
-  ]));
-
   // Fon kırılımı: aynı fonun bacakları listede yan yana değil, çünkü tablo
   // satış tarihine göre sıralı. Ölçüldü — 53 satır 19 fona dağılıyor,
   // VPS'in -126.585 TL'si yedi satıra bölünmüş ve hiçbir yerde toplanmıyor.
@@ -4266,21 +4259,32 @@ async function closedView(): Promise<Node[]> {
     f.sell += Number(r.sellValue);
     fonlar.set(r.fundCode, f);
   }
-  // K/Z'ye göre azalan: yukarıdan aşağı okuyunca önce ne kazandırdığı,
-  // sonra ne kaybettirdiği görünür.
-  const fonListe = [...fonlar.values()].sort((a, b) => (b.sell - b.buy) - (a.sell - a.buy));
+  // Portföye giren tutara göre azalan: listenin başında en çok para bağlanan
+  // fon durur. K/Z'ye göre sıralamak küçük ama şanslı bir pozisyonu başa
+  // taşıyordu; ölçekle sıralayınca satırın ağırlığı da okunuyor.
+  const fonListe = [...fonlar.values()].sort((a, b) => b.buy - a.buy);
 
-  const fonBody = fonListe.map((f) => el('tr', {}, [
-    el('td', {}, [
-      el('span', { class: 'fund-code' }, [f.fundCode]),
-      el('span', { class: 'fund-title' }, [f.title ?? '']),
-    ]),
-    el('td', { class: 'num dim' }, [`${String(f.adet)} işlem`]),
-    el('td', { class: 'num' }, [num(String(f.buy))]),
-    el('td', { class: 'num' }, [num(String(f.sell))]),
-    el('td', {}, [signed(String(f.sell - f.buy), ' ₺')]),
-    el('td', {}, [signed(f.buy === 0 ? null : String((f.sell / f.buy - 1) * 100), '')]),
-  ]));
+  // Fon satırına tıklamak işlem sekmesini o fonla açar: "7 işlem" yazan
+  // hücrenin cevabı orada ve elle filtre seçmeye gerek kalmıyor.
+  const fonBody = fonListe.map((f) => {
+    const tr = el('tr', { class: 'row-link', title: `${f.fundCode} işlemlerini göster` }, [
+      el('td', {}, [
+        el('span', { class: 'fund-code' }, [f.fundCode]),
+        el('span', { class: 'fund-title' }, [f.title ?? '']),
+      ]),
+      el('td', { class: 'num dim' }, [`${String(f.adet)} işlem`]),
+      el('td', { class: 'num' }, [num(String(f.buy))]),
+      el('td', { class: 'num' }, [num(String(f.sell))]),
+      el('td', {}, [signed(String(f.sell - f.buy), ' ₺')]),
+      el('td', {}, [signed(f.buy === 0 ? null : String((f.sell / f.buy - 1) * 100), '')]),
+    ]);
+    tr.addEventListener('click', () => {
+      kapananFiltre.fundCode = f.fundCode;
+      kapananFiltre.platform = '';
+      sec('tx');
+    });
+    return tr;
+  });
 
   const fonFoot = el('tr', { class: 'total-row' }, [
     el('td', {}, [`TOPLAM (${String(fonListe.length)})`]),
@@ -4291,18 +4295,82 @@ async function closedView(): Promise<Node[]> {
     el('td', {}, [signed(buy === 0 ? null : String((sell / buy - 1) * 100), '')]),
   ]);
 
-  const foot = el('tr', { class: 'total-row' }, [
-    el('td', {}, [`TOPLAM (${String(rows.length)})`]),
-    el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []),
-    el('td', { class: 'num' }, [num(String(buy))]),
-    el('td', { class: 'num' }, [num(String(sell))]),
-    el('td', {}, [signed(String(gain), ' ₺')]),
-    el('td', {}, [signed(buy === 0 ? null : String((sell / buy - 1) * 100), '')]),
-  ]);
+  // Filtre seçenekleri kapanan işlemlerden: hiç kapanmamış bir fonu listede
+  // göstermenin anlamı yok.
+  const fonSecenekleri = [...new Map(rows.map((r) => [r.fundCode, r.title])).entries()]
+    .sort((a, b) => a[0].localeCompare(b[0], 'tr'));
+  const bankaSecenekleri = [...new Set(rows.map((r) => r.platform))]
+    .sort((a, b) => a.localeCompare(b, 'tr'));
 
   const govde = el('div', { class: 'panel-body' }, []);
   const meta = el('span', { class: 'header-meta' }, []);
   const dugmeler = new Map<KapananSekme, HTMLElement>();
+
+  const islemTablosu = (): HTMLElement => {
+    // İki filtre AND ile birleşir; tek başlarına da çalışırlar. Fon
+    // Hareketleri'ndeki kuralın aynısı.
+    const gorunen = rows.filter((r) =>
+      (kapananFiltre.fundCode === '' || r.fundCode === kapananFiltre.fundCode)
+      && (kapananFiltre.platform === '' || r.platform === kapananFiltre.platform));
+    const gBuy = gorunen.reduce((a, r) => a + Number(r.buyValue), 0);
+    const gSell = gorunen.reduce((a, r) => a + Number(r.sellValue), 0);
+
+    const fonFiltre = comboFilter({
+      label: 'Tümü',
+      options: fonSecenekleri.map(([kod, ad]) => ({
+        value: kod, label: kod, hint: ad ?? undefined,
+      })),
+      value: kapananFiltre.fundCode,
+      onChange: (v) => { kapananFiltre.fundCode = v; ciz('tx'); },
+    });
+    const bankaFiltre = comboFilter({
+      label: 'Tümü',
+      options: bankaSecenekleri.map((b) => ({ value: b, label: b })),
+      value: kapananFiltre.platform,
+      onChange: (v) => { kapananFiltre.platform = v; ciz('tx'); },
+    });
+
+    const body = gorunen.map((r) => el('tr', {}, [
+      el('td', {}, [
+        el('span', { class: 'fund-code' }, [r.fundCode]),
+        el('span', { class: 'fund-title' }, [r.title ?? '']),
+      ]),
+      el('td', {}, [r.platform]),
+      el('td', { class: 'num' }, [r.buyDate]),
+      el('td', { class: 'num' }, [r.sellDate]),
+      el('td', { class: 'num' }, [`${String(r.heldDays)}g`]),
+      el('td', { class: 'num' }, [num(r.units)]),
+      el('td', { class: 'num' }, [num(r.buyValue)]),
+      el('td', { class: 'num' }, [num(r.sellValue)]),
+      el('td', {}, [signed(r.realizedGain, ' ₺')]),
+      el('td', {}, [signed(r.realizedPct, '')]),
+    ]));
+
+    const foot = el('tr', { class: 'total-row' }, [
+      el('td', {}, [`TOPLAM (${String(gorunen.length)})`]),
+      el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []),
+      el('td', { class: 'num' }, [num(String(gBuy))]),
+      el('td', { class: 'num' }, [num(String(gSell))]),
+      el('td', {}, [signed(String(gSell - gBuy), ' ₺')]),
+      el('td', {}, [signed(gBuy === 0 ? null : String((gSell / gBuy - 1) * 100), '')]),
+    ]);
+
+    // Sonuç boşken de tablo çizilir: filtreler başlık satırında duruyor,
+    // tabloyu kaldırmak seçimi geri almanın yolunu da kaldırırdı.
+    return table(
+      ['Fon', 'Banka', 'Alış', 'Satış', 'Süre', 'Adet', 'Alış ₺', 'Satış ₺', 'K/Z', 'K/Z %'],
+      gorunen.length === 0
+        ? [el('tr', {}, [el('td', { colspan: '10' }, [
+            el('div', { class: 'empty-state' }, [
+              'Bu filtreye uyan kapanmış işlem yok. Filtreyi temizleyin.',
+            ]),
+          ])])]
+        : [...body, foot],
+      // Filtreler süzdükleri sütunun altında; diğer hücreler boş.
+      [fonFiltre, bankaFiltre, null, null, null, null, null, null, null, null],
+    );
+  };
+
   const ciz = (id: KapananSekme): void => {
     if (rows.length === 0) {
       govde.replaceChildren(
@@ -4310,15 +4378,24 @@ async function closedView(): Promise<Node[]> {
       meta.textContent = 'Henüz kapanmış pozisyon yok';
       return;
     }
-    govde.replaceChildren(id === 'fund'
-      ? table(['Fon', 'İşlem', 'Alış ₺', 'Satış ₺', 'K/Z', 'K/Z %'],
-        [...fonBody, fonFoot])
-      : table(['Fon', 'Banka', 'Alış', 'Satış', 'Süre', 'Adet', 'Alış ₺', 'Satış ₺',
-        'K/Z', 'K/Z %'], [...body, foot]));
-    meta.textContent = id === 'fund'
-      ? `${String(fonListe.length)} fon · en çok kazandıran üstte`
-      : `${String(rows.length)} işlem · en son satılan üstte`;
+    if (id === 'fund') {
+      govde.replaceChildren(table(
+        ['Fon', 'İşlem', 'Alış ₺', 'Satış ₺', 'K/Z', 'K/Z %'], [...fonBody, fonFoot]));
+      meta.textContent = `${String(fonListe.length)} fon · en çok yatırılandan başlar`;
+      return;
+    }
+    govde.replaceChildren(islemTablosu());
+    const suzulu = kapananFiltre.fundCode !== '' || kapananFiltre.platform !== '';
+    const kac = rows.filter((r) =>
+      (kapananFiltre.fundCode === '' || r.fundCode === kapananFiltre.fundCode)
+      && (kapananFiltre.platform === '' || r.platform === kapananFiltre.platform)).length;
+    // Filtreliyken payda da yazılır: "7 işlem" tek başına listenin tamamı mı
+    // yoksa süzülmüş hali mi belli etmiyor.
+    meta.textContent = (suzulu
+      ? `${String(kac)} / ${String(rows.length)} işlem`
+      : `${String(rows.length)} işlem`) + ' · en son alınan üstte';
   };
+
   const sec = (id: KapananSekme): void => {
     // Yeniden istek yok: iki kırılım da aynı /api/closed yanıtından
     // hesaplanıyor, veri elde.
@@ -4326,6 +4403,7 @@ async function closedView(): Promise<Node[]> {
     for (const [k, d] of dugmeler) d.classList.toggle('tab-on', k === id);
     ciz(id);
   };
+
   const sekmeler = el('div', { class: 'tabs' },
     ([['fund', 'Fon', fonListe.length], ['tx', 'İşlem', rows.length]] as const)
       .map(([id, etiket, sayi]) => {

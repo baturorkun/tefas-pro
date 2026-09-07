@@ -27,10 +27,28 @@ awk '/const fonFoot = /,/\]\);/' <<<"${CV}" | grep -q "signed(String(gain)" \
 printf 'PASS: fon toplamı işlem toplamıyla aynı kaynaktan\n'
 
 # K/Z'ye göre azalan: yukarıdan aşağı okuyunca önce kazandıran görünür.
-grep -q "sort((a, b) => (b.sell - b.buy) - (a.sell - a.buy))" <<<"${CV}" \
-  || fail "fon listesi K/Z'ye göre sıralı değil"
+grep -q "sort((a, b) => b.buy - a.buy)" <<<"${CV}" \
+  || fail "fon listesi portföye giren tutara göre sıralı değil"
+
+# Fon satırı işlem sekmesini o fonla açar: "7 işlem" yazan hücrenin cevabı
+# orada ve elle filtre seçmeye gerek kalmıyor.
+grep -q "class: 'row-link'" <<<"${CV}" || fail "fon satırı tıklanabilir değil"
+awk '/tr.addEventListener/,/});/' <<<"${CV}" | grep -q "kapananFiltre.fundCode = f.fundCode" \
+  || fail "fon satırı işlem filtresini kurmuyor"
+awk '/tr.addEventListener/,/});/' <<<"${CV}" | grep -q "sec('tx')" \
+  || fail "fon satırı işlem sekmesine geçmiyor"
+
+# Filtre satırı Fon Hareketleri'ndeki desenle aynı; iki filtre AND ile birleşir.
+grep -q "comboFilter({" <<<"${CV}" || fail "işlem listesinde filtre yok"
+grep -q "kapananFiltre.platform === '' || r.platform === kapananFiltre.platform" <<<"${CV}" \
+  || fail "banka filtresi uygulanmıyor"
+
+# İşlem listesi alış tarihine göre. Satış sıralaması aynı fonun bacaklarını
+# giriş sırasının tersine diziyordu.
+awk '/FROM analytics.closed_position/,/\[userId\]/' "${PROJECT_ROOT}/src/server/repository.ts" \
+  | grep -q "ORDER BY buy_date DESC" || fail "kapanan liste alış tarihine göre sıralı değil"
 # Varsayılan sekme fon; 53 satırlık liste bir ekrana sığmıyor.
 awk '/function readKapananSekme/,/^}/' "${M}" | grep -q "=== 'tx' ? 'tx' : 'fund'" \
   || fail "varsayılan sekme fon değil"
 grep -q "KAPANAN_SEKME_KEY = 'tefas.closed.section'" "${M}" || fail "seçim saklanmıyor"
-printf 'PASS: fon listesi K/Z sıralı, varsayılan sekme fon ve seçim saklanıyor\n'
+printf 'PASS: fon satırı işlem sekmesini süzüyor, sıralamalar ve varsayılan sekme yerinde\n'
