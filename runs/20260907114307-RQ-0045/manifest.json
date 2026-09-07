@@ -13,25 +13,35 @@
       }
     ]
   },
-  "status": "running",
+  "status": "approved",
   "createdAt": "2026-09-07T11:43:07.857Z",
-  "updatedAt": "2026-09-07T11:43:17.852Z",
+  "updatedAt": "2026-09-07T12:10:11.916Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-09-07T11:43:17.852Z"
+      "status": "passed",
+      "startedAt": "2026-09-07T11:43:17.852Z",
+      "finishedAt": "2026-09-07T12:09:57.706Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "db/migrations/039_system_fund.sql",
+    "requirements/RQ-0045-sistem-fon-listesi-toplama-kapsami-kullanicidan-bagimsiz.md",
+    "src/main.ts",
+    "src/server/index.ts",
+    "src/server/repository.ts",
+    "tests/ui-conventions.test.ts"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
-  }
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-09-07T12:10:11.917Z",
+  "approvedBy": "Batur Orkun"
 }
