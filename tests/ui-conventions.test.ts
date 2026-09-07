@@ -99,6 +99,20 @@ describe('yerleşim', () => {
     expect(main).toContain("class: 'sidebar-user'");
   });
 
+  it('fon ekleyen her uç veriyi de tetikler', () => {
+    // Alış ekleme ucu fonu tanıtıp takibe alıyor ama toplamayı
+    // tetiklemiyordu: yeni fon bir sonraki zamanlanmış koşuma kadar fiyatsız
+    // kalıyordu ve ekranda maliyet görünüp değer/getiri hesaplanamıyordu.
+    const index = readFileSync(new URL('../src/server/index.ts', import.meta.url), 'utf8');
+    for (const uc of ["path === '/api/transactions' && method === 'POST'",
+      "path === '/api/watchlist' && method === 'POST'"]) {
+      const bas = index.indexOf(uc);
+      expect(bas, `uç bulunamadı: ${uc}`).toBeGreaterThan(-1);
+      const govde = index.slice(bas, bas + 1400);
+      expect(govde, `${uc} toplamayı tetiklemiyor`).toContain('triggerFundCollection(');
+    }
+  });
+
   it('liste yönetimi Ayarlar\'dan ayrı ekranlarda', () => {
     // Ayarlar tek değerli ayarların yeri (benchmark, tatil takvimi); banka ve
     // sistem fonu ise ekle/çıkar listesi. Üçü tek ekranda toplanınca sayfa

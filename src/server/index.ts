@@ -749,6 +749,12 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         const input = readTransactionInput(asRecord(await readJson(req)));
         await ensureFundKnown(pool, client, input.fundCode);
         await trackFundForUser(pool, user.id, input.fundCode);
+        // Takip listesine ekleme bunu yapıyordu, alış ekleme yapmıyordu:
+        // fon tanıtılıp takibe alınıyor ama verisi çekilmiyordu. Ölçüldü —
+        // 07:38'de zamanlanmış koşum bitti, 11:46'da PPS alışı girildi ve fon
+        // ertesi güne kadar fiyatsız kaldı; ekranda maliyet vardı, değer ve
+        // getiri hesaplanamıyordu.
+        triggerFundCollection(pool, client, input.fundCode);
         sendJson(res, 201, await createTransaction(pool, user.id, input));
         return;
       }
