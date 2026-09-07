@@ -13,25 +13,36 @@
       }
     ]
   },
-  "status": "running",
+  "status": "approved",
   "createdAt": "2026-09-07T17:03:42.977Z",
-  "updatedAt": "2026-09-07T17:03:54.866Z",
+  "updatedAt": "2026-09-07T17:25:57.954Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-09-07T17:03:54.866Z"
+      "status": "passed",
+      "startedAt": "2026-09-07T17:03:54.866Z",
+      "finishedAt": "2026-09-07T17:25:40.547Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "requirements/RQ-0049-piyasa-sol-ve-sag-pencereler-kaydiriciyla-seciliyor.md",
+    "src/main.ts",
+    "src/server/index.ts",
+    "src/server/repository.ts",
+    "src/styles.css",
+    "tests/market-window.test.ts",
+    "tests/ui-conventions.test.ts"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
-  }
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-09-07T17:25:57.955Z",
+  "approvedBy": "Batur Orkun"
 }
