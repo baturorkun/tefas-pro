@@ -201,6 +201,8 @@ interface StockRow {
   value: string;
   weightPct: string;
   funds: StockFundRow[];
+  ownedFunds: number;
+  watchFunds: number;
   return1w: string | null;
   return1m: string | null;
 }
@@ -1401,6 +1403,24 @@ function pencereKaydirici(
   return el('div', { class: 'pencere-kutu' }, [
     el('div', { class: 'pencere-cubuk' }, [olcek, input]),
   ]);
+}
+
+const HISSE_TAKIP_KEY = 'tefas.stocks.watchlist';
+
+function readHisseTakip(): boolean {
+  try {
+    return localStorage.getItem(HISSE_TAKIP_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeHisseTakip(value: boolean): void {
+  try {
+    localStorage.setItem(HISSE_TAKIP_KEY, value ? '1' : '0');
+  } catch {
+    // Saklanamıyorsa görünüm yine doğru, yalnız yenilemede varsayılana döner.
+  }
 }
 
 function readOnlyOwned(): boolean {
@@ -3481,7 +3501,10 @@ let gotoView: (v: ViewId) => void = () => {};
 const reloadStocks = (): void => { stocksReload(); };
 
 async function stocksView(): Promise<Node[]> {
-  const d = (await api('/api/stocks')) as StockAllocation;
+  const takipDahil = readHisseTakip();
+  const d = (await api(
+    `/api/stocks${takipDahil ? '?watchlist=1' : ''}`,
+  )) as StockAllocation;
   const toplam = Number(d.portfolioValue);
 
   // Tarih aralığı: fonlar portföylerini farklı günlerde açıklıyor. Tek tarih
@@ -3521,6 +3544,23 @@ async function stocksView(): Promise<Node[]> {
     ? d.stocks
     : d.stocks.filter((x) =>
       aramaAnahtari(`${x.stockCode} ${x.company ?? ''} ${x.sector ?? ''}`).includes(anahtar));
+
+  // Panel ve Piyasa'daki anahtarın aynısı; aynı işi yapan şey aynı görünmeli.
+  const takipGirdi = el('input', {
+    type: 'checkbox', id: 'toggle-stock-watchlist',
+  }) as HTMLInputElement;
+  takipGirdi.checked = takipDahil;
+  takipGirdi.addEventListener('change', () => {
+    writeHisseTakip(takipGirdi.checked);
+    void reloadStocks();
+  });
+  const takipAnahtari = el('label', {
+    class: 'switch-field switch-inline', for: 'toggle-stock-watchlist',
+  }, [
+    takipGirdi,
+    el('span', { class: 'switch-track' }, []),
+    el('span', {}, ['Takip listem de gösterilsin']),
+  ]);
 
   const arama = el('input', {
     class: 'combo-search', placeholder: 'Hisse ara…', spellcheck: 'false',
@@ -3571,7 +3611,14 @@ async function stocksView(): Promise<Node[]> {
           el('span', { class: 'num' }, [pct(Number(x.weightPct), 2)]),
           bar(x.weightPct),
         ]),
-        el('td', { class: 'num dim' }, [`${String(x.funds.length)} fon`]),
+        // İki sayı ayrı: tek "N fon" portföydekiyle takiptekini topluyordu ve
+        // kullanıcı hepsine sahipmiş gibi okuyordu.
+        el('td', { class: 'num dim' }, [
+          `${String(x.ownedFunds)} fonumda`,
+          ...(x.watchFunds === 0 ? [] : [
+            el('span', { class: 'dim' }, [` · ${String(x.watchFunds)} takipte`]),
+          ]),
+        ]),
         el('td', {}, [signed(x.return1w, '%')]),
         el('td', {}, [signed(x.return1m, '%')]),
         // Açma düğmesi: satırın kendisi de tıklanabilir ama bunu kimse tahmin
@@ -3692,6 +3739,11 @@ async function stocksView(): Promise<Node[]> {
           sekme('stock', 'Hisse', d.stocks.length),
           sekme('sector', 'Sektör', sektorListesi.length),
         ]),
+        // Varsayılan kapalı: ekranın sorusu "hangi hisselerdeyim" ve sahip
+        // olunmayan fon o soruya cevap vermiyor. Ölçüldü — 686 hissenin
+        // 207'si yalnız takip fonlarından geliyor ve 0 TL değerle duruyordu.
+        // Tamamen gizlemek de yanlış olurdu, anahtar geri getiriyor.
+        takipAnahtari,
         ...(hisseSekme === 'stock' ? [arama] : []),
       ]),
     ),
