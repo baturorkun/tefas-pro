@@ -1133,9 +1133,11 @@ function performanceChart(points: PerformancePoint[]): SVGSVGElement {
     // % işareti yok: eksenin iki ucunda zaten "+x,x%" yazıyor ve otuz kez
     // tekrarlamak etiketleri uzatmaktan başka bir şey yapmıyor.
     const lx = x(i);
-    // Etiket barın DIŞINDA: artıda üstünde, eksinde altında. İçine yazılsaydı
-    // kısa barlarda taşar, uzun barlarda dolgunun üstünde okunmazdı.
-    const ly = v >= 0 ? y - 6 : y + 6;
+    // Etiket her zaman barın ÜST kenarının üstünde — eksi günlerde de. Eksi
+    // bar sıfırın altına iniyor, üst kenarı sıfır çizgisi; etiket oraya
+    // yazılıyor. Barın altına konsaydı etiketler iki farklı yönde okunur ve
+    // göz her sütunda yön değiştirmek zorunda kalırdı.
+    const ly = (v >= 0 ? y : zeroY) - 6;
     root.append(
       svg('text', {
         x: String(lx), y: String(ly),

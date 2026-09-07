@@ -504,8 +504,9 @@ td.dim { color: var(--muted-dim); }
 /* Bar ucundaki günlük yüzde. Artıda barın üstünden yukarı, eksinde altından
    aşağı doğru yazılır; text-anchor bu yüzden ikisinde farklı. */
 .perf-bar-label     { font-size: 10px; font-family: var(--mono); }
+/* İkisi de barın üstünde ve aynı yönde okunuyor; ayrım yalnız renkte. */
 .perf-bar-label-pos { fill: var(--accent-soft); text-anchor: start; }
-.perf-bar-label-neg { fill: var(--danger); text-anchor: end; }
+.perf-bar-label-neg { fill: var(--danger); text-anchor: start; }
 .perf-body       { padding-top: 0; }
 /* Toolbar panel gövdesinin dışında duruyor; yatay boşluğu kendisi vermeli,
    yoksa dönem getirisi panelin sağ kenarına yapışır. */
