@@ -171,6 +171,11 @@ body {
   display: grid; gap: 14px; margin-bottom: 1.5rem;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
+/* Beşli sıra: bekleyen işlem kutusu çıktığında dörtlü ızgarada tek başına
+   ikinci sıraya düşüyordu. */
+.metric-grid-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1200px) { .metric-grid-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
 .metric-card {
   padding: 1rem 1.1rem;
   background: var(--bg-raised);
@@ -956,6 +961,26 @@ textarea:focus  { outline: none; border-color: var(--accent);
 /* Bölüm sekmeleri panel başlığındakilerden daha iri: ekranın ana gezinmesi
    bunlar. Alt çizgi şeridi sekmelerin panellere ait olmadığını, sayfayı
    böldüğünü gösteriyor. */
+/* Bekleyen işlem işareti fon kodunun solunda: satırın rakamlarının o işlemi
+   saymadığını, okumaya başlamadan önce söylemeli. Alım "+" satış "−" ve
+   renkleri de ayrı — ikisinin anlamı farklı. */
+.pending-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.15rem; height: 1.15rem; margin-right: .4rem; padding: 0;
+  border: 1px solid var(--line); border-radius: 4px; background: transparent;
+  font: inherit; font-size: .8rem; line-height: 1; cursor: pointer;
+  vertical-align: middle;
+}
+.pending-alim  { color: var(--accent); }
+.pending-satis { color: var(--danger); }
+.pending-mark:hover { border-color: currentColor; }
+/* Yalnız bekleyen alımı olan fonun satırı: para hücreleri boş olduğu için
+   satır soluk, ama listede duruyor. */
+.pending-row td { color: var(--muted); }
+.pending-note { margin: 0 0 .9rem; padding: .6rem .8rem; font-size: .84rem;
+                color: var(--muted); background: var(--bg-raised);
+                border: 1px solid var(--line-soft); border-radius: 6px; }
+
 /* Fon satırı işlemlerini pencerede açar; satırın tamamı tıklanabilir ve
    sondaki ikon bunu görünür kılıyor. */
 .fund-row { cursor: pointer; }

@@ -2959,12 +2959,30 @@ export async function removeSystemFund(pool: pg.Pool, fundCode: string): Promise
  * pozisyona bugünkü değer atamak uydurma bir rakam üretirdi; doğrusu
  * "portföyde neden yok" sorusunun cevabını verebilmek.
  */
+export interface BekleyenIslemSatiri {
+  fundCode: string;
+  title: string | null;
+  /** Alımda işlem tarihi, satışta satış tarihi. */
+  date: string;
+  platform: string;
+  units: string;
+}
+
 export interface BekleyenAlim {
   count: number;
   /** Fon kodları, tekrarsız ve sıralı. */
   funds: string[];
   firstDate: string | null;
   dataDate: string | null;
+  /** Alım kırılımı: Portföyüm satırlarını işaretlemek için gerekiyor. */
+  rows: BekleyenIslemSatiri[];
+  /**
+   * Bekleyen satışlar. Alımdan farkı var: satışı bekleyen pozisyon hâlâ
+   * açık, adedi ve değeri gerçek — yalnız çıkış ileri tarihli. Alımda ise
+   * fiyat açıklanmadığı için ortada hesaplanabilir bir rakam yok.
+   */
+  sellCount: number;
+  sells: BekleyenIslemSatiri[];
 }
 
 export async function pendingPurchases(
@@ -2989,11 +3007,44 @@ export async function pendingPurchases(
     [userId],
   );
   const x = r.rows[0];
+
+  // Kırılım ayrı sorgu: özet satırı count/array_agg ile geliyor, işlem
+  // listesini oraya sığdırmak sorguyu okunmaz hale getirirdi.
+  const d = await pool.query<BekleyenIslemSatiri>(
+    `WITH son AS (
+       SELECT max(trade_date) AS d FROM fact_fund_daily WHERE daily_return_pct IS NOT NULL)
+     SELECT t.fund_code AS "fundCode", f.title,
+            to_char(t.trade_date, 'YYYY-MM-DD') AS "date",
+            t.platform, t.units::text
+       FROM portfolio_transaction t
+       CROSS JOIN son
+       LEFT JOIN dim_fund f ON f.fund_code = t.fund_code
+      WHERE t.user_id = $1 AND t.sell_date IS NULL AND t.trade_date > son.d
+      ORDER BY t.trade_date, t.fund_code`,
+    [userId],
+  );
+
+  // Bekleyen satış son veri gününe değil BUGÜNE göre: satış tarihi gelene
+  // kadar pozisyon açık ve position_slice de aynı kuralı kullanıyor.
+  const sat = await pool.query<BekleyenIslemSatiri>(
+    `SELECT t.fund_code AS "fundCode", f.title,
+            to_char(t.sell_date, 'YYYY-MM-DD') AS "date",
+            t.platform, t.units::text
+       FROM portfolio_transaction t
+       LEFT JOIN dim_fund f ON f.fund_code = t.fund_code
+      WHERE t.user_id = $1 AND t.sell_date > current_date
+      ORDER BY t.sell_date, t.fund_code`,
+    [userId],
+  );
+
   return {
     count: Number(x?.n ?? 0),
     funds: x?.funds ?? [],
     firstDate: x?.first_date ?? null,
     dataDate: x?.data_date ?? null,
+    rows: d.rows,
+    sellCount: sat.rows.length,
+    sells: sat.rows,
   };
 }
 
