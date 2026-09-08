@@ -505,6 +505,26 @@ export async function fifoBlocker(
   return row === undefined ? null : { tradeDate: row.trade_date, units: row.units };
 }
 
+export interface FonSecenegi {
+  fundCode: string;
+  title: string | null;
+}
+
+/**
+ * İşlem formunun fon listesi.
+ *
+ * Yalnız tanınan fonlar: seçilen fonun valörü ve fiyatı olmalı, yoksa alış
+ * tarihi hesaplanamıyor ve kayıt sessizce eksik kalıyor. Ölçüldü —
+ * dim_fund'taki 69 fonun 69'unun da verisi var, çünkü fon sisteme hangi
+ * yoldan girerse girsin toplama tetikleniyor.
+ */
+export async function fundOptions(pool: pg.Pool): Promise<FonSecenegi[]> {
+  const r = await pool.query<FonSecenegi>(
+    `SELECT fund_code AS "fundCode", title FROM dim_fund ORDER BY fund_code`,
+  );
+  return r.rows;
+}
+
 export interface TransactionInput {
   fundCode: string;
   platform: string;

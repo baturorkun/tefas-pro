@@ -2865,8 +2865,11 @@ function transactionForm(
   body: HTMLElement;
   submit: HTMLButtonElement;
 } {
+  // Fon serbest metin değil: yazılan kod hiçbir listeden geçmiyordu ve
+  // sistemde olmayan bir fonda valör de fiyat da gelmiyor, form sessizce
+  // eksik kalıyordu. Değer gizli girdide taşınıyor; seçici onu yazıyor.
   const f = {
-    fundCode: el('input', { required: 'true', placeholder: 'THF', maxlength: '16' }),
+    fundCode: el('input', { type: 'hidden', required: 'true' }),
     units: el('input', { type: 'number', step: 'any', min: '0', placeholder: '1000' }),
     // Adet bilinmiyorsa tutar: TEFAS'ta emir tutarla veriliyor ve kaç pay
     // alındığı fiyat açıklanınca belli oluyor. İkisinden biri yeterli.
@@ -2903,6 +2906,50 @@ function transactionForm(
   // Banka listesi tanımlardan gelir; alan serbest metin değil. Liste boşsa
   // kullanıcı hiçbir işlem kaydedemez, bu yüzden sessiz boş bir açılır liste
   // yerine nereye gitmesi gerektiğini söyleyen bir uyarı gösterilir.
+  // Seçici, arama yapılan diğer alanlarla aynı bileşen: kullanıcı bu
+  // etkileşimi Fon Hareketleri filtresinden biliyor.
+  const fonHint = el('div', { class: 'field-hint' }, ['Yükleniyor…']);
+  const fonSarmal = el('div', { class: 'combo-field' }, []);
+  const fonAlani = el('div', { class: 'field' }, [
+    el('label', {}, ['Fon']), fonSarmal, fonHint,
+  ]);
+  let fonlar: { fundCode: string; title: string | null }[] = [];
+
+  const fonSeciciCiz = (): void => {
+    fonSarmal.replaceChildren(comboFilter({
+      label: 'Fon seç',
+      options: fonlar.map((x) => ({
+        value: x.fundCode, label: x.fundCode, hint: x.title ?? undefined,
+      })),
+      value: f.fundCode.value,
+      // Zorunlu alanda temizleme düğmesi ölü olur: boş bir değere dönülemiyor.
+      clearable: false,
+      onChange: (v) => {
+        f.fundCode.value = v;
+        fonSeciciCiz();
+        // Valör fona bağlı; seçim değişince yeniden yükleniyor.
+        loadSettlement();
+      },
+    }));
+  };
+
+  void (async () => {
+    try {
+      fonlar = (await api('/api/funds')) as { fundCode: string; title: string | null }[];
+      // Düzenlenen kayıt listede yoksa yine de gösterilir: aksi hâlde
+      // kullanıcı kendi kaydını düzenleyemez hâle gelirdi.
+      if (existing !== null && !fonlar.some((x) => x.fundCode === existing.fundCode)) {
+        fonlar = [{ fundCode: existing.fundCode, title: existing.fundTitle }, ...fonlar];
+      }
+      fonHint.textContent = 'Kod ya da ada göre ara. Listede yoksa önce '
+        + 'Takip Listem\'den ekle; verisi çekilince burada çıkar.';
+      fonSeciciCiz();
+    } catch {
+      fonHint.textContent = 'Fon listesi alınamadı.';
+      fonHint.classList.add('field-warn');
+    }
+  })();
+
   const bankHint = el('div', { class: 'field-hint' }, ['Yükleniyor…']);
   void (async () => {
     try {
@@ -2934,6 +2981,28 @@ function transactionForm(
   // kullanıcı tarihleri elle girer.
   let holidayList: string[] = [];
   let valor: { buy: number; sell: number } | null = null;
+  /**
+   * Emir tarihi girilmiş ama karşılığı boşsa hesabı tamamlar.
+   *
+   * Yalnız BOŞ alanı doldurur: kullanıcı tarihi elle değiştirmişse üstüne
+   * yazmak, girdiğini sessizce ezmek olurdu.
+   */
+  const valorTamamla = (): void => {
+    if (valor === null) return;
+    for (const [emir, sonuc, gun] of [
+      [f.buyOrderDate, f.tradeDate, valor.buy],
+      [f.sellOrderDate, f.sellDate, valor.sell],
+    ] as const) {
+      const iso = tarihOku(emir);
+      if (iso === '' || sonuc.value.trim() !== '') continue;
+      try {
+        tarihYaz(sonuc, settlementFromOrder(iso, gun, holidayList));
+      } catch {
+        // Hesaplanamıyorsa elle girilir.
+      }
+    }
+  };
+
   const loadSettlement = (): void => {
     const code = f.fundCode.value.trim().toUpperCase();
     void (async () => {
@@ -2946,6 +3015,10 @@ function transactionForm(
         holidayList = r.holidays;
         valor = r.valor;
         hintValor();
+        // Valör fon koduyla birlikte geliyor ama tarih ondan önce girilmiş
+        // olabilir: kullanıcı önce tarihi, sonra fonu yazınca hesap hiç
+        // koşmuyordu ve alan boş kalıyordu. Sıra kullanıcının işi değil.
+        valorTamamla();
       } catch {
         valor = null;
       }
@@ -2966,7 +3039,6 @@ function transactionForm(
   sadeceSayi(f.units);
   linkValorDates(f.buyOrderDate, f.tradeDate, () => valor?.buy ?? null, () => holidayList);
   linkValorDates(f.sellOrderDate, f.sellDate, () => valor?.sell ?? null, () => holidayList);
-  f.fundCode.addEventListener('change', loadSettlement);
   loadSettlement();
 
   const status = el('span', { class: 'status' });
@@ -3024,7 +3096,7 @@ function transactionForm(
         + 'kayıt adet girilene kadar pasif bekler ve hiçbir hesaba katılmaz.',
       ]),
     ]),
-    field('Fon Kodu', f.fundCode, 'TEFAS kodu, üç harf.'),
+    fonAlani,
     adetAlani,
     tutarAlani,
     el('div', { class: 'form-section' }, [el('span', {}, ['Alış']), buyValorNote]),

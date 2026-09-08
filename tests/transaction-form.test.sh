@@ -52,3 +52,18 @@ grep -q "'Banka seçin'" "${M}" || fail "boş banka seçeneği yok"
 grep -q "banks\[0\]?.name" "${M}" && fail "ilk banka hâlâ kendiliğinden seçiliyor"
 grep -q "SON_BANKA_KEY = 'tefas.tx.platform'" "${M}" || fail "son banka hatırlanmıyor"
 printf 'PASS: banka boş geliyor, sonra en son kullanılan\n'
+
+# Valör hesabı fon kodu ile tarih hangi sırayla girilirse girilsin koşmalı.
+# Valör fon koduyla birlikte geliyor; tarih ondan önce girilmişse hesap hiç
+# koşmuyordu ve alan boş kalıyordu. Sıra kullanıcının işi değil.
+grep -Fq "valorTamamla();" "${M}" || fail "valör hesabı fon geldikten sonra tamamlanmıyor"
+# Yalnız BOŞ alanı doldurmalı: kullanıcının elle girdiği tarihi ezmek,
+# girdiğini sessizce değiştirmek olurdu.
+grep -Fq "if (iso === '' || sonuc.value.trim() !== '') continue;" "${M}" \
+  || fail "elle girilmiş tarih üzerine yazılıyor"
+# Valör fon başına: alış çoğunlukla T+1 ama para piyasası fonlarında T+0
+# (PNU, PRY, TP2). Sabit +1 tam da en büyük pozisyonlarda yanlış olurdu.
+grep -Fq "valor?.buy ?? null" "${M}" || fail "alış valörü fondan gelmiyor"
+grep -Fq "valor?.sell ?? null" "${M}" || fail "satış valörü fondan gelmiyor"
+printf 'PASS: valör hesabı sıradan bağımsız, elle gireni ezmiyor, fon başına\n'
+
