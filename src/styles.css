@@ -977,6 +977,11 @@ textarea:focus  { outline: none; border-color: var(--accent);
 /* Yalnız bekleyen alımı olan fonun satırı: para hücreleri boş olduğu için
    satır soluk, ama listede duruyor. */
 .pending-row td { color: var(--muted); }
+/* "tahmini" etiketi maliyetin durduğu yerde: rakamın ölçülmüş değil
+   hesaplanmış olduğunu, okumadan önce söylüyor. */
+.est-label { color: var(--warn); font-size: .74rem;
+             text-transform: uppercase; letter-spacing: .04em; }
+
 .pending-note { margin: 0 0 .9rem; padding: .6rem .8rem; font-size: .84rem;
                 color: var(--muted); background: var(--bg-raised);
                 border: 1px solid var(--line-soft); border-radius: 6px; }

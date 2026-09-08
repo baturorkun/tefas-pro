@@ -51,7 +51,16 @@ işareti, altında fiyatın günü ve "gerçek fiyat işlem gününde açıklana
 cümlesi durur. Uydurma ile etiketli tahmin arasındaki fark budur: rakamın
 nereden geldiği aynı yerde yazıyor.
 
-Tahmin arayüzde kurulur; sunucu yalnız birim fiyatı ve gününü taşır.
+Aynı tahmin Fon Hareketleri'nde de görünür. Orada "Maliyet / Değer" hücresi
+maliyet yokken tire gösteriyordu; artık üst satırda **tahmini** yazıyor, alt
+satırda `≈` ile rakam.
+
+Etiket "tahmini", "bugünlük" değil: ikincisi fiyatın gününü anlatıyor ve
+"bugünkü değeri" diye okunabiliyor, oysa söylenmek istenen rakamın kendi
+durumu. Pencerede de aynı kelime geçiyor, iki yer birbirini doğruluyor.
+
+Tahmin arayüzde kurulur; sunucu yalnız birim fiyatı ve gününü taşır. Tahmin
+hiçbir toplama girmez.
 
 Fiyatı hiç olmayan fonda tahmin de yoktur — tire yazılır. Ölçüldü: CKL yeni
 eklendiği için collector henüz fiyat toplamamış.
@@ -100,6 +109,9 @@ de görebilmeli ama girince de kaybetmemeli.
 - Pencerede son bilinen fiyattan tahmini tutar verilir; yaklaşık olduğu
   işaretle, hangi günün fiyatından hesaplandığı yazıyla belirtilir.
 - Fiyat verisi olmayan fonda tahmin üretilmez.
+- Fon Hareketleri'nde maliyeti olmayan işlem satırı da aynı tahmini gösterir
+  ve "tahmini" diye etiketlenir.
+- Tahmin hiçbir toplam satırına girmez.
 - Toplam maliyet, değer ve kâr rakamları değişmez: bekleyen alım hesaba
   girmez.
 - Aynı bilgi fon detayında da görünür.

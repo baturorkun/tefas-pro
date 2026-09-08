@@ -56,3 +56,16 @@ awk '/^async function openFundModal/,/^}/' "${M}" | grep -q "pending-note" \
 grep -Fq "(await api('/api/portfolio/pending')) as BekleyenAlim" "${M}" \
   || fail "fon detayı ortak ucu kullanmıyor"
 printf 'PASS: fon detayında da görünüyor, ortak uçtan\n'
+
+# Fon Hareketleri'nde de aynı tahmin. Maliyet yoksa işlemin fiyatı henüz
+# açıklanmamış demek; boş bırakmak yerine son bilinen fiyattan tahmin
+# veriliyor ve üst satır "tahmini" diyor.
+TV="$(awk '/^async function transactionsView/,/^}/' "${M}")"
+grep -q "est-label" <<<"${TV}" || fail "işlem listesinde tahmin etiketi yok"
+grep -q "t.latestNav === null" <<<"${TV}" || fail "fiyatsız işlemde tahmin uyduruluyor"
+grep -Fq "latestNav\` AS" "${R}" || grep -q 'nav_per_share::text AS "latestNav"' "${R}" \
+  || fail "işlem satırı son fiyatı taşımıyor"
+# Tahmin toplama girmemeli: toplam yalnız maliyeti ölçülebilen satırlardan.
+grep -q "gorunen.filter((t) => t.cost !== null)" <<<"${TV}" \
+  || fail "tahmin toplam satırına karışıyor olabilir"
+printf 'PASS: işlem listesinde tahmin etiketli ve toplama girmiyor\n'

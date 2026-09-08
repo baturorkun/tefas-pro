@@ -362,6 +362,11 @@ const TX_COLUMNS = `t.id, t.fund_code AS "fundCode", f.title AS "fundTitle",
                       AS "gainPct",
                     CASE WHEN t.units > 0 THEN round(s.cost  / t.units, 6)::text END AS "buyPrice",
                     CASE WHEN t.units > 0 THEN round(s.value / t.units, 6)::text END AS "nowPrice",
+                    -- Son bilinen birim fiyat. Fiyatı henüz açıklanmamış
+                    -- işlemde maliyet de değer de yok; tahmin bunun üzerinden
+                    -- kuruluyor ve "tahmini" diye etiketleniyor.
+                    l.nav_per_share::text AS "latestNav",
+                    to_char(l.nav_date, 'YYYY-MM-DD') AS "latestNavDate",
                     -- Bölünmenin iki parçası aynı şey değil: biri kullanıcının
                     -- girdiği, adedi küçülmüş kayıt; diğeri makinenin açtığı
                     -- artık. Tek etiket ikisini de "bölündü" diye gösteriyordu.
@@ -384,6 +389,7 @@ export async function listTransactions(pool: pg.Pool, userId: number): Promise<T
     // görünmeye devam etmeli, yoksa kullanıcı az önce girdiği kaydı bulamaz.
     `SELECT ${TX_COLUMNS} FROM portfolio_transaction t
      LEFT JOIN dim_fund f USING (fund_code)
+     LEFT JOIN analytics.fund_latest l ON l.fund_code = t.fund_code
      LEFT JOIN analytics.position_slice s ON s.transaction_id = t.id
      WHERE t.user_id = $1
      ORDER BY t.trade_date DESC, t.id DESC`,

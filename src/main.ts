@@ -36,6 +36,9 @@ interface Transaction {
   gainPct: string | null;
   buyPrice: string | null;
   nowPrice: string | null;
+  /** Son bilinen birim fiyat; fiyatı açıklanmamış işlemde tahmin bunun üzerinden. */
+  latestNav: string | null;
+  latestNavDate: string | null;
   splitRole: 'parent' | 'remainder' | null;
   splitTotal: string | null;
 }
@@ -4773,10 +4776,25 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
       // Maliyet ve değer de aynı desende: üstte başlangıç, altta son. İkisi
       // ayrı sütunken tablo kapsayıcısını aşıyordu ve zaten hep birbirine
       // bakılarak okunuyorlar.
-      el('td', { class: 'num' }, t.cost === null ? ['—'] : [
-        el('span', { class: 'stack-from' }, [money(t.cost)]),
-        el('span', { class: 'stack-to' }, [money(t.value)]),
-      ]),
+      // Maliyet yoksa işlemin fiyatı henüz açıklanmamış demek. Boş bırakmak
+      // yerine son bilinen fiyattan tahmin veriliyor; üst satır "tahmini"
+      // diyor ki rakam ölçülmüş gibi okunmasın. Fonun hiç fiyatı yoksa
+      // tahmin de yok.
+      el('td', { class: 'num' }, t.cost !== null
+        ? [
+            el('span', { class: 'stack-from' }, [money(t.cost)]),
+            el('span', { class: 'stack-to' }, [money(t.value)]),
+          ]
+        : t.latestNav === null
+          ? ['—']
+          : [
+              el('span', { class: 'stack-from est-label' }, ['tahmini']),
+              el('span', {
+                class: 'stack-to',
+                title: `${t.latestNavDate ?? ''} birim fiyatıyla; gerçek fiyat `
+                  + 'işlem günü açıklanınca belli olacak',
+              }, [`≈ ${money(String(Number(t.units) * Number(t.latestNav)))}`]),
+            ]),
       el('td', {}, [signed(t.gain, ' ₺')]),
       // Birim başlıkta ("K/Z %"), her satırda tekrarlanmıyor.
       el('td', {}, [signed(t.gainPct, '')]),
