@@ -561,6 +561,83 @@ export async function getTransaction(
  * Sahiplik WHERE'in içindedir: başka kullanıcının satırı hiç eşleşmez, yani
  * "önce oku sonra kontrol et" adımı atlanamaz ve yarış durumu oluşmaz.
  */
+/* ── Alım emirleri ─────────────────────────────────────────────────────── */
+
+export interface AlimEmri {
+  id: number;
+  fundCode: string;
+  title: string | null;
+  platform: string;
+  orderDate: string;
+  amount: string;
+  note: string | null;
+  /**
+   * Emrin fiyatlanacağı gün ve o günün fiyatı. Fiyat geldiyse adet önerisi
+   * hesaplanabiliyor demektir.
+   */
+  tradeDate: string | null;
+  navPerShare: string | null;
+}
+
+export interface AlimEmriInput {
+  fundCode: string;
+  platform: string;
+  orderDate: string;
+  amount: number;
+  note: string | null;
+}
+
+/**
+ * Kullanıcının açık alım emirleri.
+ *
+ * Fiyatlanma günü valörden hesaplanıyor, saklanmıyor: valör tanımı
+ * değişirse saklanmış tarih eskirdi. O günün fiyatı varsa adet önerisi
+ * arayüzde `tutar / fiyat` ile kuruluyor.
+ */
+export async function listOrders(pool: pg.Pool, userId: number): Promise<AlimEmri[]> {
+  const r = await pool.query<AlimEmri>(
+    `SELECT o.id, o.fund_code AS "fundCode", f.title, o.platform,
+            to_char(o.order_date, 'YYYY-MM-DD') AS "orderDate",
+            o.amount::text, o.note,
+            to_char(d.trade_date, 'YYYY-MM-DD') AS "tradeDate",
+            d.nav_per_share::text AS "navPerShare"
+       FROM pending_order o
+       LEFT JOIN dim_fund f ON f.fund_code = o.fund_code
+       -- Emir gününden SONRAKİ ilk fiyat: emir günü tatile denk gelse de
+       -- fiyatlanacağı ilk iş günü bulunur.
+       LEFT JOIN LATERAL (
+         SELECT trade_date, nav_per_share FROM fact_fund_daily x
+          WHERE x.fund_code = o.fund_code AND x.nav_per_share IS NOT NULL
+            AND x.trade_date > o.order_date
+          ORDER BY x.trade_date LIMIT 1) d ON true
+      WHERE o.user_id = $1
+      ORDER BY o.order_date DESC, o.id DESC`,
+    [userId],
+  );
+  return r.rows;
+}
+
+export async function createOrder(
+  pool: pg.Pool, userId: number, input: AlimEmriInput,
+): Promise<AlimEmri | null> {
+  const r = await pool.query<{ id: number }>(
+    `INSERT INTO pending_order (user_id, fund_code, platform, order_date, amount, note)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [userId, input.fundCode, input.platform, input.orderDate, input.amount, input.note],
+  );
+  const id = r.rows[0]?.id;
+  if (id === undefined) return null;
+  return (await listOrders(pool, userId)).find((o) => o.id === id) ?? null;
+}
+
+export async function deleteOrder(
+  pool: pg.Pool, userId: number, id: number,
+): Promise<boolean> {
+  const r = await pool.query(
+    'DELETE FROM pending_order WHERE user_id = $1 AND id = $2', [userId, id]);
+  return (r.rowCount ?? 0) > 0;
+}
+
 /**
  * Birebir aynı işlemden kaç tane var.
  *

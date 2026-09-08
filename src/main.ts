@@ -1553,6 +1553,19 @@ function watchlistToggle(checked: boolean, onChange: (v: boolean) => void): HTML
  * yüzden gün sayısı burada piyasa grafiklerindekinden de kritik: 114 gündür
  * tutulan fon, 5 gündür tutulanın yanında haksız bir avantajla başa geçer.
  */
+interface AlimEmri {
+  id: number;
+  fundCode: string;
+  title: string | null;
+  platform: string;
+  orderDate: string;
+  amount: string;
+  note: string | null;
+  /** Emrin fiyatlanacağı gün ve o günün fiyatı; yoksa öneri hesaplanamaz. */
+  tradeDate: string | null;
+  navPerShare: string | null;
+}
+
 interface BekleyenIslemSatiri {
   fundCode: string;
   title: string | null;
@@ -2845,7 +2858,157 @@ function writeSonBanka(value: string): void {
   }
 }
 
-function transactionForm(existing: Transaction | null, onDone: () => void): {
+/**
+ * Alım emri formu.
+ *
+ * Adet yok, tutar var: TEFAS'ta emir tutarla veriliyor ve kaç pay alındığı
+ * fiyat açıklanınca belli oluyor.
+ */
+function openOrderModal(reload: () => void): void {
+  const fundCode = el('input', { required: 'true', placeholder: 'THF', maxlength: '16' });
+  const amount = el('input', {
+    type: 'number', step: 'any', min: '0', required: 'true', placeholder: '50000',
+  }) as HTMLInputElement;
+  const platform = el('select', { required: 'true' }) as HTMLSelectElement;
+  const orderDate = tarihGirdisi({ required: 'true' });
+  const note = el('input', { maxlength: String(NOTE_MAX), placeholder: 'İsteğe bağlı' });
+  const status = el('span', { class: 'status' });
+  const submit = el('button', { type: 'submit', class: 'btn-primary' }, ['Emri Kaydet']) as HTMLButtonElement;
+
+  const bankHint = el('div', { class: 'field-hint' }, ['Yükleniyor…']);
+  void (async () => {
+    try {
+      const banks = (await api('/api/banks')) as { name: string }[];
+      platform.append(el('option', { value: '' }, ['Banka seçin']));
+      for (const b of banks) platform.append(el('option', { value: b.name }, [b.name]));
+      const sonBanka = readSonBanka();
+      platform.value = banks.some((b) => b.name === sonBanka) ? sonBanka : '';
+      bankHint.textContent = '';
+    } catch {
+      bankHint.textContent = 'Banka listesi alınamadı.';
+    }
+  })();
+
+  const form = el('form', { class: 'modal-form-grid', id: 'order-form' }, [
+    field('Fon Kodu', fundCode, 'TEFAS kodu, üç harf.'),
+    field('Tutar ₺', amount, 'Bankaya verdiğin emrin tutarı.'),
+    field('Banka', platform, bankHint),
+    field('Emir Tarihi', tarihAlani(orderDate), 'Emri verdiğin gün.'),
+    field('Not', note),
+    status,
+  ]);
+  submit.setAttribute('form', 'order-form');
+
+  let close = (): void => {};
+  tekGonderim(form, submit, status, async () => {
+    if (!tarihDogrula(orderDate)) {
+      orderDate.reportValidity();
+      throw new Error('Tarihi gg-aa-yyyy olarak yazın.');
+    }
+    await api('/api/orders', {
+      method: 'POST',
+      body: JSON.stringify({
+        fundCode: fundCode.value, platform: platform.value,
+        orderDate: tarihOku(orderDate), amount: Number(amount.value),
+        note: note.value || null,
+      }),
+    });
+    writeSonBanka(platform.value);
+    try { close(); reload(); } catch { /* kayıt yerinde */ }
+  }, 'Emir kaydedilemedi.');
+
+  const cancel = el('button', { class: 'btn-ghost', type: 'button' }, ['Vazgeç']);
+  close = openModal('Alım Emri', 'Adet fiyat açıklanınca belli olacak', form, [cancel, submit]);
+  cancel.addEventListener('click', () => { close(); });
+}
+
+/**
+ * Açık alım emirleri paneli.
+ *
+ * Fon Hareketleri'nin üstünde kendi bölümünde: bunlar işlem değil, henüz
+ * gerçekleşmemiş emirler ve hiçbir toplama girmiyorlar.
+ */
+function emirPaneli(orders: AlimEmri[], reload: () => void): HTMLElement[] {
+  if (orders.length === 0) return [];
+  const num = (v: string, d = 0): string =>
+    Number(v).toLocaleString('tr-TR', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  const body = orders.map((o) => {
+    const oneri = o.navPerShare === null
+      ? null
+      : (Number(o.amount) / Number(o.navPerShare)).toFixed(6);
+    const cevir = el('button', { class: 'btn-ghost btn-sm' }, ['İşleme çevir']);
+    cevir.addEventListener('click', () => {
+      openTransactionModal(null, reload, {
+        onDolgu: {
+          fundCode: o.fundCode, platform: o.platform,
+          tradeDate: o.tradeDate ?? '', units: oneri ?? '', note: o.note,
+        },
+        sil: async () => { await api(`/api/orders/${String(o.id)}`, { method: 'DELETE' }); },
+        baslik: oneri === null
+          ? `${o.fundCode} · ${num(o.amount)} ₺ · adet önerisi yok, fiyat henüz gelmedi`
+          : `${o.fundCode} · ${num(o.amount)} ₺ · ${o.tradeDate ?? ''} fiyatıyla ${
+            num(o.navPerShare ?? '0', 6)} ₺`,
+      });
+    });
+    const sil = iconButton('delete', 'Emri sil', 'danger');
+    sil.addEventListener('click', () => {
+      void (async () => {
+        const onay = await confirmDelete({
+          title: 'Emir silinsin mi?',
+          detail: [`${o.fundCode} · ${o.orderDate}`, `${o.platform} · ${num(o.amount)} ₺`],
+          confirmLabel: 'Sil',
+        });
+        if (!onay) return;
+        await api(`/api/orders/${String(o.id)}`, { method: 'DELETE' });
+        reload();
+      })();
+    });
+    return el('tr', {}, [
+      el('td', {}, [
+        el('span', { class: 'fund-code' }, [o.fundCode]),
+        el('span', { class: 'fund-title' }, [o.title ?? '']),
+      ]),
+      el('td', {}, [o.platform]),
+      el('td', { class: 'num' }, [o.orderDate]),
+      el('td', { class: 'num' }, [num(o.amount), ' ₺']),
+      // Öneri, ölçüm değil: adet fiyat açıklanınca hesaplanıyor ama banka
+      // masrafı yüzünden gerçek adet farklı çıkabiliyor. O yüzden yazılmıyor,
+      // öneriliyor.
+      el('td', { class: 'num' }, oneri === null
+        ? [el('span', { class: 'dim' }, ['fiyat bekleniyor'])]
+        : [
+            el('span', { class: 'stack-from est-label' }, ['öneri']),
+            el('span', { class: 'stack-to' }, [`≈ ${num(oneri, 4)} adet`]),
+          ]),
+      el('td', { class: 'actions' }, oneri === null ? [sil] : [cevir, sil]),
+    ]);
+  });
+
+  return [panel(
+    'Alım Emirleri',
+    `${String(orders.length)} emir · adet fiyat açıklanınca belli olur, toplamlara girmez`,
+    el('div', { class: 'panel-body' }, [
+      table(['Fon', 'Banka', 'Emir Tarihi', 'Tutar', 'Adet', ''], body),
+    ]),
+  )];
+}
+
+/** İşlem formunu emirden gelen değerlerle açmak için. */
+interface IslemOnDolgu {
+  fundCode: string;
+  platform: string;
+  tradeDate: string;
+  units: string;
+  note: string | null;
+}
+
+function transactionForm(
+  existing: Transaction | null,
+  onDone: () => void,
+  onDolgu?: IslemOnDolgu,
+  kayitSonrasi?: () => Promise<void>,
+): {
   body: HTMLElement;
   submit: HTMLButtonElement;
 } {
@@ -2861,6 +3024,12 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
     // paragraf yazmaya davet eder, tabloda da öyle görünmez.
     note: el('input', { maxlength: String(NOTE_MAX), placeholder: 'İsteğe bağlı' }),
   };
+  if (onDolgu !== undefined) {
+    f.fundCode.value = onDolgu.fundCode;
+    f.units.value = onDolgu.units;
+    f.note.value = onDolgu.note ?? '';
+    tarihYaz(f.tradeDate, onDolgu.tradeDate);
+  }
   if (existing) {
     f.fundCode.value = existing.fundCode;
     // Kolon numeric(24,6): veritabanı "9911.000000" döndürüyor ve alan onu
@@ -2894,7 +3063,7 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
       // atanan value boşa düşerdi. Yeni kayıtta en son kullanılan banka —
       // arka arkaya işlem girilirken hep aynı bankadan giriliyor.
       const sonBanka = readSonBanka();
-      f.platform.value = existing?.platform
+      f.platform.value = existing?.platform ?? onDolgu?.platform
         ?? (banks.some((b) => b.name === sonBanka) ? sonBanka : '');
       bankHint.textContent = '';
     } catch {
@@ -3032,6 +3201,16 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
       await kaydet(true);
     }
     writeSonBanka(f.platform.value);
+    // Emir işleme dönüştüyse emir kaydı burada siliniyor: iki yerde iki
+    // kayıt kalmamalı. Kayıt yazıldıktan sonra çalıştığı için başarısız
+    // olursa işlem yine yerinde durur.
+    if (kayitSonrasi !== undefined) {
+      try {
+        await kayitSonrasi();
+      } catch {
+        // Emir silinemediyse kullanıcı elle silebilir; işlem kaydı sağlam.
+      }
+    }
     // Kayıt yazıldı. Buradan sonra bir şey patlarsa "kaydedilemedi" demek
     // yanlış olur ve kullanıcı tekrar gönderip mükerrer kayıt yaratır —
     // yaşandı, on kayıt oluştu.
@@ -3305,13 +3484,20 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
   cancel.addEventListener('click', () => { close(); });
 }
 
-function openTransactionModal(existing: Transaction | null, reload: () => void): void {
+function openTransactionModal(
+  existing: Transaction | null,
+  reload: () => void,
+  emir?: { onDolgu: IslemOnDolgu; sil: () => Promise<void>; baslik: string },
+): void {
   let close = (): void => {};
-  const { body, submit } = transactionForm(existing, () => { close(); reload(); });
+  const { body, submit } = transactionForm(
+    existing, () => { close(); reload(); }, emir?.onDolgu, emir?.sil);
   const cancel = el('button', { class: 'btn-ghost', type: 'button' }, ['Vazgeç']);
   close = openModal(
-    existing === null ? 'Alış Ekle' : 'İşlemi Düzenle',
-    existing === null ? 'Yeni alış kaydı' : `${existing.fundCode} · ${existing.tradeDate}`,
+    emir !== undefined ? 'Emri İşleme Çevir'
+      : existing === null ? 'Alış Ekle' : 'İşlemi Düzenle',
+    emir?.baslik
+      ?? (existing === null ? 'Yeni alış kaydı' : `${existing.fundCode} · ${existing.tradeDate}`),
     body,
     [cancel, submit],
   );
@@ -4808,7 +4994,10 @@ async function periodsView(): Promise<Node[]> {
 const txFiltre = { fundCode: '', platform: '' };
 
 async function transactionsView(reload: () => void): Promise<Node[]> {
-  const rows = (await api('/api/transactions')) as Transaction[];
+  const [rows, orders] = await Promise.all([
+    api('/api/transactions') as Promise<Transaction[]>,
+    api('/api/orders') as Promise<AlimEmri[]>,
+  ]);
   const open = rows.filter((t) => t.sellDate === null);
   const funds = new Set(open.map((t) => t.fundCode));
   const platforms = new Set(open.map((t) => t.platform));
@@ -4873,6 +5062,10 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
   // yalnız alım ekliyordu ama genel bir ad taşıyordu.
   const addBtn = el('button', { class: 'btn-primary' }, [icon('add'), 'Alış Ekle']);
   addBtn.addEventListener('click', () => { openTransactionModal(null, reload); });
+  // Adet belli değilken emir: tutar biliniyor, pay sayısı fiyat açıklanınca
+  // hesaplanıyor. Ayrı düğme, çünkü ayrı bir şey kaydediliyor.
+  const orderBtn = el('button', { class: 'btn-ghost' }, [icon('add'), 'Emir Ekle']);
+  orderBtn.addEventListener('click', () => { openOrderModal(reload); });
 
   // Açık havuzlar: satılabilecek her fon+banka bir seçenek. Havuz yoksa düğme
   // hiç çizilmez; boş bir listeye açılan pencere yanıltıcı olurdu.
@@ -5040,6 +5233,7 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
       metric('Son İşlem', last === undefined ? '—' : gunAd(last),
         sonOlay === undefined ? '—' : sonOlay.tur, 'transactions'),
     ]),
+    ...emirPaneli(orders, reload),
     panel(
       'Fon Hareketleri',
       // Filtreliyken payda da yazılır: "60 kayıt" tek başına listenin tamamı mı
@@ -5071,7 +5265,8 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
               ),
             ]),
       ]),
-      el('div', { class: 'panel-actions' }, sellBtn === null ? [addBtn] : [sellBtn, addBtn]),
+      el('div', { class: 'panel-actions' },
+        sellBtn === null ? [orderBtn, addBtn] : [orderBtn, sellBtn, addBtn]),
     ),
   ];
 }
@@ -5083,9 +5278,10 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
  * satırı yok. Düzenleme "Fon Hareketleri"nde, işlem başına.
  */
 async function portfolioView(): Promise<Node[]> {
-  const [rows, bekleyen] = await Promise.all([
+  const [rows, bekleyen, emirler] = await Promise.all([
     api('/api/portfolio') as Promise<PortfolioRow[]>,
     api('/api/portfolio/pending') as Promise<BekleyenAlim>,
+    api('/api/orders') as Promise<AlimEmri[]>,
   ]);
   const sum = (f: (r: PortfolioRow) => number): number => rows.reduce((a, r) => a + f(r), 0);
   const cost = sum((r) => Number(r.cost));
@@ -5237,7 +5433,10 @@ async function portfolioView(): Promise<Node[]> {
     el('td', {}, []),
   ]);
 
-  const bekleyenToplam = bekleyen.count + bekleyen.sellCount;
+  // Emirler de burada sayılıyor: kutu "henüz hesaba girmemiş şeyler"
+  // demek ve emir de tam olarak o. Tutarları toplanmıyor — emrin adedi
+  // yok, maliyeti de yok.
+  const bekleyenToplam = bekleyen.count + bekleyen.sellCount + emirler.length;
   return [
     // Beşinci kutu çıkınca dörtlü ızgarada tek başına ikinci sıraya düşüyor
     // ve yanında koca bir boşluk kalıyordu.
@@ -5253,7 +5452,8 @@ async function portfolioView(): Promise<Node[]> {
       // çıkarıyordu ve dörtlü ızgarada ikisi ortada asılı kalıyordu.
       ...(bekleyenToplam === 0 ? [] : [metric(
         'Bekleyen İşlem', String(bekleyenToplam),
-        [`${String(bekleyen.count)} alım`, `${String(bekleyen.sellCount)} satış`]
+        [`${String(bekleyen.count)} alım`, `${String(bekleyen.sellCount)} satış`,
+          `${String(emirler.length)} emir`]
           .filter((t) => !t.startsWith('0 ')).join(' · '),
         'transactions', 'işlem')]),
     ]),

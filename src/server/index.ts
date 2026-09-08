@@ -46,7 +46,10 @@ import {
   addBank,
   addToWatchlist,
   allocation,
+  createOrder,
+  deleteOrder,
   duplicateTransaction,
+  listOrders,
   stockAllocation,
   fundDetail,
   readUserSetting,
@@ -780,6 +783,39 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
       if (path === '/api/transactions' && method === 'GET') {
         sendJson(res, 200, await listTransactions(pool, user.id));
         return;
+      }
+
+      // Alım emirleri: adedi belli olmayan, tutarla verilmiş emirler.
+      // Hiçbir hesaba girmiyorlar, o yüzden kendi uçları var.
+      if (path === '/api/orders' && method === 'GET') {
+        sendJson(res, 200, await listOrders(pool, user.id));
+        return;
+      }
+      if (path === '/api/orders' && method === 'POST') {
+        const b = asRecord(await readJson(req));
+        const kod = reqString(b, 'fundCode').toUpperCase();
+        // Emir de fonu tanıtır ve veriyi tetikler: fiyat gelmeden adet
+        // önerisi hesaplanamaz.
+        await ensureFundKnown(pool, client, kod);
+        await trackFundForUser(pool, user.id, kod);
+        triggerFundCollection(pool, client, kod);
+        sendJson(res, 201, await createOrder(pool, user.id, {
+          fundCode: kod,
+          platform: reqString(b, 'platform'),
+          orderDate: reqDate(b, 'orderDate'),
+          amount: reqNumber(b, 'amount'),
+          note: optString(b, 'note'),
+        }));
+        return;
+      }
+      {
+        const m = /^\/api\/orders\/(\d+)$/.exec(path);
+        if (m !== null && method === 'DELETE') {
+          const ok = await deleteOrder(pool, user.id, Number(m[1]));
+          if (!ok) { sendJson(res, 404, { error: 'Emir bulunamadı.' }); return; }
+          res.writeHead(204).end();
+          return;
+        }
       }
 
       if (path === '/api/transactions' && method === 'POST') {
