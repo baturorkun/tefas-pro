@@ -67,26 +67,23 @@ anlatmıyordu.
 Fon satırındaki "7 işlem" bir soru soruyor ama cevabı verecek yol yok:
 kullanıcı işlem sekmesine geçip 53 satır içinde o fonu aramak zorunda.
 
-Fon satırına tıklamak bacaklarını **satırın altında** açar. İlk denemede
-tıklama işlem sekmesine geçiriyordu; yanlıştı. Sekme kullanıcının kontrol
-ettiği bir şey, kendiliğinden değişince tıklanan yer ile değişen yer ekranın
-iki ayrı ucunda kalıyor — kullanıcı geçişi görmüyor bile, üstelik gelen
-tablo eskisine benziyor (yine tablo, yine ilk sütunda FON). Sekme rozeti de
-"İşlemler 53" derken tablo 4 satır gösteriyordu.
+Fon satırına tıklamak işlemlerini **pencerede** açar; satırın sonunda bir
+işlem ikonu bunu görünür kılar.
 
-Yerinde açılmada bu sınıfın tamamı yok oluyor: hiçbir şey gezinmiyor, fon
-satırı gözün önünde kalıyor, hareket eden şey imlecin altında ve geri dönüş
-"tekrar tıkla". Desen yeni değil — Dönemsel Getiri'de ay satırı haftalarını
-aynı şekilde açıyor.
+İki tasarım denendi ve ikisi de bırakıldı. Önce tıklama işlem sekmesine
+geçiriyordu: sekme kullanıcının kontrol ettiği bir şey, kendiliğinden
+değişince tıklanan yer ile değişen yer ekranın iki ayrı ucunda kalıyor —
+kullanıcı geçişi görmüyor bile, üstelik gelen tablo eskisine benziyor (yine
+tablo, yine ilk sütunda FON). Sonra bacaklar satırın altında açıldı: bu sefer
+alt satırlar üstteki sütun başlıklarını ödünç alıyordu ve "FON" başlığının
+altındaki tarih aralığı okunmuyordu.
 
-Bacak satırı para sütunlarında fon satırıyla hizalıdır — açılır satırın
-amacı zaten fon toplamıyla bacakları yan yana okuyabilmek.
+Pencere ikisinin de sorununu taşımıyor: liste yerinde kalıyor, hiçbir başlık
+ödünç alınmıyor, kapatmanın üç yolu var (çarpı, Esc, dışarı tıklama).
 
-Kimlik sütunları başlıkları ödünç almaz. İlk denemede "FON" başlığının
-altında etiketsiz bir tarih aralığı duruyordu: sütun adının söylediğiyle
-içeriği çelişiyordu ve okunmuyordu. Kimlik tek hücrede ve kendi kendini
-anlatıyor — `Fiba · alış 12.08 → satış 07.09 · 17g`; ikinci hücre boş
-bırakılıyor, çünkü boş hücre yanlış etiketten iyidir.
+Penceredeki tablo İşlemler sekmesindekinin **aynısı** — aynı sütunlar, aynı
+satır ve toplam kurucusu. İki yerde ayrı kurulsaydı sütunlar zamanla
+birbirinden ayrılırdı. Filtre yok: pencere zaten tek fonun penceresi.
 
 İşlem listesinde ayrıca fon ve banka filtresi durur — Fon Hareketleri'ndeki
 desenin aynısı, aynı `comboFilter` bileşeni ve aynı AND kuralı.
@@ -107,10 +104,12 @@ sekmesinde zaten duruyor.
 - Fon listesi portföye giren tutara göre azalan sıralanır.
 - İşlem listesi alış tarihine göre yeniden eskiye sıralanır.
 - İşlem listesinde fon ve banka filtresi vardır; ikisi AND ile birleşir.
-- Fon satırına tıklamak bacaklarını satırın altında açar ve kapatır.
-- Fon satırına tıklamak sekmeyi değiştirmez.
-- Bacak satırı para sütunlarında fon satırıyla hizalıdır.
-- Bacak satırı kendi kendini anlatır; üstteki sütun başlıklarına dayanmaz.
+- Fon satırının sonunda işlem ikonu vardır; satırın tamamı tıklanabilir.
+- Tıklamak fonun işlemlerini pencerede açar ve sekmeyi değiştirmez.
+- Penceredeki tablo İşlemler sekmesindekiyle aynı sütunları taşır.
+- Pencerede filtre yoktur.
+- Pencere tablosu kesilmeden sığar.
+- Pencerenin toplam satırı fon satırındaki rakamlarla birebir tutar.
 - Filtreliyken başlık kaç kaydın kaçının görüldüğünü yazar.
 - Varsayılan sekme fon; seçim sayfa yenilendiğinde korunur.
 - Sekme değiştirmek `/api/closed`'a yeni istek atmaz.

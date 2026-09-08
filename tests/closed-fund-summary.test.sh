@@ -30,19 +30,25 @@ printf 'PASS: fon toplamı işlem toplamıyla aynı kaynaktan\n'
 grep -q "sort((a, b) => b.buy - a.buy)" <<<"${CV}" \
   || fail "fon listesi portföye giren tutara göre sıralı değil"
 
-# Fon satırı bacaklarını YERİNDE açar. Sekmeyi kullanıcı adına değiştirmek
+# Fon satırı işlemleri PENCEREDE açar. Sekmeyi kullanıcı adına değiştirmek
 # kafa karıştırıyordu: tıklanan yer ile değişen yer ekranın iki ayrı ucunda,
 # gelen tablo da eskisine benziyor — geçiş fark edilmiyor.
-grep -q "acikMi ? 'fund-row fund-open' : 'fund-row'" <<<"${CV}" \
-  || fail "fon satırı açılabilir değil"
-LEG="$(awk '/tr.addEventListener/,/});/' <<<"${CV}")"
-grep -q "sec('tx')" <<<"${LEG}" && fail "fon satırı sekmeyi kullanıcı adına değiştiriyor"
-grep -q "acik.delete(f.fundCode)" <<<"${LEG}" || fail "fon satırı açılıp kapanmıyor"
-grep -q "bacakSatiri" <<<"${CV}" || fail "bacaklar yerinde çizilmiyor"
-# Bacak satırı fon satırıyla aynı altı sütuna oturmalı; hizası kayarsa
-# tablo iki ayrı tablo gibi okunur.
-awk '/const bacakSatiri = /,/\]\);/' <<<"${CV}" | grep -c "el('td'" | grep -qx 6 \
-  || fail "bacak satırı fon satırıyla aynı sütun sayısında değil"
+grep -q "class: 'fund-row'" <<<"${CV}" || fail "fon satırı tıklanabilir değil"
+ROW="$(awk '/tr.addEventListener/,/});/' <<<"${CV}")"
+grep -q "sec('tx')" <<<"${ROW}" && fail "fon satırı sekmeyi kullanıcı adına değiştiriyor"
+grep -q "fonPenceresi(f)" <<<"${ROW}" || fail "fon satırı pencereyi açmıyor"
+grep -q "iconButton('transactions'" <<<"${CV}" || fail "satır sonunda işlem ikonu yok"
+
+# Pencere ile İşlemler sekmesi aynı tabloyu çizmeli: iki yerde ayrı
+# kurulursa sütunlar zamanla birbirinden ayrılır.
+awk '/const fonPenceresi = /,/^  };/' <<<"${CV}" | grep -q "ISLEM_BASLIK" \
+  || fail "pencere ortak tablo tanımını kullanmıyor"
+awk '/const islemTablosu = /,/^  };/' <<<"${CV}" | grep -q "ISLEM_BASLIK" \
+  || fail "işlem sekmesi ortak tablo tanımını kullanmıyor"
+awk '/const fonPenceresi = /,/^  };/' <<<"${CV}" | grep -q "islemSatiri" \
+  || fail "pencere ortak satır kurucusunu kullanmıyor"
+awk '/const fonPenceresi = /,/^  };/' <<<"${CV}" | grep -q "comboFilter" \
+  && fail "pencerede filtre var; tek fonun penceresinde gereksiz"
 
 # Filtre satırı Fon Hareketleri'ndeki desenle aynı; iki filtre AND ile birleşir.
 grep -q "comboFilter({" <<<"${CV}" || fail "işlem listesinde filtre yok"
@@ -57,4 +63,4 @@ awk '/FROM analytics.closed_position/,/\[userId\]/' "${PROJECT_ROOT}/src/server/
 awk '/function readKapananSekme/,/^}/' "${M}" | grep -q "=== 'tx' ? 'tx' : 'fund'" \
   || fail "varsayılan sekme fon değil"
 grep -q "KAPANAN_SEKME_KEY = 'tefas.closed.section'" "${M}" || fail "seçim saklanmıyor"
-printf 'PASS: fon satırı bacakları yerinde açıyor, sıralamalar ve varsayılan sekme yerinde\n'
+printf 'PASS: fon satırı işlemleri pencerede açıyor, sıralamalar ve varsayılan sekme yerinde\n'

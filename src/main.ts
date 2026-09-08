@@ -604,8 +604,10 @@ function iconButton(name: string, label: string, kind = ''): HTMLButtonElement {
 function openModal(
   title: string, subtitle: string | null, body: Node, footer: Node[],
   // Geniş pencere: fon içeriği 7 sütunlu ve 80 satıra kadar çıkan bir tablo,
-  // form genişliğinde okunmuyor.
-  size: 'form' | 'wide' = 'form',
+  // form genişliğinde okunmuyor. `xwide` 10 sütunlu kapanan işlem tablosu
+  // için: ölçüldü, o tablo 1054 px istiyor ve `wide` 1024 px'te son sütunu
+  // kesiyordu.
+  size: 'form' | 'wide' | 'xwide' = 'form',
 ): () => void {
   const closeBtn = iconButton('close', 'Kapat');
   const card = el('div', { class: `modal-card modal-${size}` }, [
@@ -4264,64 +4266,72 @@ async function closedView(): Promise<Node[]> {
   // taşıyordu; ölçekle sıralayınca satırın ağırlığı da okunuyor.
   const fonListe = [...fonlar.values()].sort((a, b) => b.buy - a.buy);
 
-  // Fon satırı bacaklarını YERİNDE açar, başka sekmeye götürmez. Sekme
-  // kullanıcının kontrol ettiği bir şey; kendiliğinden değişirse tıkladığı
-  // yer ile değişen yer ekranın iki ayrı ucunda kalıyor ve geçişi görmüyor
-  // bile. Dönemsel Getiri'deki ay → hafta deseninin aynısı.
-  const acik = new Set<string>();
-  const kisaTarih = (d: string): string => `${d.slice(8)}.${d.slice(5, 7)}`;
+  // İşlem satırı ve toplam satırı tek yerde: hem İşlemler sekmesi hem fon
+  // penceresi aynı tabloyu çiziyor. İki yerde ayrı kurulsaydı sütunlar
+  // zamanla birbirinden ayrılırdı.
+  const islemSatiri = (r: ClosedPositionRow): HTMLElement => el('tr', {}, [
+    el('td', {}, [
+      el('span', { class: 'fund-code' }, [r.fundCode]),
+      el('span', { class: 'fund-title' }, [r.title ?? '']),
+    ]),
+    el('td', {}, [r.platform]),
+    el('td', { class: 'num' }, [r.buyDate]),
+    el('td', { class: 'num' }, [r.sellDate]),
+    el('td', { class: 'num' }, [`${String(r.heldDays)}g`]),
+    el('td', { class: 'num' }, [num(r.units)]),
+    el('td', { class: 'num' }, [num(r.buyValue)]),
+    el('td', { class: 'num' }, [num(r.sellValue)]),
+    el('td', {}, [signed(r.realizedGain, ' ₺')]),
+    el('td', {}, [signed(r.realizedPct, '')]),
+  ]);
 
-  // Bacak satırı fon satırıyla aynı altı sütuna oturur ama üstteki başlıkları
-  // ödünç ALMAZ: "FON" sütununun altına etiketsiz bir tarih koymak, sütun
-  // adının anlattığı şeyle içeriğin çelişmesi demekti. Kimlik bilgisi tek
-  // hücrede ve kendi kendini anlatıyor; ikinci hücre boş bırakılıyor.
-  // Para sütunları hizada kaldığı için fon toplamıyla bacaklar yan yana
-  // okunuyor — açılır satırın bütün amacı bu.
-  const bacakSatiri = (r: ClosedPositionRow): HTMLElement =>
-    el('tr', { class: 'leg-row' }, [
-      el('td', { class: 'leg-name' }, [
-        `${r.platform} · alış ${kisaTarih(r.buyDate)} → satış ${kisaTarih(r.sellDate)}`,
-        el('span', { class: 'dim' }, [` · ${String(r.heldDays)}g`]),
-      ]),
-      el('td', {}, []),
-      el('td', { class: 'num' }, [num(r.buyValue)]),
-      el('td', { class: 'num' }, [num(r.sellValue)]),
-      el('td', {}, [signed(r.realizedGain, ' ₺')]),
-      el('td', {}, [signed(r.realizedPct, '')]),
+  const islemToplami = (liste: ClosedPositionRow[]): HTMLElement => {
+    const b = liste.reduce((a, r) => a + Number(r.buyValue), 0);
+    const v = liste.reduce((a, r) => a + Number(r.sellValue), 0);
+    return el('tr', { class: 'total-row' }, [
+      el('td', {}, [`TOPLAM (${String(liste.length)})`]),
+      el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []),
+      el('td', { class: 'num' }, [num(String(b))]),
+      el('td', { class: 'num' }, [num(String(v))]),
+      el('td', {}, [signed(String(v - b), ' ₺')]),
+      el('td', {}, [signed(b === 0 ? null : String((v / b - 1) * 100), '')]),
     ]);
-
-  const fonTablosu = (): HTMLElement => {
-    const satirlar: HTMLElement[] = [];
-    for (const f of fonListe) {
-      const acikMi = acik.has(f.fundCode);
-      const tr = el('tr', {
-        class: acikMi ? 'fund-row fund-open' : 'fund-row',
-        title: acikMi ? 'İşlemleri gizle' : 'İşlemleri göster',
-      }, [
-        el('td', {}, [
-          // Ok işareti satırın açılabilir olduğunu söylüyor; imleç tek
-          // başına yeterli değil.
-          el('span', { class: 'row-caret' }, [acikMi ? '▾' : '▸']),
-          el('span', { class: 'fund-code' }, [f.fundCode]),
-          el('span', { class: 'fund-title' }, [f.title ?? '']),
-        ]),
-        el('td', { class: 'num dim' }, [`${String(f.adet)} işlem`]),
-        el('td', { class: 'num' }, [num(String(f.buy))]),
-        el('td', { class: 'num' }, [num(String(f.sell))]),
-        el('td', {}, [signed(String(f.sell - f.buy), ' ₺')]),
-        el('td', {}, [signed(f.buy === 0 ? null : String((f.sell / f.buy - 1) * 100), '')]),
-      ]);
-      tr.addEventListener('click', () => {
-        if (acik.has(f.fundCode)) acik.delete(f.fundCode);
-        else acik.add(f.fundCode);
-        ciz('fund');
-      });
-      satirlar.push(tr);
-      if (acikMi) satirlar.push(...rows.filter((r) => r.fundCode === f.fundCode).map(bacakSatiri));
-    }
-    return table(['Fon', 'İşlem', 'Alış ₺', 'Satış ₺', 'K/Z', 'K/Z %'],
-      [...satirlar, fonFoot]);
   };
+
+  const ISLEM_BASLIK = ['Fon', 'Banka', 'Alış', 'Satış', 'Süre', 'Adet',
+    'Alış ₺', 'Satış ₺', 'K/Z', 'K/Z %'];
+
+  // Fon penceresi: satır listeyi yerinde şişirmiyor, sekmeyi de
+  // değiştirmiyor. Tablo İşlemler sekmesindekinin aynısı — filtresiz, çünkü
+  // pencere zaten tek fonun penceresi.
+  const fonPenceresi = (f: FonOzet): void => {
+    const liste = rows.filter((r) => r.fundCode === f.fundCode);
+    openModal(
+      f.fundCode,
+      `${f.title ?? ''} · ${String(liste.length)} kapanmış işlem`,
+      table(ISLEM_BASLIK, [...liste.map(islemSatiri), islemToplami(liste)]),
+      [],
+      'xwide',
+    );
+  };
+
+  const fonBody = fonListe.map((f) => {
+    const btn = iconButton('transactions', `${f.fundCode} işlemleri`);
+    const tr = el('tr', { class: 'fund-row', title: `${f.fundCode} işlemlerini aç` }, [
+      el('td', {}, [
+        el('span', { class: 'fund-code' }, [f.fundCode]),
+        el('span', { class: 'fund-title' }, [f.title ?? '']),
+      ]),
+      el('td', { class: 'num dim' }, [`${String(f.adet)} işlem`]),
+      el('td', { class: 'num' }, [num(String(f.buy))]),
+      el('td', { class: 'num' }, [num(String(f.sell))]),
+      el('td', {}, [signed(String(f.sell - f.buy), ' ₺')]),
+      el('td', {}, [signed(f.buy === 0 ? null : String((f.sell / f.buy - 1) * 100), '')]),
+      el('td', { class: 'row-action' }, [btn]),
+    ]);
+    tr.addEventListener('click', () => { fonPenceresi(f); });
+    return tr;
+  });
 
   const fonFoot = el('tr', { class: 'total-row' }, [
     el('td', {}, [`TOPLAM (${String(fonListe.length)})`]),
@@ -4330,6 +4340,7 @@ async function closedView(): Promise<Node[]> {
     el('td', { class: 'num' }, [num(String(sell))]),
     el('td', {}, [signed(String(gain), ' ₺')]),
     el('td', {}, [signed(buy === 0 ? null : String((sell / buy - 1) * 100), '')]),
+    el('td', {}, []),
   ]);
 
   // Filtre seçenekleri kapanan işlemlerden: hiç kapanmamış bir fonu listede
@@ -4349,9 +4360,6 @@ async function closedView(): Promise<Node[]> {
     const gorunen = rows.filter((r) =>
       (kapananFiltre.fundCode === '' || r.fundCode === kapananFiltre.fundCode)
       && (kapananFiltre.platform === '' || r.platform === kapananFiltre.platform));
-    const gBuy = gorunen.reduce((a, r) => a + Number(r.buyValue), 0);
-    const gSell = gorunen.reduce((a, r) => a + Number(r.sellValue), 0);
-
     const fonFiltre = comboFilter({
       label: 'Tümü',
       options: fonSecenekleri.map(([kod, ad]) => ({
@@ -4367,42 +4375,17 @@ async function closedView(): Promise<Node[]> {
       onChange: (v) => { kapananFiltre.platform = v; ciz('tx'); },
     });
 
-    const body = gorunen.map((r) => el('tr', {}, [
-      el('td', {}, [
-        el('span', { class: 'fund-code' }, [r.fundCode]),
-        el('span', { class: 'fund-title' }, [r.title ?? '']),
-      ]),
-      el('td', {}, [r.platform]),
-      el('td', { class: 'num' }, [r.buyDate]),
-      el('td', { class: 'num' }, [r.sellDate]),
-      el('td', { class: 'num' }, [`${String(r.heldDays)}g`]),
-      el('td', { class: 'num' }, [num(r.units)]),
-      el('td', { class: 'num' }, [num(r.buyValue)]),
-      el('td', { class: 'num' }, [num(r.sellValue)]),
-      el('td', {}, [signed(r.realizedGain, ' ₺')]),
-      el('td', {}, [signed(r.realizedPct, '')]),
-    ]));
-
-    const foot = el('tr', { class: 'total-row' }, [
-      el('td', {}, [`TOPLAM (${String(gorunen.length)})`]),
-      el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []),
-      el('td', { class: 'num' }, [num(String(gBuy))]),
-      el('td', { class: 'num' }, [num(String(gSell))]),
-      el('td', {}, [signed(String(gSell - gBuy), ' ₺')]),
-      el('td', {}, [signed(gBuy === 0 ? null : String((gSell / gBuy - 1) * 100), '')]),
-    ]);
-
     // Sonuç boşken de tablo çizilir: filtreler başlık satırında duruyor,
     // tabloyu kaldırmak seçimi geri almanın yolunu da kaldırırdı.
     return table(
-      ['Fon', 'Banka', 'Alış', 'Satış', 'Süre', 'Adet', 'Alış ₺', 'Satış ₺', 'K/Z', 'K/Z %'],
+      ISLEM_BASLIK,
       gorunen.length === 0
         ? [el('tr', {}, [el('td', { colspan: '10' }, [
             el('div', { class: 'empty-state' }, [
               'Bu filtreye uyan kapanmış işlem yok. Filtreyi temizleyin.',
             ]),
           ])])]
-        : [...body, foot],
+        : [...gorunen.map(islemSatiri), islemToplami(gorunen)],
       // Filtreler süzdükleri sütunun altında; diğer hücreler boş.
       [fonFiltre, bankaFiltre, null, null, null, null, null, null, null, null],
     );
@@ -4416,7 +4399,9 @@ async function closedView(): Promise<Node[]> {
       return;
     }
     if (id === 'fund') {
-      govde.replaceChildren(fonTablosu());
+      govde.replaceChildren(table(
+        ['Fon', 'İşlem', 'Alış ₺', 'Satış ₺', 'K/Z', 'K/Z %', ''],
+        [...fonBody, fonFoot]));
       meta.textContent = `${String(fonListe.length)} fon · en çok yatırılandan başlar`;
       return;
     }

@@ -609,6 +609,10 @@ td.actions .icon-btn + .icon-btn { margin-left: 6px; }
 /* Sektör sütunu kalkınca 76rem gereksiz genişlik oldu. */
 .modal-card.modal-wide { width: min(64rem, 96vw); padding: 0; }
 .modal-wide .modal-body { max-height: min(78vh, 46rem); }
+/* On sütunlu kapanan işlem tablosu 1054 px istiyor; 64rem'de son sütun
+   kesiliyordu. */
+.modal-card.modal-xwide { width: min(78rem, 96vw); padding: 0; }
+.modal-xwide .modal-body { max-height: min(78vh, 46rem); }
 /* Pencere içindeki paneller kendi çerçevelerini taşımaz: pencerenin kendisi
    zaten bir çerçeve, iç içe kutu gürültü olurdu. */
 .fund-modal .panel { border: 0; background: transparent; margin: 0; }
@@ -940,15 +944,11 @@ textarea:focus  { outline: none; border-color: var(--accent);
 /* Bölüm sekmeleri panel başlığındakilerden daha iri: ekranın ana gezinmesi
    bunlar. Alt çizgi şeridi sekmelerin panellere ait olmadığını, sayfayı
    böldüğünü gösteriyor. */
-/* Açılabilir fon satırı: bacaklar altında yerinde açılıyor. Dönemsel
-   Getiri'deki ay → hafta deseninin aynısı. */
+/* Fon satırı işlemlerini pencerede açar; satırın tamamı tıklanabilir ve
+   sondaki ikon bunu görünür kılıyor. */
 .fund-row { cursor: pointer; }
 .fund-row:hover td { background: var(--panel-hover); }
-.fund-open td { background: var(--panel-hover); }
-.fund-open td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
-.row-caret { display: inline-block; width: 1rem; color: var(--muted-dim); }
-.leg-row td { background: transparent; }
-.leg-name { padding-left: 1.4rem; color: var(--muted); font-size: .84rem; }
+.row-action { width: 1px; white-space: nowrap; text-align: right; }
 
 .section-tabs { display: flex; gap: 4px; margin: 20px 0 14px;
                 border-bottom: 1px solid var(--line); }
