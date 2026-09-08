@@ -979,8 +979,7 @@ textarea:focus  { outline: none; border-color: var(--accent);
 .pending-row td { color: var(--muted); }
 /* "tahmini" etiketi maliyetin durduğu yerde: rakamın ölçülmüş değil
    hesaplanmış olduğunu, okumadan önce söylüyor. */
-.est-label { color: var(--warn); font-size: .74rem;
-             text-transform: uppercase; letter-spacing: .04em; }
+.est-label { color: var(--warn); font-size: .76rem; }
 
 .pending-note { margin: 0 0 .9rem; padding: .6rem .8rem; font-size: .84rem;
                 color: var(--muted); background: var(--bg-raised);

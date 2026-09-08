@@ -4788,7 +4788,7 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
         : t.latestNav === null
           ? ['—']
           : [
-              el('span', { class: 'stack-from est-label' }, ['tahmini']),
+              el('span', { class: 'stack-from est-label' }, ['Tahmini']),
               el('span', {
                 class: 'stack-to',
                 title: `${t.latestNavDate ?? ''} birim fiyatıyla; gerçek fiyat `
