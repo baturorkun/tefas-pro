@@ -13,25 +13,35 @@
       }
     ]
   },
-  "status": "running",
+  "status": "approved",
   "createdAt": "2026-09-08T08:44:58.087Z",
-  "updatedAt": "2026-09-08T08:45:05.814Z",
+  "updatedAt": "2026-09-08T08:52:52.422Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-09-08T08:45:05.814Z"
+      "status": "passed",
+      "startedAt": "2026-09-08T08:45:05.814Z",
+      "finishedAt": "2026-09-08T08:52:52.229Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "package.json",
+    "requirements/RQ-0054-bekleyen-alimlar-portfoyum-ekraninda-gorunuyor.md",
+    "src/main.ts",
+    "src/server/repository.ts",
+    "src/styles.css",
+    "tests/pending-orders.test.sh"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
-  }
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-09-08T08:52:52.423Z",
+  "approvedBy": "human"
 }
