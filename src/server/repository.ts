@@ -352,6 +352,7 @@ export interface Transaction {
 const TX_COLUMNS = `t.id, t.fund_code AS "fundCode", f.title AS "fundTitle",
                     t.platform, to_char(t.trade_date, 'YYYY-MM-DD') AS "tradeDate",
                     t.units::text AS units,
+                    t.order_amount::text AS "orderAmount",
                     to_char(t.sell_date, 'YYYY-MM-DD') AS "sellDate", t.note,
                     to_char(t.buy_order_date, 'YYYY-MM-DD')  AS "buyOrderDate",
                     to_char(t.sell_order_date, 'YYYY-MM-DD') AS "sellOrderDate",
@@ -508,7 +509,13 @@ export interface TransactionInput {
   fundCode: string;
   platform: string;
   tradeDate: string;
-  units: number;
+  /**
+   * Adet. Tutarla verilmiş, fiyatı henüz açıklanmamış alımda null —
+   * kayıt pasif bekler ve hiçbir hesaba katılmaz.
+   */
+  units: number | null;
+  /** Adet yerine girilen tutar; adet gelince anlamını yitirmez, kalır. */
+  orderAmount: number | null;
   sellDate: string | null;
   note: string | null;
   /** Emrin verildiği günler. Değerlemede kullanılmaz; istatistik. */
@@ -523,15 +530,16 @@ export async function createTransaction(
 ): Promise<Transaction> {
   const r = await pool.query<{ id: number }>(
     `INSERT INTO portfolio_transaction
-       (user_id, fund_code, platform, trade_date, units, sell_date, note,
+       (user_id, fund_code, platform, trade_date, units, order_amount, sell_date, note,
         buy_order_date, sell_order_date)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
     [
       userId,
       input.fundCode,
       input.platform,
       input.tradeDate,
       input.units,
+      input.orderAmount,
       input.sellDate,
       input.note,
       input.buyOrderDate,
@@ -561,83 +569,6 @@ export async function getTransaction(
  * Sahiplik WHERE'in içindedir: başka kullanıcının satırı hiç eşleşmez, yani
  * "önce oku sonra kontrol et" adımı atlanamaz ve yarış durumu oluşmaz.
  */
-/* ── Alım emirleri ─────────────────────────────────────────────────────── */
-
-export interface AlimEmri {
-  id: number;
-  fundCode: string;
-  title: string | null;
-  platform: string;
-  orderDate: string;
-  amount: string;
-  note: string | null;
-  /**
-   * Emrin fiyatlanacağı gün ve o günün fiyatı. Fiyat geldiyse adet önerisi
-   * hesaplanabiliyor demektir.
-   */
-  tradeDate: string | null;
-  navPerShare: string | null;
-}
-
-export interface AlimEmriInput {
-  fundCode: string;
-  platform: string;
-  orderDate: string;
-  amount: number;
-  note: string | null;
-}
-
-/**
- * Kullanıcının açık alım emirleri.
- *
- * Fiyatlanma günü valörden hesaplanıyor, saklanmıyor: valör tanımı
- * değişirse saklanmış tarih eskirdi. O günün fiyatı varsa adet önerisi
- * arayüzde `tutar / fiyat` ile kuruluyor.
- */
-export async function listOrders(pool: pg.Pool, userId: number): Promise<AlimEmri[]> {
-  const r = await pool.query<AlimEmri>(
-    `SELECT o.id, o.fund_code AS "fundCode", f.title, o.platform,
-            to_char(o.order_date, 'YYYY-MM-DD') AS "orderDate",
-            o.amount::text, o.note,
-            to_char(d.trade_date, 'YYYY-MM-DD') AS "tradeDate",
-            d.nav_per_share::text AS "navPerShare"
-       FROM pending_order o
-       LEFT JOIN dim_fund f ON f.fund_code = o.fund_code
-       -- Emir gününden SONRAKİ ilk fiyat: emir günü tatile denk gelse de
-       -- fiyatlanacağı ilk iş günü bulunur.
-       LEFT JOIN LATERAL (
-         SELECT trade_date, nav_per_share FROM fact_fund_daily x
-          WHERE x.fund_code = o.fund_code AND x.nav_per_share IS NOT NULL
-            AND x.trade_date > o.order_date
-          ORDER BY x.trade_date LIMIT 1) d ON true
-      WHERE o.user_id = $1
-      ORDER BY o.order_date DESC, o.id DESC`,
-    [userId],
-  );
-  return r.rows;
-}
-
-export async function createOrder(
-  pool: pg.Pool, userId: number, input: AlimEmriInput,
-): Promise<AlimEmri | null> {
-  const r = await pool.query<{ id: number }>(
-    `INSERT INTO pending_order (user_id, fund_code, platform, order_date, amount, note)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [userId, input.fundCode, input.platform, input.orderDate, input.amount, input.note],
-  );
-  const id = r.rows[0]?.id;
-  if (id === undefined) return null;
-  return (await listOrders(pool, userId)).find((o) => o.id === id) ?? null;
-}
-
-export async function deleteOrder(
-  pool: pg.Pool, userId: number, id: number,
-): Promise<boolean> {
-  const r = await pool.query(
-    'DELETE FROM pending_order WHERE user_id = $1 AND id = $2', [userId, id]);
-  return (r.rowCount ?? 0) > 0;
-}
-
 /**
  * Birebir aynı işlemden kaç tane var.
  *
@@ -651,7 +582,7 @@ export async function duplicateTransaction(
   const r = await pool.query<{ n: string }>(
     `SELECT count(*)::text AS n FROM portfolio_transaction
       WHERE user_id = $1 AND fund_code = $2 AND platform = $3
-        AND trade_date = $4 AND units = $5
+        AND trade_date = $4 AND units IS NOT DISTINCT FROM $5
         AND sell_date IS NOT DISTINCT FROM $6`,
     [userId, input.fundCode, input.platform, input.tradeDate, input.units, input.sellDate],
   );
@@ -667,8 +598,8 @@ export async function updateTransaction(
   const r = await pool.query(
     `UPDATE portfolio_transaction SET
        fund_code = $3, platform = $4, trade_date = $5, units = $6,
-       sell_date = $7, note = $8,
-       buy_order_date = $9, sell_order_date = $10, updated_at = now()
+       order_amount = $7, sell_date = $8, note = $9,
+       buy_order_date = $10, sell_order_date = $11, updated_at = now()
      WHERE user_id = $1 AND id = $2`,
     [
       userId,
@@ -677,6 +608,7 @@ export async function updateTransaction(
       input.platform,
       input.tradeDate,
       input.units,
+      input.orderAmount,
       input.sellDate,
       input.note,
       input.buyOrderDate,

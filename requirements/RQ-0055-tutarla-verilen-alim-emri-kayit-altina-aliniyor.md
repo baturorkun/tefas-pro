@@ -14,63 +14,63 @@ githubIssueUrl: "https://github.com/baturorkun/tefas-pro/issues/109"
 githubIssueIid: 109
 repositoryProvider: github
 ---
-# RQ-0055 - Tutarla verilen alım emri kayıt altına alınıyor
+# RQ-0055 - Tutarla verilen alım pasif kayıt olarak bekliyor
 
 TEFAS'ta alım emri **tutarla** verilir: "şu fondan 50.000 TL". Kaç pay
 alındığı ancak o günün fiyatı açıklanınca belli olur. Uygulama ise adet
-istiyor — `portfolio_transaction.units` NOT NULL — yani emir verildiği anda
-kaydedilemiyor. Kullanıcı ya bekliyor ya da unutuyor.
+istiyordu — `portfolio_transaction.units` NOT NULL — yani alım verildiği anda
+kaydedilemiyor, kullanıcı ya bekliyor ya unutuyordu.
 
-Bu bir eksiklik, hata değil: kayıt için gereken bilgi henüz yok. Ama emir
-gerçek, para çıktı ve bir yere yazılmalı.
+## Ayrı tablo denendi, bırakıldı
 
-## Neden ayrı tablo
+İlk uygulama emirleri ayrı bir tabloda tuttu: hiçbir analytics view'a
+girmiyordu, mevcut tek bir hesap değişmiyordu, riski sıfırdı.
 
-İlk akla gelen `units`'i nullable yapmak. Ölçüldü, riski büyük:
+Kullanımda düştü: iki liste ve bir "işleme çevir" adımı kafa karıştırıyor.
+Kayıt normal formdan girilmeli, normal listede durmalı, yalnız pasif
+beklemeli. Doğru olan bu — kullanıcının kafasındaki model tek bir işlem
+listesi.
 
-    units kullanan analytics view      6
-    ayrıca FIFO maliyet hesabı         position_leg, position_slice, closed_position
+## Risk nerede ve nasıl tek yere toplandı
 
-NULL bir adet bu zincire sızarsa maliyet sessizce bozulur — ekranda hata
-çıkmaz, yalnız rakam yanlış olur. Bu uygulamada en pahalı hata türü bu.
+`units` nullable olunca risk gerçek: bu sütun beş analytics view'ında
+aritmetiğe giriyor ve NULL bir adet sızarsa rakam **ekranda hata vermeden**
+bozulur. Bu uygulamada en pahalı hata türü bu.
 
-Daha da önemlisi kavramsal: **emir pozisyon değil.** Verilmiş ama
-gerçekleşmemiş bir emrin adedi yok, maliyeti yok, getirisi yok. Onu
-pozisyon tablosuna koymak "sonradan tamamlanacak eksik bir pozisyon" gibi
-davranmayı gerektirir; ayrı tabloda tutmak ise ne olduğunu doğru söyler.
+Filtre bu yüzden her view'a ayrı ayrı yazılmadı, tek yerde toplandı:
 
-Ayrı tablo hiçbir analytics view'a girmez. Var olan tek bir hesap
-değişmez — bu, değişikliğin en güçlü yanı.
+    analytics.settled_transaction = adedi belli olan işlemler
 
-## Emirden işleme geçiş
+Hesap yapan beş view artık kaynağını oradan alıyor: `position_leg`,
+`position_slice`, `closed_position`, `portfolio_daily`, `fund_daily`.
+Yeni bir view eklenirken "doğru kaynağı seç" tek bir karar oluyor.
 
-Fiyat açıklanınca adet hesaplanabilir: `tutar / birim fiyat`. Bu rakam
-**otomatik yazılmaz**, öneri olarak gösterilir ve kullanıcı onaylar.
+`tracked_fund` ve `watchlist_visible` bilerek ham tabloyu okumaya devam
+ediyor: pasif alım da o fonun verisinin toplanmasını gerektiriyor. Toplanmazsa
+fiyat hiç gelmez ve adet hiç belli olmaz.
 
-Sebebi ölçülebilir bir gerçek: banka masrafı, komisyon ve yuvarlama
-yüzünden gerçek adet hesaplanandan farklı çıkabiliyor. Uydurulmuş bir adet
-maliyet tabanına girerse bütün getiri zinciri yanlışlanır. Öneri gösterip
-onay istemek, kullanıcının dekonttaki gerçek adedi yazmasına da izin verir.
+Veritabanı kısıtları da kuralı taşıyor: ya adet ya tutar dolu olacak, tutar
+pozitif olacak, adedi olmayan kayıt satılamayacak.
 
-Emir işleme dönüştüğünde emir kaydı silinir; iki yerde iki kayıt kalmaz.
+## Kayıt kesinleşince
 
-## Nerede görünür
+Fiyat açıklanınca kullanıcı satırı düzenleyip adedi yazıyor; kayıt aynı
+kayıt, artık aktif. Yeni satır açılmıyor, eskisi silinmiyor. Tutar da
+kalıyor — ne ödendiği bilgisi değerli.
 
-Fon Hareketleri'nde, listenin üstünde kendi bölümünde. Portföyüm'ün
-"Bekleyen İşlem" kutusu bu emirleri de sayar — RQ-0054'te kurulan yer zaten
-"henüz hesaba girmemiş şeyler" demek.
-
-Emir satırı hiçbir toplama girmez.
+Adet otomatik hesaplanmıyor. `tutar / fiyat` yakın bir sayı verir ama banka
+masrafı ve yuvarlama yüzünden gerçek adet farklı çıkabiliyor; uydurulmuş bir
+adet maliyet tabanına girerse bütün getiri zinciri yanlışlanır.
 
 ## Acceptance Criteria
 
-- Adet bilinmeden, tutarla alım emri kaydedilebilir.
-- Emir kaydı fon, banka, emir tarihi ve tutar taşır; not isteğe bağlı.
-- Emir hiçbir analytics view'ına girmez; mevcut hesaplar değişmez.
-- Emir hiçbir toplam satırına ve metrik kutusuna tutar olarak eklenmez.
-- Emirler Fon Hareketleri'nde kendi bölümünde listelenir.
-- Fiyat açıklandığında adet önerisi gösterilir; otomatik yazılmaz.
-- Kullanıcı öneriyi kabul edebilir ya da gerçek adedi elle yazabilir.
-- Emir işleme dönüşünce emir kaydı silinir.
-- Kullanıcı silinince emirleri de silinir.
-- Emir silinebilir.
+- Adet bilinmeden, tutarla alım kaydedilebilir; aynı "Alış Ekle" formundan.
+- Kayıt normal işlem listesinde, pasif olduğu belli olacak şekilde durur.
+- Pasif kayıt hiçbir hesaba girmez: maliyet, değer, getiri, dağılım.
+- Pasif kayıt açık pozisyon sayılmaz.
+- Pasif kayıt satılamaz.
+- Adet ya da tutardan biri zorunludur; ikisi de boş kayıt reddedilir.
+- Adet girilince kayıt aynı kayıt olarak aktifleşir; yeni satır açılmaz.
+- Adet otomatik hesaplanmaz.
+- Pasif kaydın fonu takip edilen fon sayılır ve verisi toplanır.
+- Hesap yapan her view süzülmüş kaynağı okur.

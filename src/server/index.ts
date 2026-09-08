@@ -46,10 +46,7 @@ import {
   addBank,
   addToWatchlist,
   allocation,
-  createOrder,
-  deleteOrder,
   duplicateTransaction,
-  listOrders,
   stockAllocation,
   fundDetail,
   readUserSetting,
@@ -272,18 +269,36 @@ async function prepareBenchmark(
 }
 
 function readTransactionInput(body: Record<string, unknown>): TransactionInput {
-  const units = reqNumber(body, 'units');
-  if (units <= 0) throw new Error('`units` sıfırdan büyük olmalıdır.');
+  // Ya adet ya tutar. Tutarla girilen alım pasif bekler: TEFAS'ta emir
+  // tutarla veriliyor ve kaç pay alındığı fiyat açıklanınca belli oluyor.
+  const units = body['units'] === null || body['units'] === undefined || body['units'] === ''
+    ? null : reqNumber(body, 'units');
+  const orderAmount =
+    body['orderAmount'] === null || body['orderAmount'] === undefined || body['orderAmount'] === ''
+      ? null : reqNumber(body, 'orderAmount');
+  if (units === null && orderAmount === null) {
+    throw new Error('Adet ya da tutar girilmeli.');
+  }
+  if (units !== null && units <= 0) throw new Error('`units` sıfırdan büyük olmalıdır.');
+  if (orderAmount !== null && orderAmount <= 0) {
+    throw new Error('Tutar sıfırdan büyük olmalıdır.');
+  }
   const tradeDate = reqDate(body, 'tradeDate');
   const sellDate = optDate(body, 'sellDate');
   if (sellDate !== null && sellDate < tradeDate) {
     throw new Error('Satış tarihi alış tarihinden önce olamaz.');
+  }
+  // Adedi belli olmayan pozisyon satılamaz; veritabanında da kısıt var ama
+  // hata mesajı burada anlaşılır oluyor.
+  if (units === null && sellDate !== null) {
+    throw new Error('Adedi belli olmayan alım satılamaz; önce adedi girin.');
   }
   return {
     fundCode: reqString(body, 'fundCode').toUpperCase(),
     platform: reqString(body, 'platform'),
     tradeDate,
     units,
+    orderAmount,
     sellDate,
     note: optText(body, 'note', NOTE_MAX),
     // Emir tarihleri isteğe bağlı; değerlemeye girmez, kayıt için tutulur.
@@ -783,39 +798,6 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
       if (path === '/api/transactions' && method === 'GET') {
         sendJson(res, 200, await listTransactions(pool, user.id));
         return;
-      }
-
-      // Alım emirleri: adedi belli olmayan, tutarla verilmiş emirler.
-      // Hiçbir hesaba girmiyorlar, o yüzden kendi uçları var.
-      if (path === '/api/orders' && method === 'GET') {
-        sendJson(res, 200, await listOrders(pool, user.id));
-        return;
-      }
-      if (path === '/api/orders' && method === 'POST') {
-        const b = asRecord(await readJson(req));
-        const kod = reqString(b, 'fundCode').toUpperCase();
-        // Emir de fonu tanıtır ve veriyi tetikler: fiyat gelmeden adet
-        // önerisi hesaplanamaz.
-        await ensureFundKnown(pool, client, kod);
-        await trackFundForUser(pool, user.id, kod);
-        triggerFundCollection(pool, client, kod);
-        sendJson(res, 201, await createOrder(pool, user.id, {
-          fundCode: kod,
-          platform: reqString(b, 'platform'),
-          orderDate: reqDate(b, 'orderDate'),
-          amount: reqNumber(b, 'amount'),
-          note: optString(b, 'note'),
-        }));
-        return;
-      }
-      {
-        const m = /^\/api\/orders\/(\d+)$/.exec(path);
-        if (m !== null && method === 'DELETE') {
-          const ok = await deleteOrder(pool, user.id, Number(m[1]));
-          if (!ok) { sendJson(res, 404, { error: 'Emir bulunamadı.' }); return; }
-          res.writeHead(204).end();
-          return;
-        }
       }
 
       if (path === '/api/transactions' && method === 'POST') {
