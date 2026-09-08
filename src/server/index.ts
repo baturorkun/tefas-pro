@@ -47,6 +47,7 @@ import {
   addToWatchlist,
   allocation,
   duplicateTransaction,
+  fundOptions,
   stockAllocation,
   fundDetail,
   readUserSetting,
@@ -797,6 +798,12 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
 
       if (path === '/api/transactions' && method === 'GET') {
         sendJson(res, 200, await listTransactions(pool, user.id));
+        return;
+      }
+
+      // İşlem formunun fon listesi: serbest metin yerine seçim.
+      if (path === '/api/funds' && method === 'GET') {
+        sendJson(res, 200, await fundOptions(pool));
         return;
       }
 
