@@ -3021,7 +3021,9 @@ export interface BekleyenIslemSatiri {
   /** Alımda işlem tarihi, satışta satış tarihi. */
   date: string;
   platform: string;
-  units: string;
+  /** Pasif kayıtta null: adet henüz belli değil, tutar var. */
+  units: string | null;
+  orderAmount: string | null;
   /**
    * Son bilinen birim fiyat ve günü. Tahmin bunun üzerinden kurulur; gerçek
    * fiyat işlem gününde açıklanacak. Fonun hiç fiyatı yoksa null — yeni
@@ -3078,7 +3080,7 @@ export async function pendingPurchases(
        SELECT max(trade_date) AS d FROM fact_fund_daily WHERE daily_return_pct IS NOT NULL)
      SELECT t.fund_code AS "fundCode", f.title,
             to_char(t.trade_date, 'YYYY-MM-DD') AS "date",
-            t.platform, t.units::text,
+            t.platform, t.units::text, t.order_amount::text AS "orderAmount",
             l.nav_per_share::text AS "navPerShare",
             to_char(l.nav_date, 'YYYY-MM-DD') AS "navDate"
        FROM portfolio_transaction t
@@ -3095,7 +3097,7 @@ export async function pendingPurchases(
   const sat = await pool.query<BekleyenIslemSatiri>(
     `SELECT t.fund_code AS "fundCode", f.title,
             to_char(t.sell_date, 'YYYY-MM-DD') AS "date",
-            t.platform, t.units::text,
+            t.platform, t.units::text, t.order_amount::text AS "orderAmount",
             l.nav_per_share::text AS "navPerShare",
             to_char(l.nav_date, 'YYYY-MM-DD') AS "navDate"
        FROM portfolio_transaction t

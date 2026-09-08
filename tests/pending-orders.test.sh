@@ -25,8 +25,8 @@ printf 'PASS: sunucu tutar üretmiyor, yalnız fiyatı taşıyor\n'
 
 # Tahmin yalnız pencerede ve etiketli. Fiyatın günü aynı yerde yazmalı:
 # rakamın nereden geldiği görünmezse ölçülmüş bir tutar gibi okunur.
-grep -q "'Tahmini ₺'" <<<"${PV}" || fail "tahmin sütunu yok"
-grep -q "\`≈ " <<<"${PV}" || fail "tahmin yaklaşık işareti taşımıyor"
+grep -Fq "'Tutar" "${M}" || fail "tutar sütunu yok"
+grep -Fq 'x.tahmin ? `≈ ${x.deger}`' "${M}" || fail "tahmin yaklaşık işareti taşımıyor"
 grep -Fq "birim fiyatıyla (" "${M}" || fail "tahminin hangi fiyattan geldiği yazmıyor"
 # Fiyatı olmayan fonda tahmin üretilmez; sıfır yazmak yanlış rakam yazmaktır.
 grep -q "b.navPerShare === null" <<<"${PV}" || fail "fiyatsız fonda tahmin uyduruluyor"
@@ -68,3 +68,17 @@ grep -Fq "latestNav\` AS" "${R}" || grep -q 'nav_per_share::text AS "latestNav"'
 grep -q "gorunen.filter((t) => t.cost !== null)" <<<"${TV}" \
   || fail "tahmin toplam satırına karışıyor olabilir"
 printf 'PASS: işlem listesinde tahmin etiketli ve toplama girmiyor\n'
+
+# Bekleyen işlemde ikisinden biri biliniyor: ya adet ya tutar. Bilinen olduğu
+# gibi yazılır, bilinmeyen son fiyattan tahmin edilir. Adet null iken
+# "null x fiyat = 0" hesaplanıyor ve ekranda "= 0" duruyordu.
+grep -Fq "if (b.units !== null) return { deger: num(b.units, 0), tahmin: false };" "${M}" \
+  || fail "bilinen adet tahmin gibi gosteriliyor"
+grep -Fq "if (b.orderAmount !== null) return { deger: num(b.orderAmount, 0), tahmin: false };" "${M}" \
+  || fail "bilinen tutar tahmin gibi gosteriliyor"
+# Fiyat yoksa tahmin de yok: tire yazilir, sifir degil.
+grep -Fq "if (b.orderAmount === null || b.navPerShare === null) return null;" "${M}" \
+  || fail "fiyatsiz kayitta adet uyduruluyor"
+grep -Fq "if (b.units === null || b.navPerShare === null) return null;" "${M}" \
+  || fail "fiyatsiz kayitta tutar uyduruluyor"
+printf 'PASS: bilinen yazılıyor, bilinmeyen tahmin ediliyor, fiyatsızda tire\n'

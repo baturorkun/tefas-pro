@@ -1561,7 +1561,9 @@ interface BekleyenIslemSatiri {
   /** Alımda işlem tarihi, satışta satış tarihi. */
   date: string;
   platform: string;
-  units: string;
+  /** Pasif kayıtta null: adet henüz belli değil, tutar var. */
+  units: string | null;
+  orderAmount: string | null;
   /** Son bilinen birim fiyat; tahmin bunun üzerinden. Yoksa null. */
   navPerShare: string | null;
   navDate: string | null;
@@ -5305,6 +5307,34 @@ async function portfolioView(): Promise<Node[]> {
   const bekleyenSatis = fonaGore(bekleyen.sells);
   const gunAy = (d: string): string => `${d.slice(8)}.${d.slice(5, 7)}`;
 
+  // Bekleyen bir işlemde ikisinden biri biliniyor: ya adet ya tutar. Bilinen
+  // olduğu gibi yazılır, bilinmeyen son fiyattan tahmin edilir. Eskiden adet
+  // null olunca "null × fiyat = 0" çıkıyor ve ekranda "≈ 0" duruyordu.
+  const bekleyenAdet = (b: BekleyenIslemSatiri): { deger: string; tahmin: boolean } | null => {
+    if (b.units !== null) return { deger: num(b.units, 0), tahmin: false };
+    if (b.orderAmount === null || b.navPerShare === null) return null;
+    return { deger: num(String(Number(b.orderAmount) / Number(b.navPerShare)), 0), tahmin: true };
+  };
+  const bekleyenTutar = (b: BekleyenIslemSatiri): { deger: string; tahmin: boolean } | null => {
+    if (b.orderAmount !== null) return { deger: num(b.orderAmount, 0), tahmin: false };
+    if (b.units === null || b.navPerShare === null) return null;
+    return { deger: num(String(Number(b.units) * Number(b.navPerShare)), 0), tahmin: true };
+  };
+  const yaz = (x: { deger: string; tahmin: boolean } | null): string =>
+    x === null ? '—' : x.tahmin ? `≈ ${x.deger}` : x.deger;
+  // Aynı fonda birden çok bekleyen işlem olabiliyor; biri tahminse toplam da
+  // tahmindir.
+  const topla = (
+    liste: BekleyenIslemSatiri[],
+    f: (b: BekleyenIslemSatiri) => { deger: string; tahmin: boolean } | null,
+  ): { deger: string; tahmin: boolean } | null => {
+    const parcalar = liste.map(f);
+    if (parcalar.some((x) => x === null)) return null;
+    const toplam = parcalar.reduce(
+      (a, x) => a + Number((x?.deger ?? '0').replace(/\./g, '').replace(',', '.')), 0);
+    return { deger: num(String(toplam), 0), tahmin: parcalar.some((x) => x?.tahmin === true) };
+  };
+
   // Tahmin son bilinen fiyattan. "Tahmini" sözü ve fiyatın günü aynı cümlede
   // duruyor: rakamın nereden geldiği görünmezse ölçülmüş bir tutar gibi
   // okunur, oysa gerçek fiyat işlem gününde açıklanacak.
@@ -5341,15 +5371,13 @@ async function portfolioView(): Promise<Node[]> {
           ? 'fiyatı henüz açıklanmadı'
           : 'pozisyon satış tarihine kadar açık'}`,
         el('div', {}, [
-          table(['Tarih', 'Banka', 'Adet', 'Tahmini ₺'], liste.map((b) => el('tr', {}, [
+          table(['Tarih', 'Banka', 'Adet', 'Tutar ₺'], liste.map((b) => el('tr', {}, [
             el('td', {}, [b.date]),
             el('td', {}, [b.platform]),
-            el('td', { class: 'num' }, [num(b.units, 0)]),
-            // Fiyatı olmayan fonda tire: tahmin de üretilemiyor. Yeni
-            // eklenmiş fonda collector henüz koşmamış olabiliyor (CKL).
-            el('td', { class: 'num' }, [b.navPerShare === null
-              ? '—'
-              : `≈ ${num(String(Number(b.units) * Number(b.navPerShare)), 0)}`]),
+            // ≈ işareti hangi sütunda çıkacağı kayda göre değişiyor: adet
+            // girilmişse tutar tahmin, tutar girilmişse adet tahmin.
+            el('td', { class: 'num' }, [yaz(bekleyenAdet(b))]),
+            el('td', { class: 'num' }, [yaz(bekleyenTutar(b))]),
           ]))),
           el('p', { class: 'pending-note' }, [tahminNotu(liste, tur)]),
         ]),
@@ -5416,9 +5444,12 @@ async function portfolioView(): Promise<Node[]> {
         el('span', { class: 'fund-title' }, [liste[0]?.title ?? '']),
       ]),
       el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []),
-      el('td', { class: 'num' }, [num(
-        String(liste.reduce((a, b) => a + Number(b.units), 0)), 0)]),
-      el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []),
+      // Adet ve maliyet: hangisi biliniyorsa o yazılıyor, diğeri son
+      // fiyattan tahmin ediliyor. İkisi de boş bırakılınca satır "ne aldım"
+      // sorusuna hiç cevap vermiyordu.
+      el('td', { class: 'num' }, [yaz(topla(liste, bekleyenAdet))]),
+      el('td', { class: 'num' }, [yaz(topla(liste, bekleyenTutar))]),
+      el('td', {}, []), el('td', {}, []), el('td', {}, []),
       el('td', { class: 'actions' }, [detay]),
     ]));
   }
