@@ -27,8 +27,7 @@ printf 'PASS: sunucu tutar üretmiyor, yalnız fiyatı taşıyor\n'
 # rakamın nereden geldiği görünmezse ölçülmüş bir tutar gibi okunur.
 grep -q "'Tahmini ₺'" <<<"${PV}" || fail "tahmin sütunu yok"
 grep -q "\`≈ " <<<"${PV}" || fail "tahmin yaklaşık işareti taşımıyor"
-awk '/const tahminNotu = /,/^  };/' <<<"${PV}" | grep -q "birim fiyatıyla" \
-  || fail "tahminin hangi fiyattan geldiği yazmıyor"
+grep -Fq "birim fiyatıyla (" "${M}" || fail "tahminin hangi fiyattan geldiği yazmıyor"
 # Fiyatı olmayan fonda tahmin üretilmez; sıfır yazmak yanlış rakam yazmaktır.
 grep -q "b.navPerShare === null" <<<"${PV}" || fail "fiyatsız fonda tahmin uyduruluyor"
 printf 'PASS: tahmin etiketli, fiyatın günüyle birlikte, fiyatsız fonda yok\n'

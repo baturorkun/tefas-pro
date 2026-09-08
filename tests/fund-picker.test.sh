@@ -17,8 +17,13 @@ grep -Fq "fundCode: el('input', { type: 'hidden', required: 'true' })" "${M}" \
   || fail "fon hâlâ serbest metin"
 # Takip listesi formu bilerek serbest metin kalıyor: yeni fonun sisteme
 # giriş kapısı orası. İşlem formunda ise fon zaten tanınıyor olmalı.
-awk '/^function transactionForm/,/^\/\*\* İşlem formunu emirden/' "${M}" \
-  | grep -Fq "placeholder: 'THF'" && fail "işlem formunda serbest metin fon alanı duruyor"
+#
+# Sayı üzerinden: awk aralığı ile bölmek denendi ve CI'da kırıldı — bitiş
+# deseninde Türkçe karakter vardı, CI'ın locale'inde eşleşmedi ve aralık
+# dosya sonuna kadar uzadı. Kural artık ASCII ve konumdan bağımsız.
+kac="$(grep -Fc "placeholder: 'THF'" "${M}")"
+[ "${kac}" = "1" ] \
+  || fail "serbest metin fon alanı ${kac} yerde; yalnız takip listesi formunda olmalı"
 grep -Fq "function watchlistForm" "${M}" || fail "takip listesi formu kaybolmuş"
 printf 'PASS: fon serbest metin değil, listeden geliyor\n'
 
