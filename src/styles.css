@@ -609,6 +609,22 @@ td.actions .icon-btn + .icon-btn { margin-left: 6px; }
 /* Sektör sütunu kalkınca 76rem gereksiz genişlik oldu. */
 .modal-card.modal-wide { width: min(64rem, 96vw); padding: 0; }
 .modal-wide .modal-body { max-height: min(78vh, 46rem); }
+/* On sütunlu kapanan işlem tablosu 1054 px istiyor; 64rem'de son sütun
+   kesiliyordu. */
+.modal-card.modal-xwide { width: min(78rem, 96vw); padding: 0; }
+/* Kaydırma modal-body'de değil tablonun kendi çerçevesinde: uzun listede
+   thead body ile birlikte kayıp gidiyordu ve on sütunlu bir tabloda başlığı
+   kaybetmek okumayı bitiriyor. table-wrap zaten overflow-x taşıyor, sticky'nin
+   tutunacağı kutu da o olmalı — üstteki kutuda kalsaydı yükseklik sınırı
+   olmadığı için hiç yapışmazdı. */
+.modal-xwide .modal-body { max-height: none; overflow: visible; padding: 0; }
+.modal-xwide .table-wrap { max-height: min(70vh, 40rem); overflow: auto; }
+.modal-xwide thead th { position: sticky; top: 0; z-index: 1; }
+/* Toplam da yapışık: uzun listede "bu fon toplam ne yaptı" sorusu ekranın
+   dibine kayıp gidiyordu. */
+.modal-xwide tbody tr.total-row td { position: sticky; bottom: 0; z-index: 1;
+                                     background: var(--panel);
+                                     border-top: 1px solid var(--line); }
 /* Pencere içindeki paneller kendi çerçevelerini taşımaz: pencerenin kendisi
    zaten bir çerçeve, iç içe kutu gürültü olurdu. */
 .fund-modal .panel { border: 0; background: transparent; margin: 0; }
@@ -940,6 +956,12 @@ textarea:focus  { outline: none; border-color: var(--accent);
 /* Bölüm sekmeleri panel başlığındakilerden daha iri: ekranın ana gezinmesi
    bunlar. Alt çizgi şeridi sekmelerin panellere ait olmadığını, sayfayı
    böldüğünü gösteriyor. */
+/* Fon satırı işlemlerini pencerede açar; satırın tamamı tıklanabilir ve
+   sondaki ikon bunu görünür kılıyor. */
+.fund-row { cursor: pointer; }
+.fund-row:hover td { background: var(--panel-hover); }
+.row-action { width: 1px; white-space: nowrap; text-align: right; }
+
 .section-tabs { display: flex; gap: 4px; margin: 20px 0 14px;
                 border-bottom: 1px solid var(--line); }
 .section-tabs .tab-btn { font-size: .9rem; padding: 9px 16px; }

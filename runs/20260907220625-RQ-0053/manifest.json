@@ -1,0 +1,44 @@
+{
+  "runId": "20260907220625-RQ-0053",
+  "requirementId": "RQ-0053",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260907220625-RQ-0053/handoff.md",
+  "projectGuidelines": {
+    "combinedSha256": "73bde0d690f8ec23c37c27be97d17c628d2f60e56f49bffbe0810fd5769a70fb",
+    "files": [
+      {
+        "path": "AGENTS.md",
+        "sha256": "35dbcb26a57ab038e0e772629d210a83e459fa6674e4582d4ed0ed52b8bd28f8"
+      }
+    ]
+  },
+  "status": "approved",
+  "createdAt": "2026-09-07T22:06:25.399Z",
+  "updatedAt": "2026-09-07T22:09:27.359Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-09-07T22:06:32.084Z",
+      "finishedAt": "2026-09-07T22:09:27.155Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "package.json",
+    "src/main.ts",
+    "tests/closed-fund-summary.test.sh"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-09-07T22:09:27.360Z",
+  "approvedBy": "human"
+}
