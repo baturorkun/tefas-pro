@@ -67,8 +67,23 @@ anlatmıyordu.
 Fon satırındaki "7 işlem" bir soru soruyor ama cevabı verecek yol yok:
 kullanıcı işlem sekmesine geçip 53 satır içinde o fonu aramak zorunda.
 
-Fon satırına tıklamak işlem sekmesini o fonla süzülmüş açar. İşlem
-listesinde ayrıca fon ve banka filtresi durur — Fon Hareketleri'ndeki
+Fon satırına tıklamak bacaklarını **satırın altında** açar. İlk denemede
+tıklama işlem sekmesine geçiriyordu; yanlıştı. Sekme kullanıcının kontrol
+ettiği bir şey, kendiliğinden değişince tıklanan yer ile değişen yer ekranın
+iki ayrı ucunda kalıyor — kullanıcı geçişi görmüyor bile, üstelik gelen
+tablo eskisine benziyor (yine tablo, yine ilk sütunda FON). Sekme rozeti de
+"İşlemler 53" derken tablo 4 satır gösteriyordu.
+
+Yerinde açılmada bu sınıfın tamamı yok oluyor: hiçbir şey gezinmiyor, fon
+satırı gözün önünde kalıyor, hareket eden şey imlecin altında ve geri dönüş
+"tekrar tıkla". Desen yeni değil — Dönemsel Getiri'de ay satırı haftalarını
+aynı şekilde açıyor.
+
+Bacak satırı fon satırıyla aynı altı sütuna oturur: tarih aralığı, banka,
+sonra aynı para sütunları. Süre ve adet orada yok, tam hâli İşlemler
+sekmesinde duruyor.
+
+İşlem listesinde ayrıca fon ve banka filtresi durur — Fon Hareketleri'ndeki
 desenin aynısı, aynı `comboFilter` bileşeni ve aynı AND kuralı.
 
 Fon satırı yalnız **kapanmış** bacakları toplar. Bir fon satılıp yeniden
@@ -87,7 +102,9 @@ sekmesinde zaten duruyor.
 - Fon listesi portföye giren tutara göre azalan sıralanır.
 - İşlem listesi alış tarihine göre yeniden eskiye sıralanır.
 - İşlem listesinde fon ve banka filtresi vardır; ikisi AND ile birleşir.
-- Fon satırına tıklamak işlem sekmesini o fonla süzülmüş açar.
+- Fon satırına tıklamak bacaklarını satırın altında açar ve kapatır.
+- Fon satırına tıklamak sekmeyi değiştirmez.
+- Bacak satırı fon satırıyla aynı sütunlara oturur.
 - Filtreliyken başlık kaç kaydın kaçının görüldüğünü yazar.
 - Varsayılan sekme fon; seçim sayfa yenilendiğinde korunur.
 - Sekme değiştirmek `/api/closed`'a yeni istek atmaz.

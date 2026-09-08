@@ -30,13 +30,19 @@ printf 'PASS: fon toplamı işlem toplamıyla aynı kaynaktan\n'
 grep -q "sort((a, b) => b.buy - a.buy)" <<<"${CV}" \
   || fail "fon listesi portföye giren tutara göre sıralı değil"
 
-# Fon satırı işlem sekmesini o fonla açar: "7 işlem" yazan hücrenin cevabı
-# orada ve elle filtre seçmeye gerek kalmıyor.
-grep -q "class: 'row-link'" <<<"${CV}" || fail "fon satırı tıklanabilir değil"
-awk '/tr.addEventListener/,/});/' <<<"${CV}" | grep -q "kapananFiltre.fundCode = f.fundCode" \
-  || fail "fon satırı işlem filtresini kurmuyor"
-awk '/tr.addEventListener/,/});/' <<<"${CV}" | grep -q "sec('tx')" \
-  || fail "fon satırı işlem sekmesine geçmiyor"
+# Fon satırı bacaklarını YERİNDE açar. Sekmeyi kullanıcı adına değiştirmek
+# kafa karıştırıyordu: tıklanan yer ile değişen yer ekranın iki ayrı ucunda,
+# gelen tablo da eskisine benziyor — geçiş fark edilmiyor.
+grep -q "acikMi ? 'fund-row fund-open' : 'fund-row'" <<<"${CV}" \
+  || fail "fon satırı açılabilir değil"
+LEG="$(awk '/tr.addEventListener/,/});/' <<<"${CV}")"
+grep -q "sec('tx')" <<<"${LEG}" && fail "fon satırı sekmeyi kullanıcı adına değiştiriyor"
+grep -q "acik.delete(f.fundCode)" <<<"${LEG}" || fail "fon satırı açılıp kapanmıyor"
+grep -q "bacakSatiri" <<<"${CV}" || fail "bacaklar yerinde çizilmiyor"
+# Bacak satırı fon satırıyla aynı altı sütuna oturmalı; hizası kayarsa
+# tablo iki ayrı tablo gibi okunur.
+awk '/const bacakSatiri = /,/\]\);/' <<<"${CV}" | grep -c "el('td'" | grep -qx 6 \
+  || fail "bacak satırı fon satırıyla aynı sütun sayısında değil"
 
 # Filtre satırı Fon Hareketleri'ndeki desenle aynı; iki filtre AND ile birleşir.
 grep -q "comboFilter({" <<<"${CV}" || fail "işlem listesinde filtre yok"
@@ -51,4 +57,4 @@ awk '/FROM analytics.closed_position/,/\[userId\]/' "${PROJECT_ROOT}/src/server/
 awk '/function readKapananSekme/,/^}/' "${M}" | grep -q "=== 'tx' ? 'tx' : 'fund'" \
   || fail "varsayılan sekme fon değil"
 grep -q "KAPANAN_SEKME_KEY = 'tefas.closed.section'" "${M}" || fail "seçim saklanmıyor"
-printf 'PASS: fon satırı işlem sekmesini süzüyor, sıralamalar ve varsayılan sekme yerinde\n'
+printf 'PASS: fon satırı bacakları yerinde açıyor, sıralamalar ve varsayılan sekme yerinde\n'

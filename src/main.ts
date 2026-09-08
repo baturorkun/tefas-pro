@@ -4264,27 +4264,58 @@ async function closedView(): Promise<Node[]> {
   // taşıyordu; ölçekle sıralayınca satırın ağırlığı da okunuyor.
   const fonListe = [...fonlar.values()].sort((a, b) => b.buy - a.buy);
 
-  // Fon satırına tıklamak işlem sekmesini o fonla açar: "7 işlem" yazan
-  // hücrenin cevabı orada ve elle filtre seçmeye gerek kalmıyor.
-  const fonBody = fonListe.map((f) => {
-    const tr = el('tr', { class: 'row-link', title: `${f.fundCode} işlemlerini göster` }, [
-      el('td', {}, [
-        el('span', { class: 'fund-code' }, [f.fundCode]),
-        el('span', { class: 'fund-title' }, [f.title ?? '']),
-      ]),
-      el('td', { class: 'num dim' }, [`${String(f.adet)} işlem`]),
-      el('td', { class: 'num' }, [num(String(f.buy))]),
-      el('td', { class: 'num' }, [num(String(f.sell))]),
-      el('td', {}, [signed(String(f.sell - f.buy), ' ₺')]),
-      el('td', {}, [signed(f.buy === 0 ? null : String((f.sell / f.buy - 1) * 100), '')]),
+  // Fon satırı bacaklarını YERİNDE açar, başka sekmeye götürmez. Sekme
+  // kullanıcının kontrol ettiği bir şey; kendiliğinden değişirse tıkladığı
+  // yer ile değişen yer ekranın iki ayrı ucunda kalıyor ve geçişi görmüyor
+  // bile. Dönemsel Getiri'deki ay → hafta deseninin aynısı.
+  const acik = new Set<string>();
+  const kisaTarih = (d: string): string => `${d.slice(8)}.${d.slice(5, 7)}`;
+
+  // Bacak satırı fon satırıyla aynı altı sütuna oturur: tarih aralığı, banka,
+  // sonra aynı para sütunları. Süre ve adet burada yok, tam hâli İşlemler
+  // sekmesinde duruyor.
+  const bacakSatiri = (r: ClosedPositionRow): HTMLElement =>
+    el('tr', { class: 'leg-row' }, [
+      el('td', { class: 'leg-name' }, [`${kisaTarih(r.buyDate)} → ${kisaTarih(r.sellDate)}`]),
+      el('td', { class: 'num dim' }, [r.platform]),
+      el('td', { class: 'num' }, [num(r.buyValue)]),
+      el('td', { class: 'num' }, [num(r.sellValue)]),
+      el('td', {}, [signed(r.realizedGain, ' ₺')]),
+      el('td', {}, [signed(r.realizedPct, '')]),
     ]);
-    tr.addEventListener('click', () => {
-      kapananFiltre.fundCode = f.fundCode;
-      kapananFiltre.platform = '';
-      sec('tx');
-    });
-    return tr;
-  });
+
+  const fonTablosu = (): HTMLElement => {
+    const satirlar: HTMLElement[] = [];
+    for (const f of fonListe) {
+      const acikMi = acik.has(f.fundCode);
+      const tr = el('tr', {
+        class: acikMi ? 'fund-row fund-open' : 'fund-row',
+        title: acikMi ? 'İşlemleri gizle' : 'İşlemleri göster',
+      }, [
+        el('td', {}, [
+          // Ok işareti satırın açılabilir olduğunu söylüyor; imleç tek
+          // başına yeterli değil.
+          el('span', { class: 'row-caret' }, [acikMi ? '▾' : '▸']),
+          el('span', { class: 'fund-code' }, [f.fundCode]),
+          el('span', { class: 'fund-title' }, [f.title ?? '']),
+        ]),
+        el('td', { class: 'num dim' }, [`${String(f.adet)} işlem`]),
+        el('td', { class: 'num' }, [num(String(f.buy))]),
+        el('td', { class: 'num' }, [num(String(f.sell))]),
+        el('td', {}, [signed(String(f.sell - f.buy), ' ₺')]),
+        el('td', {}, [signed(f.buy === 0 ? null : String((f.sell / f.buy - 1) * 100), '')]),
+      ]);
+      tr.addEventListener('click', () => {
+        if (acik.has(f.fundCode)) acik.delete(f.fundCode);
+        else acik.add(f.fundCode);
+        ciz('fund');
+      });
+      satirlar.push(tr);
+      if (acikMi) satirlar.push(...rows.filter((r) => r.fundCode === f.fundCode).map(bacakSatiri));
+    }
+    return table(['Fon', 'İşlem', 'Alış ₺', 'Satış ₺', 'K/Z', 'K/Z %'],
+      [...satirlar, fonFoot]);
+  };
 
   const fonFoot = el('tr', { class: 'total-row' }, [
     el('td', {}, [`TOPLAM (${String(fonListe.length)})`]),
@@ -4379,8 +4410,7 @@ async function closedView(): Promise<Node[]> {
       return;
     }
     if (id === 'fund') {
-      govde.replaceChildren(table(
-        ['Fon', 'İşlem', 'Alış ₺', 'Satış ₺', 'K/Z', 'K/Z %'], [...fonBody, fonFoot]));
+      govde.replaceChildren(fonTablosu());
       meta.textContent = `${String(fonListe.length)} fon · en çok yatırılandan başlar`;
       return;
     }

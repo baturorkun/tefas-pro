@@ -940,10 +940,15 @@ textarea:focus  { outline: none; border-color: var(--accent);
 /* Bölüm sekmeleri panel başlığındakilerden daha iri: ekranın ana gezinmesi
    bunlar. Alt çizgi şeridi sekmelerin panellere ait olmadığını, sayfayı
    böldüğünü gösteriyor. */
-/* Tıklanabilir satır: fon satırı işlem listesini o fonla açıyor. İmleç ve
-   vurgu olmadan tıklanabilir olduğu görünmüyordu. */
-.row-link { cursor: pointer; }
-.row-link:hover td { background: var(--row-hover, rgba(255, 255, 255, .04)); }
+/* Açılabilir fon satırı: bacaklar altında yerinde açılıyor. Dönemsel
+   Getiri'deki ay → hafta deseninin aynısı. */
+.fund-row { cursor: pointer; }
+.fund-row:hover td { background: var(--panel-hover); }
+.fund-open td { background: var(--panel-hover); }
+.fund-open td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.row-caret { display: inline-block; width: 1rem; color: var(--muted-dim); }
+.leg-row td { background: transparent; }
+.leg-name { padding-left: 1.4rem; color: var(--muted); font-size: .84rem; }
 
 .section-tabs { display: flex; gap: 4px; margin: 20px 0 14px;
                 border-bottom: 1px solid var(--line); }
