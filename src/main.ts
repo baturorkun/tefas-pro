@@ -338,7 +338,10 @@ async function api(path: string, init?: RequestInit): Promise<unknown> {
       typeof body === 'object' && body !== null && 'error' in body
         ? String((body as { error: unknown }).error)
         : `HTTP ${String(res.status)}`;
-    throw new Error(message);
+    // Gövde hataya iliştiriliyor: bazı hatalar kullanıcıya sorulacak bir
+    // durum taşıyor (mükerrer kayıt uyarısı gibi) ve metni ayrıştırmak
+    // kırılgan olurdu.
+    throw Object.assign(new Error(message), { status: res.status, body });
   }
   return body;
 }
@@ -2688,21 +2691,76 @@ function sadeceSayi(input: HTMLInputElement): void {
  * yüzden değer olarak değil okuyucu olarak alınır. Alanlar bağlandığında
  * ikisi de henüz bilinmiyor olabilir.
  */
+/**
+ * Sabit biçimli tarih alanı: gg-aa-yyyy.
+ *
+ * `type="date"` biçimi tarayıcının diline göre çiziyor. İngilizce bir
+ * tarayıcıda aa/gg/yyyy görünüyor ve 08-09 ile 09-08 birbirine karışıyor —
+ * fon işleminde bu doğrudan yanlış maliyet demek. Biçim artık sayfaya ait,
+ * tarayıcıya değil.
+ *
+ * Değer alanda gg-aa-yyyy duruyor, sunucuya ISO gidiyor; dönüşüm
+ * `tarihOku`/`tarihYaz` üzerinden tek yerde.
+ */
+function tarihGirdisi(attrs: Record<string, string> = {}): HTMLInputElement {
+  const i = el('input', {
+    type: 'text', inputmode: 'numeric', maxlength: '10',
+    placeholder: 'gg-aa-yyyy', autocomplete: 'off', spellcheck: 'false',
+    ...attrs,
+  }) as HTMLInputElement;
+  // Tireleri kullanıcı yazmıyor; rakam girdikçe kendiliğinden açılıyor.
+  i.addEventListener('input', () => {
+    const r = i.value.replace(/\D/g, '').slice(0, 8);
+    const p: string[] = [];
+    if (r.length > 0) p.push(r.slice(0, 2));
+    if (r.length > 2) p.push(r.slice(2, 4));
+    if (r.length > 4) p.push(r.slice(4, 8));
+    i.value = p.join('-');
+    i.setCustomValidity('');
+  });
+  i.addEventListener('blur', () => {
+    i.setCustomValidity(
+      i.value === '' || tarihOku(i) !== '' ? '' : 'Tarihi gg-aa-yyyy olarak yazın.');
+  });
+  return i;
+}
+
+/** Alandaki gg-aa-yyyy değerini ISO'ya çevirir; geçersizse boş döner. */
+function tarihOku(i: HTMLInputElement): string {
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(i.value.trim());
+  if (m === null) return '';
+  const [, gun, ay, yil] = m;
+  const iso = `${String(yil)}-${String(ay)}-${String(gun)}`;
+  // Date ile doğrulama: 31-02-2026 biçim olarak doğru ama gün olarak yok.
+  const d = new Date(`${iso}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== iso ? '' : iso;
+}
+
+/** ISO değeri alana gg-aa-yyyy olarak yazar. */
+function tarihYaz(i: HTMLInputElement, iso: string | null): void {
+  i.value = iso === null || iso === ''
+    ? ''
+    : `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`;
+}
+
 function linkValorDates(
   order: HTMLInputElement,
   settle: HTMLInputElement,
   days: () => number | null,
   holidays: () => string[],
 ): void {
+  // Alanlar gg-aa-yyyy taşıyor; hesap ISO ile yapılıyor.
   order.addEventListener('change', () => {
     const d = days();
-    if (d === null || order.value === '') return;
-    try { settle.value = settlementFromOrder(order.value, d, holidays()); } catch { /* elle girilsin */ }
+    const iso = tarihOku(order);
+    if (d === null || iso === '') return;
+    try { tarihYaz(settle, settlementFromOrder(iso, d, holidays())); } catch { /* elle girilsin */ }
   });
   settle.addEventListener('change', () => {
     const d = days();
-    if (d === null || settle.value === '' || order.value !== '') return;
-    try { order.value = orderFromSettlement(settle.value, d, holidays()); } catch { /* elle girilsin */ }
+    const iso = tarihOku(settle);
+    if (d === null || iso === '' || order.value !== '') return;
+    try { tarihYaz(order, orderFromSettlement(iso, d, holidays())); } catch { /* elle girilsin */ }
   });
 }
 
@@ -2710,6 +2768,31 @@ function linkValorDates(
  * İşlem formu. Gövdeyi ve kaydet düğmesini ayrı döndürür: pencerede gövde
  * ortada, eylemler altta sabit bir şeritte durur.
  */
+/**
+ * En son kullanılan banka.
+ *
+ * Sunucuda tutulmuyor: bu bir tercih, veri değil. Cihaz değişince
+ * hatırlanmaması kabul edilebilir — alan yine de boş gelir, yanlış bir
+ * banka seçili gelmez.
+ */
+const SON_BANKA_KEY = 'tefas.tx.platform';
+
+function readSonBanka(): string {
+  try {
+    return localStorage.getItem(SON_BANKA_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function writeSonBanka(value: string): void {
+  try {
+    localStorage.setItem(SON_BANKA_KEY, value);
+  } catch {
+    // Depolama kapalıysa alan her seferinde boş gelir; yanlış değer gelmez.
+  }
+}
+
 function transactionForm(existing: Transaction | null, onDone: () => void): {
   body: HTMLElement;
   submit: HTMLButtonElement;
@@ -2717,11 +2800,11 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
   const f = {
     fundCode: el('input', { required: 'true', placeholder: 'THF', maxlength: '16' }),
     units: el('input', { type: 'number', step: 'any', min: '0', required: 'true', placeholder: '1000' }),
-    buyOrderDate: el('input', { type: 'date' }),
-    tradeDate: el('input', { type: 'date', required: 'true' }),
+    buyOrderDate: tarihGirdisi(),
+    tradeDate: tarihGirdisi({ required: 'true' }),
     platform: el('select', { required: 'true' }) as HTMLSelectElement,
-    sellOrderDate: el('input', { type: 'date' }),
-    sellDate: el('input', { type: 'date' }),
+    sellOrderDate: tarihGirdisi(),
+    sellDate: tarihGirdisi(),
     // textarea değil input: sınır zaten tek satırlık. Çok satırlı bir kutu
     // paragraf yazmaya davet eder, tabloda da öyle görünmez.
     note: el('input', { maxlength: String(NOTE_MAX), placeholder: 'İsteğe bağlı' }),
@@ -2733,10 +2816,10 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
     // ama gereksiz sıfırlar atılır: 9911.000000 → 9911, 12.345600 → 12.3456.
     f.units.value = String(Number(existing.units));
     f.note.value = existing.note ?? '';
-    f.buyOrderDate.value = existing.buyOrderDate ?? '';
-    f.tradeDate.value = existing.tradeDate;
-    f.sellOrderDate.value = existing.sellOrderDate ?? '';
-    f.sellDate.value = existing.sellDate ?? '';
+    tarihYaz(f.buyOrderDate, existing.buyOrderDate);
+    tarihYaz(f.tradeDate, existing.tradeDate);
+    tarihYaz(f.sellOrderDate, existing.sellOrderDate);
+    tarihYaz(f.sellDate, existing.sellDate);
   }
 
   // Banka listesi tanımlardan gelir; alan serbest metin değil. Liste boşsa
@@ -2751,10 +2834,16 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
         bankHint.classList.add('field-warn');
         return;
       }
+      // Boş seçenek başta: listenin ilk bankası kendiliğinden seçili gelince
+      // kullanıcı alanı okumadan geçiyor ve işlem yanlış bankaya yazılıyordu.
+      f.platform.append(el('option', { value: '' }, ['Banka seçin']));
       for (const b of banks) f.platform.append(el('option', { value: b.name }, [b.name]));
       // Düzenlemede mevcut değer seçili gelmeli; seçenekler eklenmeden önce
-      // atanan value boşa düşerdi.
-      f.platform.value = existing?.platform ?? banks[0]?.name ?? '';
+      // atanan value boşa düşerdi. Yeni kayıtta en son kullanılan banka —
+      // arka arkaya işlem girilirken hep aynı bankadan giriliyor.
+      const sonBanka = readSonBanka();
+      f.platform.value = existing?.platform
+        ?? (banks.some((b) => b.name === sonBanka) ? sonBanka : '');
       bankHint.textContent = '';
     } catch {
       bankHint.textContent = 'Banka listesi alınamadı.';
@@ -2841,18 +2930,57 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
     const payload = {
       fundCode: f.fundCode.value,
       platform: f.platform.value,
-      tradeDate: f.tradeDate.value,
+      tradeDate: tarihOku(f.tradeDate),
       units: f.units.value,
-      buyOrderDate: f.buyOrderDate.value || null,
-      sellOrderDate: f.sellOrderDate.value || null,
-      sellDate: f.sellDate.value || null,
+      buyOrderDate: tarihOku(f.buyOrderDate) || null,
+      sellOrderDate: tarihOku(f.sellOrderDate) || null,
+      sellDate: tarihOku(f.sellDate) || null,
       note: f.note.value,
     };
-    await api(
-      existing ? `/api/transactions/${String(existing.id)}` : '/api/transactions',
-      { method: existing ? 'PUT' : 'POST', body: JSON.stringify(payload) },
-    );
-    onDone();
+    const kaydet = async (onayli: boolean): Promise<void> => {
+      await api(
+        existing ? `/api/transactions/${String(existing.id)}` : '/api/transactions',
+        {
+          method: existing ? 'PUT' : 'POST',
+          body: JSON.stringify(onayli ? { ...payload, confirmDuplicate: true } : payload),
+        },
+      );
+    };
+    try {
+      await kaydet(false);
+    } catch (err) {
+      // Mükerrer uyarısı hata değil, soru: kullanıcı ısrar edebilir.
+      const g = (err as { body?: unknown }).body;
+      const mukerrer = typeof g === 'object' && g !== null && 'duplicate' in g;
+      if (!mukerrer) throw err;
+      const kac = Number((g as { existing?: unknown }).existing ?? 1);
+      const devam = await confirmDelete({
+        title: 'Bu kayıt zaten var',
+        detail: [
+          `${payload.fundCode.toUpperCase()} · ${payload.tradeDate}`,
+          `${payload.platform} · ${payload.units} adet`,
+          `Listede birebir aynısından ${String(kac)} tane duruyor.`,
+        ],
+        warning: 'Yine de eklersen aynı işlem iki kez sayılır; maliyet ve '
+          + 'getiri rakamların bozulur.',
+        hint: 'Gerçekten iki ayrı işlem yaptıysan eklemekte sorun yok.',
+        confirmLabel: 'Yine de ekle',
+      });
+      if (!devam) {
+        status.textContent = 'Eklenmedi.';
+        throw new Error('Eklenmedi.');
+      }
+      await kaydet(true);
+    }
+    writeSonBanka(f.platform.value);
+    // Kayıt yazıldı. Buradan sonra bir şey patlarsa "kaydedilemedi" demek
+    // yanlış olur ve kullanıcı tekrar gönderip mükerrer kayıt yaratır —
+    // yaşandı, on kayıt oluştu.
+    try {
+      onDone();
+    } catch {
+      // Pencere kapanmasa da kayıt yerinde; hata gösterilmiyor.
+    }
   }, 'Kaydedilemedi.');
   return { body: form, submit };
 }
@@ -2879,8 +3007,8 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
   const units = el('input', {
     type: 'number', step: 'any', min: '1', required: 'true',
   }) as HTMLInputElement;
-  const sellDate = el('input', { type: 'date', required: 'true' }) as HTMLInputElement;
-  const orderDate = el('input', { type: 'date' }) as HTMLInputElement;
+  const sellDate = tarihGirdisi({ required: 'true' });
+  const orderDate = tarihGirdisi();
   const status = el('span', { class: 'status' });
 
   const havuzAlani = el('div', { class: 'field' });
@@ -3099,8 +3227,8 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
       method: 'POST',
       body: JSON.stringify({
         fundCode: secili.split('·')[0] ?? '', platform: secili.split('·')[1] ?? '',
-        units: Number(units.value), sellDate: sellDate.value,
-        sellOrderDate: orderDate.value || null,
+        units: Number(units.value), sellDate: tarihOku(sellDate),
+        sellOrderDate: tarihOku(orderDate) || null,
       }),
     });
     close();

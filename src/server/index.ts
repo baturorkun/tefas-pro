@@ -46,6 +46,7 @@ import {
   addBank,
   addToWatchlist,
   allocation,
+  duplicateTransaction,
   stockAllocation,
   fundDetail,
   readUserSetting,
@@ -782,7 +783,25 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
       }
 
       if (path === '/api/transactions' && method === 'POST') {
-        const input = readTransactionInput(asRecord(await readJson(req)));
+        const govde = asRecord(await readJson(req));
+        const input = readTransactionInput(govde);
+        // Aynı kayıt iki kez yazılabiliyordu. Kaydın kendisi başarılıyken
+        // sonrasında bir şey patlayınca kullanıcı hata görüp tekrar
+        // gönderiyor; yaşandı, on kayıt oluştu. Meşru tekrar da var (aynı
+        // gün aynı fondan iki eşit alım), o yüzden engel değil onay:
+        // istemci durumu görüp confirmDuplicate ile ısrar edebilir.
+        if (govde['confirmDuplicate'] !== true) {
+          const ayni = await duplicateTransaction(pool, user.id, input);
+          if (ayni > 0) {
+            sendJson(res, 409, {
+              error: `Bu kayıt zaten var: ${input.fundCode} · ${input.tradeDate} · `
+                + `${input.platform} · ${String(input.units)} adet.`,
+              duplicate: true,
+              existing: ayni,
+            });
+            return;
+          }
+        }
         await ensureFundKnown(pool, client, input.fundCode);
         await trackFundForUser(pool, user.id, input.fundCode);
         // Takip listesine ekleme bunu yapıyordu, alış ekleme yapmıyordu:

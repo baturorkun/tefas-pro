@@ -202,7 +202,11 @@ describe('yerleşim', () => {
       "path === '/api/watchlist' && method === 'POST'"]) {
       const bas = index.indexOf(uc);
       expect(bas, `uç bulunamadı: ${uc}`).toBeGreaterThan(-1);
-      const govde = index.slice(bas, bas + 1400);
+      // Pencere uçtan sonraki gövdeyi kapsamalı. Mükerrer kaydı soran blok
+      // eklenince 1400 karakter yetmez oldu ve kural bozulmadığı hâlde test
+      // kırıldı — sınır gövdenin uzunluğuna göre değil, bir sonraki uca göre.
+      const sonraki = index.indexOf("if (path === '", bas + 1);
+      const govde = index.slice(bas, sonraki > bas ? sonraki : bas + 2400);
       expect(govde, `${uc} toplamayı tetiklemiyor`).toContain('triggerFundCollection(');
     }
   });

@@ -549,6 +549,7 @@ export async function getTransaction(
   const r = await pool.query<Transaction>(
     `SELECT ${TX_COLUMNS} FROM portfolio_transaction t
      LEFT JOIN dim_fund f USING (fund_code)
+     LEFT JOIN analytics.fund_latest l ON l.fund_code = t.fund_code
      LEFT JOIN analytics.position_slice s ON s.transaction_id = t.id
      WHERE t.user_id = $1 AND t.id = $2`,
     [userId, id],
@@ -560,6 +561,26 @@ export async function getTransaction(
  * Sahiplik WHERE'in içindedir: başka kullanıcının satırı hiç eşleşmez, yani
  * "önce oku sonra kontrol et" adımı atlanamaz ve yarış durumu oluşmaz.
  */
+/**
+ * Birebir aynı işlemden kaç tane var.
+ *
+ * Mükerrer kayıt engellenmiyor, sayılıyor: aynı gün aynı fondan iki eşit
+ * alım gerçekten olabiliyor (ölçülen veride PHE 24 Nisan'da iki kez 7.087
+ * adet). Uç bu sayıyı kullanıcıya gösterip onay istiyor.
+ */
+export async function duplicateTransaction(
+  pool: pg.Pool, userId: number, input: TransactionInput,
+): Promise<number> {
+  const r = await pool.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM portfolio_transaction
+      WHERE user_id = $1 AND fund_code = $2 AND platform = $3
+        AND trade_date = $4 AND units = $5
+        AND sell_date IS NOT DISTINCT FROM $6`,
+    [userId, input.fundCode, input.platform, input.tradeDate, input.units, input.sellDate],
+  );
+  return Number(r.rows[0]?.n ?? 0);
+}
+
 export async function updateTransaction(
   pool: pg.Pool,
   userId: number,
