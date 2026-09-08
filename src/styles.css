@@ -981,6 +981,21 @@ textarea:focus  { outline: none; border-color: var(--accent);
    hesaplanmış olduğunu, okumadan önce söylüyor. */
 .est-label { color: var(--warn); font-size: .76rem; }
 
+/* Tarih alanı: metin girdisi + takvim düğmesi. Gizli type=date yalnız yerel
+   seçiciyi açmak için var; görünmüyor, yani tarayıcının biçimi ekrana
+   çıkmıyor. display:none olamaz — o hâlde showPicker() çalışmıyor. */
+.date-field { display: flex; align-items: stretch; gap: .4rem; }
+.date-field > input[type="text"] { flex: 1; min-width: 0; }
+.date-hidden { position: absolute; width: 1px; height: 1px; padding: 0;
+               border: 0; opacity: 0; pointer-events: none; }
+.date-pick {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2.2rem; flex: none; padding: 0; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg-raised); color: var(--muted);
+}
+.date-pick:hover { color: var(--text); border-color: var(--accent); }
+
 .pending-note { margin: 0 0 .9rem; padding: .6rem .8rem; font-size: .84rem;
                 color: var(--muted); background: var(--bg-raised);
                 border: 1px solid var(--line-soft); border-radius: 6px; }

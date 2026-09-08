@@ -558,6 +558,7 @@ const ICON_PATHS: Record<string, string[]> = {
   fund: ['M4 19h16', 'M7 19V9M12 19V5M17 19v-7'],
   money: ['M12 3v18', 'M16 7.5A3.5 3.5 0 0 0 12.5 5h-1a3 3 0 0 0 0 6h1a3 3 0 0 1 0 6h-1A3.5 3.5 0 0 1 8 16.5'],
   chart: ['M4 19h16', 'm5 15 4-5 3 3 6-8'],
+  calendar: ['M4 6h16v14H4z', 'M4 10h16', 'M9 3v4', 'M15 3v4'],
   flag: ['M5 21V4h9l-1 3h6v8h-7l-1-3H5'],
   closed: ['M20 6 9 17l-5-5'],
   periods: ['M4 5h16v15H4z', 'M4 10h16', 'M9 5V3M15 5V3', 'M8 14h3M13 14h3'],
@@ -2716,13 +2717,28 @@ function tarihGirdisi(attrs: Record<string, string> = {}): HTMLInputElement {
     if (r.length > 2) p.push(r.slice(2, 4));
     if (r.length > 4) p.push(r.slice(4, 8));
     i.value = p.join('-');
-    i.setCustomValidity('');
+    // Yazarken kızarmasın: tarih ancak tamamlandığında yanlış olabilir.
+    if (i.value.length === 10 || i.value === '') tarihDogrula(i);
+    else i.setCustomValidity('');
   });
-  i.addEventListener('blur', () => {
-    i.setCustomValidity(
-      i.value === '' || tarihOku(i) !== '' ? '' : 'Tarihi gg-aa-yyyy olarak yazın.');
-  });
+  i.addEventListener('blur', () => { tarihDogrula(i); });
   return i;
+}
+
+/**
+ * Alanı doğrular ve mesajı yerleştirir; geçerliyse true.
+ *
+ * Üç yerde çağrılıyor: yazarken (tamamlanınca), alandan çıkarken ve
+ * gönderimden hemen önce. Sonuncusu şart — kullanıcı yarım tarih yazıp
+ * doğrudan Kaydet'e basabiliyor ve alan hiç blur almıyor.
+ */
+function tarihDogrula(i: HTMLInputElement): boolean {
+  const bos = i.value.trim() === '';
+  const gecerli = bos ? !i.required : tarihOku(i) !== '';
+  i.setCustomValidity(gecerli
+    ? ''
+    : bos ? 'Tarih girin.' : 'Geçerli bir tarih yazın: gg-aa-yyyy.');
+  return gecerli;
 }
 
 /** Alandaki gg-aa-yyyy değerini ISO'ya çevirir; geçersizse boş döner. */
@@ -2734,6 +2750,42 @@ function tarihOku(i: HTMLInputElement): string {
   // Date ile doğrulama: 31-02-2026 biçim olarak doğru ama gün olarak yok.
   const d = new Date(`${iso}T00:00:00Z`);
   return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== iso ? '' : iso;
+}
+
+/**
+ * Tarih alanı + takvim düğmesi.
+ *
+ * Biçim sayfaya ait kalıyor ama seçici geri geliyor: gizli bir `type=date`
+ * alanının yerel takvimi `showPicker()` ile açılıyor, seçilen gün metin
+ * alanına gg-aa-yyyy olarak yazılıyor. Gizli alan hiç görünmüyor, yani
+ * tarayıcının biçimi de ekrana çıkmıyor.
+ */
+function tarihAlani(i: HTMLInputElement): HTMLElement {
+  const gizli = el('input', {
+    type: 'date', class: 'date-hidden', tabindex: '-1', 'aria-hidden': 'true',
+  }) as HTMLInputElement;
+  const btn = el('button', {
+    type: 'button', class: 'date-pick', title: 'Takvimden seç',
+    'aria-label': 'Takvimden seç',
+  }, [icon('calendar')]);
+  btn.addEventListener('click', () => {
+    gizli.value = tarihOku(i);
+    // showPicker desteklenmiyorsa metin alanına düşülür; elle yazmak zaten
+    // asıl yol, takvim kolaylık.
+    try {
+      gizli.showPicker();
+    } catch {
+      i.focus();
+    }
+  });
+  gizli.addEventListener('change', () => {
+    tarihYaz(i, gizli.value);
+    i.setCustomValidity('');
+    // Valör hesabı 'change' dinliyor; takvimden seçmek de elle yazmak gibi
+    // sayılmalı.
+    i.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  return el('div', { class: 'date-field' }, [i, gizli, btn]);
 }
 
 /** ISO değeri alana gg-aa-yyyy olarak yazar. */
@@ -2899,8 +2951,8 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
     field('Fon Kodu', f.fundCode, 'TEFAS kodu, üç harf.'),
     field('Adet', f.units, 'Fon payı adedi, tutar değil.'),
     el('div', { class: 'form-section' }, [el('span', {}, ['Alış']), buyValorNote]),
-    field('Emir Tarihi', f.buyOrderDate, 'İsteğe bağlı; girilirse alış tarihi hesaplanır.'),
-    field('Alış Tarihi', f.tradeDate, 'Emrin fiyatlandığı gün.'),
+    field('Emir Tarihi', tarihAlani(f.buyOrderDate), 'İsteğe bağlı; girilirse alış tarihi hesaplanır.'),
+    field('Alış Tarihi', tarihAlani(f.tradeDate), 'Emrin fiyatlandığı gün.'),
     field('Banka', f.platform, bankHint),
     // Satış alanları yalnız SATILMIŞ kaydı düzenlerken çıkar.
     //
@@ -2914,9 +2966,9 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
     ...(existing !== null && existing.sellDate !== null
       ? [
           el('div', { class: 'form-section' }, [el('span', {}, ['Satış']), sellValorNote]),
-          field('Satış Emir Tarihi', f.sellOrderDate,
+          field('Satış Emir Tarihi', tarihAlani(f.sellOrderDate),
             'İsteğe bağlı; girilirse satış tarihi hesaplanır.'),
-          field('Satış Tarihi', f.sellDate, 'Boşaltılırsa pozisyon yeniden açılır.'),
+          field('Satış Tarihi', tarihAlani(f.sellDate), 'Boşaltılırsa pozisyon yeniden açılır.'),
         ]
       : []),
     // Not en altta: kaydın kendisi değil, kayıt hakkında. Zorunlu alanların
@@ -2927,6 +2979,13 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
   submit.setAttribute('form', 'tx-form');
 
   tekGonderim(form, submit, status, async () => {
+    // Yarım yazılmış tarih gönderime sızmasın: alanlar blur almamış olabilir.
+    for (const t of [f.buyOrderDate, f.tradeDate, f.sellOrderDate, f.sellDate]) {
+      if (!tarihDogrula(t)) {
+        t.reportValidity();
+        throw new Error('Tarihi gg-aa-yyyy olarak yazın.');
+      }
+    }
     const payload = {
       fundCode: f.fundCode.value,
       platform: f.platform.value,
@@ -3215,14 +3274,20 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
     plan,
     field('Adet', units, 'Satır seçebilir ya da elle yazabilirsiniz.'),
     el('div', { class: 'form-section' }, [el('span', {}, ['Satış']), valorNote]),
-    field('Satış Emir Tarihi', orderDate, 'İsteğe bağlı; girilirse satış tarihi hesaplanır.'),
-    field('Satış Tarihi', sellDate, 'Satışın gerçekleştiği gün.'),
+    field('Satış Emir Tarihi', tarihAlani(orderDate), 'İsteğe bağlı; girilirse satış tarihi hesaplanır.'),
+    field('Satış Tarihi', tarihAlani(sellDate), 'Satışın gerçekleştiği gün.'),
     status,
   ]);
   submit.setAttribute('form', 'sell-form');
 
   let close = (): void => {};
   tekGonderim(form, submit, status, async () => {
+    for (const t of [orderDate, sellDate]) {
+      if (!tarihDogrula(t)) {
+        t.reportValidity();
+        throw new Error('Tarihi gg-aa-yyyy olarak yazın.');
+      }
+    }
     await api('/api/transactions/sell', {
       method: 'POST',
       body: JSON.stringify({

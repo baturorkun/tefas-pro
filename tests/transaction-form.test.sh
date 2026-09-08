@@ -31,10 +31,19 @@ printf 'PASS: mükerrer kayıt soruluyor, kayıt sonrası hata yanıltmıyor\n'
 
 # Tarih biçimi sayfaya ait, tarayıcıya değil: type=date İngilizce tarayıcıda
 # aa/gg/yyyy çiziyor ve 08-09 ile 09-08 karışıyor.
-grep -q "type: 'date'" "${M}" && fail "hâlâ tarayıcı biçimli tarih alanı var"
+# type=date yalnız gizli seçici olarak kalabilir; ekranda biçimi tarayıcı
+# çizen bir alan olmamalı.
+grep -q "type: 'date'" "${M}" && ! grep -q "class: 'date-hidden'" "${M}" \
+  && fail "hâlâ tarayıcı biçimli tarih alanı var"
+grep -q "gizli.showPicker()" "${M}" || fail "takvim seçici yok"
 grep -q "placeholder: 'gg-aa-yyyy'" "${M}" || fail "sabit biçimli tarih alanı yok"
 awk '/^function tarihOku/,/^}/' "${M}" | grep -q "toISOString().slice(0, 10) !== iso" \
   || fail "olmayan gün (31-02) kabul ediliyor"
+# Doğrulama gönderimden hemen önce de koşmalı: kullanıcı yarım tarih yazıp
+# doğrudan Kaydet'e basabiliyor ve alan hiç blur almıyor.
+grep -q "if (!tarihDogrula(t))" "${M}" || fail "gönderimden önce tarih doğrulanmıyor"
+grep -c "t.reportValidity()" "${M}" | grep -qE "^[2-9]" \
+  || fail "iki formdan birinde tarih uyarısı gösterilmiyor"
 printf 'PASS: tarih biçimi sabit ve olmayan gün reddediliyor\n'
 
 # Banka boş gelir; ilk seçenek kendiliğinden seçili gelince işlem yanlış
