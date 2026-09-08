@@ -13,25 +13,37 @@
       }
     ]
   },
-  "status": "running",
+  "status": "approved",
   "createdAt": "2026-09-08T18:07:42.488Z",
-  "updatedAt": "2026-09-08T18:07:51.268Z",
+  "updatedAt": "2026-09-08T18:20:46.213Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-09-08T18:07:51.268Z"
+      "status": "passed",
+      "startedAt": "2026-09-08T18:07:51.268Z",
+      "finishedAt": "2026-09-08T18:20:46.008Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "package.json",
+    "requirements/RQ-0056-islem-formunda-fon-serbest-metin-degil-listeden-secilir.md",
+    "src/main.ts",
+    "src/server/index.ts",
+    "src/server/repository.ts",
+    "src/styles.css",
+    "tests/fund-picker.test.sh",
+    "tests/transaction-form.test.sh"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
-  }
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-09-08T18:20:46.214Z",
+  "approvedBy": "human"
 }
