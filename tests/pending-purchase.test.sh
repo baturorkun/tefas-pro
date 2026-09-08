@@ -48,8 +48,9 @@ printf 'PASS: adet ya da tutar zorunlu, pasif kayıt satılamıyor\n'
 # Arayüz: aynı form, aynı liste. Ayrı bir "emir" ekranı yok.
 grep -q "openOrderModal\|emirPaneli\|pending_order" "${M}" \
   && fail "ayrı emir ekranı geri gelmiş"
-awk '/^async function transactionsView/,/^}/' "${M}" \
-  | grep -q "t.sellDate === null && t.units !== null" \
+# grep -F ve tam satır: awk aralığı ile grep deseni ortama göre farklı
+# davranıyor, yerelde geçip CI'da kalıyordu.
+grep -Fq "const open = rows.filter((t) => t.sellDate === null && t.units !== null);" "${M}" \
   || fail "pasif kayıt açık pozisyon sayılıyor"
 grep -q "'Adet bekleniyor'" "${M}" || fail "pasif satır tutarını göstermiyor"
 grep -q "badge('Pasif', 'pending')" "${M}" || fail "pasif rozeti yok"
