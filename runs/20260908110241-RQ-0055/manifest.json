@@ -13,25 +13,37 @@
       }
     ]
   },
-  "status": "running",
+  "status": "approved",
   "createdAt": "2026-09-08T11:02:41.054Z",
-  "updatedAt": "2026-09-08T11:03:04.910Z",
+  "updatedAt": "2026-09-08T11:10:12.118Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-09-08T11:03:04.909Z"
+      "status": "passed",
+      "startedAt": "2026-09-08T11:03:04.909Z",
+      "finishedAt": "2026-09-08T11:10:11.920Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "db/migrations/041_pending_order.sql",
+    "package.json",
+    "src/main.ts",
+    "src/server/index.ts",
+    "src/server/repository.ts",
+    "src/styles.css",
+    "tests/pending-order.test.sh",
+    "tests/ui-conventions.test.ts"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
-  }
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-09-08T11:10:12.119Z",
+  "approvedBy": "human"
 }
