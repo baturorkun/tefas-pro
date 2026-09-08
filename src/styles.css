@@ -459,7 +459,8 @@ td.actions { text-align: right; }
              color: var(--danger); font-size: .76rem; line-height: 1.5;
              background: var(--danger-tint); border-radius: 6px; padding: .5rem .7rem; }
 /* Bekleyen durum: veri henüz gelmemiş, "yok" değil. */
-.status-pending { color: var(--accent); background: var(--panel); border-color: var(--line); }
+.status-pending { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent);
+                  border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
 .status-danger  { color: var(--danger); background: var(--danger-tint); border-color: var(--danger); }
 
 /* Ayarlarda banka ekleme şeridi: alan solda geniş, düğme sağda. */
@@ -467,6 +468,9 @@ td.actions { text-align: right; }
 .settings-add input { flex: 1; min-width: 0; }
 /* Banka listesi boşken formun uyarısı: ipucu değil, engel. */
 .field-warn { color: var(--danger); }
+/* Pasif kayıt hep aynı renk: form ipucu, satır şeridi ve rozet. Kavram tek
+   olduğu için rengi de tek olmalı — kullanıcı ilişkiyi kurabilsin. */
+.field-pending { color: var(--warn); }
 
 /* Dönemsel getiri tablosu: ay satırı kendi haftalarının başlığı gibi durur.
    Ayrı bir dolgu rengi vermek yerine üstten çizgi ve koyu metin kullanılır —

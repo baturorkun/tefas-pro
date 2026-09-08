@@ -2976,16 +2976,22 @@ function transactionForm(
   // İki alan aynı anda açık kalınca hangisinin geçerli olduğu formda
   // görünmüyordu. Kip seçilir: ya adet ya tutar, ikisi birden değil.
   const adetAlani = field('Adet', f.units, 'Fon payı adedi, tutar değil.');
+  // Bu ipucu uyarı rengiyle: alanın sonucu diğerlerinden farklı — girilen
+  // kayıt hiçbir hesaba katılmayacak ve kullanıcı bunu alanı doldurmadan
+  // önce görmeli.
   const tutarAlani = field('Tutar ₺', f.orderAmount,
-    'Bankaya verdiğin tutar. Adet gelene kadar kayıt pasif bekler.');
+    el('div', { class: 'field-hint field-pending' }, [
+      'Bankaya verdiğin tutar. Adet gelene kadar kayıt pasif bekler, '
+      + 'hiçbir hesaba katılmaz.',
+    ]));
 
   const kipDugmesi = (kip: 'adet' | 'tutar', etiket: string): HTMLElement =>
     el('button', { type: 'button', class: 'tab-btn', 'data-kip': kip }, [etiket]);
   // Ayrım olgusal: adet belli mi değil mi. "Gerçek / geçici" kaydın
   // gerçekliğini tartışıyor gibi okunuyordu — oysa alım gerçek, eksik olan
   // yalnız adet. Rozet sonucu söylüyor (Pasif), bu seçici sebebi.
-  const gercekBtn = kipDugmesi('adet', 'Adet belli');
-  const geciciBtn = kipDugmesi('tutar', 'Adet belli değil');
+  const gercekBtn = kipDugmesi('adet', 'Adet Belli · Kesin Giriş');
+  const geciciBtn = kipDugmesi('tutar', 'Adet Belli Değil · Ön Giriş');
   const kipSecici = el('div', { class: 'tabs mode-tabs' }, [gercekBtn, geciciBtn]);
 
   const kipUygula = (kip: 'adet' | 'tutar'): void => {
@@ -3013,8 +3019,8 @@ function transactionForm(
     el('div', { class: 'field field-wide' }, [
       el('label', {}, ['Giriş türü']),
       kipSecici,
-      el('div', { class: 'field-hint' }, [
-        'Bankaya tutar söyleyip adedi sonra öğreniyorsan "Adet belli değil" seç: '
+      el('div', { class: 'field-hint field-pending' }, [
+        'Bankaya tutar söyleyip adedi sonra öğreniyorsan Ön Giriş yap: '
         + 'kayıt adet girilene kadar pasif bekler ve hiçbir hesaba katılmaz.',
       ]),
     ]),
@@ -5086,9 +5092,12 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
             el('span', { class: 'stack-from' }, [money(t.cost)]),
             el('span', { class: 'stack-to' }, [money(t.value)]),
           ]
-        // Pasif kayıtta adet yok, yani tahmin de yok. Tutar zaten Adet
-        // sütununda duruyor; buraya ikinci kez yazmak gürültü olurdu.
-        : t.units === null || t.latestNav === null
+        // Pasif kayıtta adet yok, yani tahmin de yok. Rozet burada duruyor:
+        // "hesaba girmiyor" sözü tam da maliyet ve değerin olması gereken
+        // yerde söylenmeli. Satış sütununda dururken ilgisiz bir yerdeydi.
+        : t.units === null
+          ? [badge('Pasif', 'pending')]
+          : t.latestNav === null
           ? ['—']
           : [
               el('span', { class: 'stack-from est-label' }, ['Tahmini']),
@@ -5105,9 +5114,7 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
       // istisna ileri tarihli satış: emir verilmiş ama gerçekleşmemiş, o yüzden
       // hâlâ açık. Bilgi yalnız o satırda rozet olarak veriliyor; iki ayrı
       // sütun tablonun sağını ekran dışına itiyordu.
-      el('td', { class: 'num' }, t.units === null
-        ? [badge('Pasif', 'pending')]
-        : t.sellDate === null ? ['—'] : [
+      el('td', { class: 'num' }, t.sellDate === null ? ['—'] : [
         t.sellDate,
         ...(t.sellDate > bugun ? [badge('Bekliyor', 'pending')] : []),
       ]),

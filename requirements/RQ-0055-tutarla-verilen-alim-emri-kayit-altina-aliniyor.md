@@ -57,7 +57,7 @@ pozitif olacak, adedi olmayan kayıt satılamayacak.
 İlk hâlde Adet ve Tutar aynı anda açıktı ve ikisi de doldurulabiliyordu;
 hangisinin geçerli olduğu formda görünmüyordu. Artık bir seçici var:
 
-    Adet belli  |  Adet belli değil
+    Adet Belli · Kesin Giriş  |  Adet Belli Değil · Ön Giriş
 
 Etiketler olguyu söylüyor, kaydın gerçekliğini değil: "gerçek / geçici"
 alımın kendisini tartışıyor gibi okunuyordu, oysa alım gerçek — eksik olan
