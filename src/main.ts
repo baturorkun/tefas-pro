@@ -2981,8 +2981,11 @@ function transactionForm(
 
   const kipDugmesi = (kip: 'adet' | 'tutar', etiket: string): HTMLElement =>
     el('button', { type: 'button', class: 'tab-btn', 'data-kip': kip }, [etiket]);
-  const gercekBtn = kipDugmesi('adet', 'Gerçek alım');
-  const geciciBtn = kipDugmesi('tutar', 'Geçici giriş · adet bilmiyorum');
+  // Ayrım olgusal: adet belli mi değil mi. "Gerçek / geçici" kaydın
+  // gerçekliğini tartışıyor gibi okunuyordu — oysa alım gerçek, eksik olan
+  // yalnız adet. Rozet sonucu söylüyor (Pasif), bu seçici sebebi.
+  const gercekBtn = kipDugmesi('adet', 'Adet belli');
+  const geciciBtn = kipDugmesi('tutar', 'Adet belli değil');
   const kipSecici = el('div', { class: 'tabs mode-tabs' }, [gercekBtn, geciciBtn]);
 
   const kipUygula = (kip: 'adet' | 'tutar'): void => {
@@ -3005,14 +3008,17 @@ function transactionForm(
   kipUygula(existing !== null && existing.units === null ? 'tutar' : 'adet');
 
   const form = el('form', { class: 'modal-form-grid', id: 'tx-form' }, [
-    field('Fon Kodu', f.fundCode, 'TEFAS kodu, üç harf.'),
-    el('div', { class: 'field' }, [
+    // En üstte ve tam genişlikte: altındaki alanın ne olacağını belirliyor,
+    // sonuç sebebin altında durmalı.
+    el('div', { class: 'field field-wide' }, [
       el('label', {}, ['Giriş türü']),
       kipSecici,
       el('div', { class: 'field-hint' }, [
-        'Adet fiyat açıklanınca belli oluyorsa geçici giriş yap; sonra adedi yaz.',
+        'Bankaya tutar söyleyip adedi sonra öğreniyorsan "Adet belli değil" seç: '
+        + 'kayıt adet girilene kadar pasif bekler ve hiçbir hesaba katılmaz.',
       ]),
     ]),
+    field('Fon Kodu', f.fundCode, 'TEFAS kodu, üç harf.'),
     adetAlani,
     tutarAlani,
     el('div', { class: 'form-section' }, [el('span', {}, ['Alış']), buyValorNote]),

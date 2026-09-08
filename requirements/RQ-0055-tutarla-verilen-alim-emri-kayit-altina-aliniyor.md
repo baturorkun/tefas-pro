@@ -57,7 +57,14 @@ pozitif olacak, adedi olmayan kayıt satılamayacak.
 İlk hâlde Adet ve Tutar aynı anda açıktı ve ikisi de doldurulabiliyordu;
 hangisinin geçerli olduğu formda görünmüyordu. Artık bir seçici var:
 
-    Gerçek alım  |  Geçici giriş · adet bilmiyorum
+    Adet belli  |  Adet belli değil
+
+Etiketler olguyu söylüyor, kaydın gerçekliğini değil: "gerçek / geçici"
+alımın kendisini tartışıyor gibi okunuyordu, oysa alım gerçek — eksik olan
+yalnız adet. Rozet sonucu söylüyor (Pasif), seçici sebebi.
+
+Seçici formun en üstünde ve tam genişlikte: altındaki alanın hangisi
+olacağını o belirliyor, sonuç sebebin altında durmalı.
 
 Seçime göre tek alan görünür ve yalnız o gönderilir. Tutar kipinde adet hiç
 gönderilmez — ekranda kalmış eski bir değer pasif kaydı sessizce

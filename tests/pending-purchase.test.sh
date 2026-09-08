@@ -64,6 +64,10 @@ grep -q ".tx-pending td:first-child" "${PROJECT_ROOT}/src/styles.css" \
 # görünmüyordu. Tutar kipinde adet GÖNDERİLMEZ; eski bir değer sızarsa pasif
 # kayıt sessizce aktifleşirdi.
 grep -q "class: 'tabs mode-tabs'" "${M}" || fail "giriş türü seçici yok"
+# Ayrım olgusal: adet belli mi değil mi. "Gerçek/geçici" kaydın gerçekliğini
+# tartışıyor gibi okunuyordu — alım gerçek, eksik olan yalnız adet.
+grep -q "'Adet belli'" "${M}" || fail "kip etiketi olguyu söylemiyor"
+grep -q "'Adet belli değil'" "${M}" || fail "kip etiketi olguyu söylemiyor"
 grep -q "const tutarKipi = !tutarAlani.hidden" "${M}" || fail "kip gönderime yansımıyor"
 grep -q "units: tutarKipi ? null :" "${M}" || fail "tutar kipinde adet gönderiliyor"
 grep -q "kipUygula(existing !== null && existing.units === null ? 'tutar' : 'adet')" "${M}" \

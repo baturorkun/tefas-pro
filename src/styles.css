@@ -1005,6 +1005,9 @@ textarea:focus  { outline: none; border-color: var(--accent);
 /* [hidden] display'i ezen kurallarla kayboluyordu: .field kendi display'ini
    tanımlıyor ve öznitelik geçersiz kalıyor. */
 .field[hidden] { display: none; }
+/* Tam satır: altındaki alanların hangisi olacağını belirleyen seçici,
+   yanında ikinci bir alanla paylaşılmamalı. */
+.field-wide { grid-column: 1 / -1; }
 
 /* Giriş türü seçici: iki kip, aynı anda yalnız biri. Alanların ikisi birden
    açıkken hangisinin geçerli olduğu formda görünmüyordu. */
