@@ -39,14 +39,22 @@ Kullanıcı DOH'un adedine bakıp "ben daha fazla almıştım" diyor.
 
 Panel'de bu bilgi zaten var, ekranın dibinde bir not olarak. Portföyüm'de yok.
 
-## Tutar yazılmaz
+## Tutar: satırda yok, pencerede tahmin
 
-RQ-0044'te konan kural burada da geçerli: ileri tarihli alımın fiyatı
-açıklanmadığı için maliyeti hesaplanamaz. "0 TL" yazmak ya da adet × son
-fiyat uydurmak olmayan bir rakamı varmış gibi göstermek olur.
+RQ-0044'ün kuralı satırlar ve toplamlar için aynen geçerli: ileri tarihli
+alımın fiyatı açıklanmadığı için maliyeti hesaplanamaz, "0 TL" yazmak
+olmayan bir rakamı varmış gibi göstermektir.
 
-Söylenebilecek olan: kaç alım, hangi fon, hangi tarih, kaç adet. Bunlar
-kullanıcının kendi girdiği veriler, tahmin değil.
+Ama "kaç para tutar" meşru bir soru ve cevabı yaklaşık olarak biliniyor.
+Pencerede son bilinen birim fiyattan bir **tahmin** verilir; yanında `≈`
+işareti, altında fiyatın günü ve "gerçek fiyat işlem gününde açıklanacak"
+cümlesi durur. Uydurma ile etiketli tahmin arasındaki fark budur: rakamın
+nereden geldiği aynı yerde yazıyor.
+
+Tahmin arayüzde kurulur; sunucu yalnız birim fiyatı ve gününü taşır.
+
+Fiyatı hiç olmayan fonda tahmin de yoktur — tire yazılır. Ölçüldü: CKL yeni
+eklendiği için collector henüz fiyat toplamamış.
 
 ## Bekleyen satış ayrı bir şey
 
@@ -88,7 +96,10 @@ de görebilmeli ama girince de kaybetmemeli.
   söyler.
 - Yalnız bekleyen alımı olan fon da listede satır olarak görünür.
 - O satırların maliyet, değer ve getiri hücreleri boştur; sıfır yazılmaz.
-- Hiçbir yerde bekleyen alımın tutarı yazılmaz.
+- Satırlarda ve toplamlarda bekleyen işlemin tutarı yazılmaz.
+- Pencerede son bilinen fiyattan tahmini tutar verilir; yaklaşık olduğu
+  işaretle, hangi günün fiyatından hesaplandığı yazıyla belirtilir.
+- Fiyat verisi olmayan fonda tahmin üretilmez.
 - Toplam maliyet, değer ve kâr rakamları değişmez: bekleyen alım hesaba
   girmez.
 - Aynı bilgi fon detayında da görünür.

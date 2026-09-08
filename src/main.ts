@@ -1553,6 +1553,9 @@ interface BekleyenIslemSatiri {
   date: string;
   platform: string;
   units: string;
+  /** Son bilinen birim fiyat; tahmin bunun üzerinden. Yoksa null. */
+  navPerShare: string | null;
+  navDate: string | null;
 }
 
 interface BekleyenAlim {
@@ -4895,6 +4898,20 @@ async function portfolioView(): Promise<Node[]> {
   const bekleyenSatis = fonaGore(bekleyen.sells);
   const gunAy = (d: string): string => `${d.slice(8)}.${d.slice(5, 7)}`;
 
+  // Tahmin son bilinen fiyattan. "Tahmini" sözü ve fiyatın günü aynı cümlede
+  // duruyor: rakamın nereden geldiği görünmezse ölçülmüş bir tutar gibi
+  // okunur, oysa gerçek fiyat işlem gününde açıklanacak.
+  const tahminNotu = (liste: BekleyenIslemSatiri[], tur: 'alim' | 'satis'): string => {
+    const fiyatli = liste.filter((b) => b.navPerShare !== null);
+    if (fiyatli.length === 0) return 'Bu fonun henüz fiyat verisi yok, tahmin üretilemiyor.';
+    const g = fiyatli[0]?.navDate ?? '';
+    const f = num(fiyatli[0]?.navPerShare ?? '0', 6);
+    return `Tahmin ${gunAy(g)} birim fiyatıyla (${f} ₺) hesaplandı. `
+      + (tur === 'alim'
+        ? 'Gerçek maliyet işlem günü fiyatı açıklanınca belli olacak.'
+        : 'Gerçek tutar satış günü fiyatı açıklanınca belli olacak.');
+  };
+
   // İşaret hem imleçle hem tıklamayla açılıyor: tooltip dokunmatikte yok ve
   // bu bilgi ekranda başka hiçbir yerde durmuyor.
   //
@@ -4916,11 +4933,19 @@ async function portfolioView(): Promise<Node[]> {
         `${liste[0]?.fundCode ?? ''} · ${tur === 'alim'
           ? 'fiyatı henüz açıklanmadı'
           : 'pozisyon satış tarihine kadar açık'}`,
-        table(['Tarih', 'Banka', 'Adet'], liste.map((b) => el('tr', {}, [
-          el('td', {}, [b.date]),
-          el('td', {}, [b.platform]),
-          el('td', { class: 'num' }, [num(b.units, 0)]),
-        ]))),
+        el('div', {}, [
+          table(['Tarih', 'Banka', 'Adet', 'Tahmini ₺'], liste.map((b) => el('tr', {}, [
+            el('td', {}, [b.date]),
+            el('td', {}, [b.platform]),
+            el('td', { class: 'num' }, [num(b.units, 0)]),
+            // Fiyatı olmayan fonda tire: tahmin de üretilemiyor. Yeni
+            // eklenmiş fonda collector henüz koşmamış olabiliyor (CKL).
+            el('td', { class: 'num' }, [b.navPerShare === null
+              ? '—'
+              : `≈ ${num(String(Number(b.units) * Number(b.navPerShare)), 0)}`]),
+          ]))),
+          el('p', { class: 'pending-note' }, [tahminNotu(liste, tur)]),
+        ]),
         [],
       );
     });

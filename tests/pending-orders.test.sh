@@ -16,10 +16,22 @@ grep -q "t.trade_date > son.d" <<<"${PP}" || fail "bekleyen alım veri gününe 
 grep -q "t.sell_date > current_date" <<<"${PP}" || fail "bekleyen satış bugüne göre değil"
 printf 'PASS: bekleyen alım ve satış ayrı kurallarla bulunuyor\n'
 
-# Tutar hiçbir yerde yazılmaz: fiyat açıklanmadığı için maliyet de değer de
-# hesaplanamıyor, sıfır yazmak yanlış rakam yazmaktır.
-grep -qE "(buy_value|cost|value)" <<<"${PP}" && fail "bekleyen işlemde tutar hesaplanıyor"
-printf 'PASS: bekleyen işlemin tutarı hesaplanmıyor\n'
+# Sunucu tutar hesaplamıyor; yalnız son bilinen birim fiyatı taşıyor.
+# Tahmin arayüzde kuruluyor ve "tahmini" olduğu söyleniyor.
+grep -qE "(buy_value|cost|value)::" <<<"${PP}" && fail "sunucu bekleyen işlemin tutarını hesaplıyor"
+grep -q "l.nav_per_share" <<<"${PP}" || fail "tahmin için birim fiyat taşınmıyor"
+grep -q "nav_date" <<<"${PP}" || fail "fiyatın günü taşınmıyor"
+printf 'PASS: sunucu tutar üretmiyor, yalnız fiyatı taşıyor\n'
+
+# Tahmin yalnız pencerede ve etiketli. Fiyatın günü aynı yerde yazmalı:
+# rakamın nereden geldiği görünmezse ölçülmüş bir tutar gibi okunur.
+grep -q "'Tahmini ₺'" <<<"${PV}" || fail "tahmin sütunu yok"
+grep -q "\`≈ " <<<"${PV}" || fail "tahmin yaklaşık işareti taşımıyor"
+awk '/const tahminNotu = /,/^  };/' <<<"${PV}" | grep -q "birim fiyatıyla" \
+  || fail "tahminin hangi fiyattan geldiği yazmıyor"
+# Fiyatı olmayan fonda tahmin üretilmez; sıfır yazmak yanlış rakam yazmaktır.
+grep -q "b.navPerShare === null" <<<"${PV}" || fail "fiyatsız fonda tahmin uyduruluyor"
+printf 'PASS: tahmin etiketli, fiyatın günüyle birlikte, fiyatsız fonda yok\n'
 
 # Yalnız bekleyen alımı olan fon da listede satır olur; para hücreleri boş.
 grep -q "const yalnizBekleyen" <<<"${PV}" || fail "yalnız bekleyen alımı olan fon listelenmiyor"
@@ -40,6 +52,7 @@ printf 'PASS: iki işaret ayrı, imleçle de tıklamayla da açılıyor\n'
 # Aynı bilgi fon detayında da var ve orada da ayrı bir uç yok.
 awk '/^async function openFundModal/,/^}/' "${M}" | grep -q "pending-note" \
   || fail "fon detayında bekleyen işlem notu yok"
-awk '/^async function openFundModal/,/^}/' "${M}" | grep -q "api('/api/portfolio/pending')" \
+# grep -F: desende tırnak ve eğik çizgi var, regex olarak yorumlanmasın.
+grep -Fq "(await api('/api/portfolio/pending')) as BekleyenAlim" "${M}" \
   || fail "fon detayı ortak ucu kullanmıyor"
 printf 'PASS: fon detayında da görünüyor, ortak uçtan\n'

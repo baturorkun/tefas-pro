@@ -2966,6 +2966,13 @@ export interface BekleyenIslemSatiri {
   date: string;
   platform: string;
   units: string;
+  /**
+   * Son bilinen birim fiyat ve günü. Tahmin bunun üzerinden kurulur; gerçek
+   * fiyat işlem gününde açıklanacak. Fonun hiç fiyatı yoksa null — yeni
+   * eklenen fonda collector daha koşmamış olabiliyor.
+   */
+  navPerShare: string | null;
+  navDate: string | null;
 }
 
 export interface BekleyenAlim {
@@ -3015,10 +3022,13 @@ export async function pendingPurchases(
        SELECT max(trade_date) AS d FROM fact_fund_daily WHERE daily_return_pct IS NOT NULL)
      SELECT t.fund_code AS "fundCode", f.title,
             to_char(t.trade_date, 'YYYY-MM-DD') AS "date",
-            t.platform, t.units::text
+            t.platform, t.units::text,
+            l.nav_per_share::text AS "navPerShare",
+            to_char(l.nav_date, 'YYYY-MM-DD') AS "navDate"
        FROM portfolio_transaction t
        CROSS JOIN son
        LEFT JOIN dim_fund f ON f.fund_code = t.fund_code
+       LEFT JOIN analytics.fund_latest l ON l.fund_code = t.fund_code
       WHERE t.user_id = $1 AND t.sell_date IS NULL AND t.trade_date > son.d
       ORDER BY t.trade_date, t.fund_code`,
     [userId],
@@ -3029,9 +3039,12 @@ export async function pendingPurchases(
   const sat = await pool.query<BekleyenIslemSatiri>(
     `SELECT t.fund_code AS "fundCode", f.title,
             to_char(t.sell_date, 'YYYY-MM-DD') AS "date",
-            t.platform, t.units::text
+            t.platform, t.units::text,
+            l.nav_per_share::text AS "navPerShare",
+            to_char(l.nav_date, 'YYYY-MM-DD') AS "navDate"
        FROM portfolio_transaction t
        LEFT JOIN dim_fund f ON f.fund_code = t.fund_code
+       LEFT JOIN analytics.fund_latest l ON l.fund_code = t.fund_code
       WHERE t.user_id = $1 AND t.sell_date > current_date
       ORDER BY t.sell_date, t.fund_code`,
     [userId],
