@@ -4271,13 +4271,19 @@ async function closedView(): Promise<Node[]> {
   const acik = new Set<string>();
   const kisaTarih = (d: string): string => `${d.slice(8)}.${d.slice(5, 7)}`;
 
-  // Bacak satırı fon satırıyla aynı altı sütuna oturur: tarih aralığı, banka,
-  // sonra aynı para sütunları. Süre ve adet burada yok, tam hâli İşlemler
-  // sekmesinde duruyor.
+  // Bacak satırı fon satırıyla aynı altı sütuna oturur ama üstteki başlıkları
+  // ödünç ALMAZ: "FON" sütununun altına etiketsiz bir tarih koymak, sütun
+  // adının anlattığı şeyle içeriğin çelişmesi demekti. Kimlik bilgisi tek
+  // hücrede ve kendi kendini anlatıyor; ikinci hücre boş bırakılıyor.
+  // Para sütunları hizada kaldığı için fon toplamıyla bacaklar yan yana
+  // okunuyor — açılır satırın bütün amacı bu.
   const bacakSatiri = (r: ClosedPositionRow): HTMLElement =>
     el('tr', { class: 'leg-row' }, [
-      el('td', { class: 'leg-name' }, [`${kisaTarih(r.buyDate)} → ${kisaTarih(r.sellDate)}`]),
-      el('td', { class: 'num dim' }, [r.platform]),
+      el('td', { class: 'leg-name' }, [
+        `${r.platform} · alış ${kisaTarih(r.buyDate)} → satış ${kisaTarih(r.sellDate)}`,
+        el('span', { class: 'dim' }, [` · ${String(r.heldDays)}g`]),
+      ]),
+      el('td', {}, []),
       el('td', { class: 'num' }, [num(r.buyValue)]),
       el('td', { class: 'num' }, [num(r.sellValue)]),
       el('td', {}, [signed(r.realizedGain, ' ₺')]),

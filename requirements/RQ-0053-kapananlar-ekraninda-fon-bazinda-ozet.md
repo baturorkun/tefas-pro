@@ -79,9 +79,14 @@ satırı gözün önünde kalıyor, hareket eden şey imlecin altında ve geri d
 "tekrar tıkla". Desen yeni değil — Dönemsel Getiri'de ay satırı haftalarını
 aynı şekilde açıyor.
 
-Bacak satırı fon satırıyla aynı altı sütuna oturur: tarih aralığı, banka,
-sonra aynı para sütunları. Süre ve adet orada yok, tam hâli İşlemler
-sekmesinde duruyor.
+Bacak satırı para sütunlarında fon satırıyla hizalıdır — açılır satırın
+amacı zaten fon toplamıyla bacakları yan yana okuyabilmek.
+
+Kimlik sütunları başlıkları ödünç almaz. İlk denemede "FON" başlığının
+altında etiketsiz bir tarih aralığı duruyordu: sütun adının söylediğiyle
+içeriği çelişiyordu ve okunmuyordu. Kimlik tek hücrede ve kendi kendini
+anlatıyor — `Fiba · alış 12.08 → satış 07.09 · 17g`; ikinci hücre boş
+bırakılıyor, çünkü boş hücre yanlış etiketten iyidir.
 
 İşlem listesinde ayrıca fon ve banka filtresi durur — Fon Hareketleri'ndeki
 desenin aynısı, aynı `comboFilter` bileşeni ve aynı AND kuralı.
@@ -104,7 +109,8 @@ sekmesinde zaten duruyor.
 - İşlem listesinde fon ve banka filtresi vardır; ikisi AND ile birleşir.
 - Fon satırına tıklamak bacaklarını satırın altında açar ve kapatır.
 - Fon satırına tıklamak sekmeyi değiştirmez.
-- Bacak satırı fon satırıyla aynı sütunlara oturur.
+- Bacak satırı para sütunlarında fon satırıyla hizalıdır.
+- Bacak satırı kendi kendini anlatır; üstteki sütun başlıklarına dayanmaz.
 - Filtreliyken başlık kaç kaydın kaçının görüldüğünü yazar.
 - Varsayılan sekme fon; seçim sayfa yenilendiğinde korunur.
 - Sekme değiştirmek `/api/closed`'a yeni istek atmaz.
