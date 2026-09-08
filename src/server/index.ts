@@ -269,18 +269,36 @@ async function prepareBenchmark(
 }
 
 function readTransactionInput(body: Record<string, unknown>): TransactionInput {
-  const units = reqNumber(body, 'units');
-  if (units <= 0) throw new Error('`units` sıfırdan büyük olmalıdır.');
+  // Ya adet ya tutar. Tutarla girilen alım pasif bekler: TEFAS'ta emir
+  // tutarla veriliyor ve kaç pay alındığı fiyat açıklanınca belli oluyor.
+  const units = body['units'] === null || body['units'] === undefined || body['units'] === ''
+    ? null : reqNumber(body, 'units');
+  const orderAmount =
+    body['orderAmount'] === null || body['orderAmount'] === undefined || body['orderAmount'] === ''
+      ? null : reqNumber(body, 'orderAmount');
+  if (units === null && orderAmount === null) {
+    throw new Error('Adet ya da tutar girilmeli.');
+  }
+  if (units !== null && units <= 0) throw new Error('`units` sıfırdan büyük olmalıdır.');
+  if (orderAmount !== null && orderAmount <= 0) {
+    throw new Error('Tutar sıfırdan büyük olmalıdır.');
+  }
   const tradeDate = reqDate(body, 'tradeDate');
   const sellDate = optDate(body, 'sellDate');
   if (sellDate !== null && sellDate < tradeDate) {
     throw new Error('Satış tarihi alış tarihinden önce olamaz.');
+  }
+  // Adedi belli olmayan pozisyon satılamaz; veritabanında da kısıt var ama
+  // hata mesajı burada anlaşılır oluyor.
+  if (units === null && sellDate !== null) {
+    throw new Error('Adedi belli olmayan alım satılamaz; önce adedi girin.');
   }
   return {
     fundCode: reqString(body, 'fundCode').toUpperCase(),
     platform: reqString(body, 'platform'),
     tradeDate,
     units,
+    orderAmount,
     sellDate,
     note: optText(body, 'note', NOTE_MAX),
     // Emir tarihleri isteğe bağlı; değerlemeye girmez, kayıt için tutulur.

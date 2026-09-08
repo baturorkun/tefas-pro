@@ -26,7 +26,7 @@ interface Transaction {
   fundTitle: string | null;
   platform: string;
   tradeDate: string;
-  units: string;
+  units: string | null;
   sellDate: string | null;
   note: string | null;
   /** Getiri günü olmayan işlemde null: sıfır "kâr etmedi" demek olurdu. */
@@ -34,6 +34,8 @@ interface Transaction {
   value: string | null;
   gain: string | null;
   gainPct: string | null;
+  /** Pasif kayıtta null: adet henüz belli değil. */
+  orderAmount: string | null;
   buyPrice: string | null;
   nowPrice: string | null;
   /** Son bilinen birim fiyat; fiyatı açıklanmamış işlemde tahmin bunun üzerinden. */
@@ -2845,13 +2847,30 @@ function writeSonBanka(value: string): void {
   }
 }
 
-function transactionForm(existing: Transaction | null, onDone: () => void): {
+/** İşlem formunu emirden gelen değerlerle açmak için. */
+interface IslemOnDolgu {
+  fundCode: string;
+  platform: string;
+  tradeDate: string;
+  units: string;
+  note: string | null;
+}
+
+function transactionForm(
+  existing: Transaction | null,
+  onDone: () => void,
+  onDolgu?: IslemOnDolgu,
+  kayitSonrasi?: () => Promise<void>,
+): {
   body: HTMLElement;
   submit: HTMLButtonElement;
 } {
   const f = {
     fundCode: el('input', { required: 'true', placeholder: 'THF', maxlength: '16' }),
-    units: el('input', { type: 'number', step: 'any', min: '0', required: 'true', placeholder: '1000' }),
+    units: el('input', { type: 'number', step: 'any', min: '0', placeholder: '1000' }),
+    // Adet bilinmiyorsa tutar: TEFAS'ta emir tutarla veriliyor ve kaç pay
+    // alındığı fiyat açıklanınca belli oluyor. İkisinden biri yeterli.
+    orderAmount: el('input', { type: 'number', step: 'any', min: '0', placeholder: '50000' }),
     buyOrderDate: tarihGirdisi(),
     tradeDate: tarihGirdisi({ required: 'true' }),
     platform: el('select', { required: 'true' }) as HTMLSelectElement,
@@ -2861,12 +2880,19 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
     // paragraf yazmaya davet eder, tabloda da öyle görünmez.
     note: el('input', { maxlength: String(NOTE_MAX), placeholder: 'İsteğe bağlı' }),
   };
+  if (onDolgu !== undefined) {
+    f.fundCode.value = onDolgu.fundCode;
+    f.units.value = onDolgu.units;
+    f.note.value = onDolgu.note ?? '';
+    tarihYaz(f.tradeDate, onDolgu.tradeDate);
+  }
   if (existing) {
     f.fundCode.value = existing.fundCode;
     // Kolon numeric(24,6): veritabanı "9911.000000" döndürüyor ve alan onu
     // olduğu gibi basıyordu. Fon payı kesirli olabildiği için haneler duruyor
     // ama gereksiz sıfırlar atılır: 9911.000000 → 9911, 12.345600 → 12.3456.
-    f.units.value = String(Number(existing.units));
+    f.units.value = existing.units === null ? '' : String(Number(existing.units));
+    f.orderAmount.value = existing.orderAmount === null ? '' : String(Number(existing.orderAmount));
     f.note.value = existing.note ?? '';
     tarihYaz(f.buyOrderDate, existing.buyOrderDate);
     tarihYaz(f.tradeDate, existing.tradeDate);
@@ -2894,7 +2920,7 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
       // atanan value boşa düşerdi. Yeni kayıtta en son kullanılan banka —
       // arka arkaya işlem girilirken hep aynı bankadan giriliyor.
       const sonBanka = readSonBanka();
-      f.platform.value = existing?.platform
+      f.platform.value = existing?.platform ?? onDolgu?.platform
         ?? (banks.some((b) => b.name === sonBanka) ? sonBanka : '');
       bankHint.textContent = '';
     } catch {
@@ -2947,9 +2973,60 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
   const submit = el('button', { type: 'submit', class: 'btn-primary' }, [
     existing ? 'Güncelle' : 'Alış Ekle',
   ]) as HTMLButtonElement;
+  // İki alan aynı anda açık kalınca hangisinin geçerli olduğu formda
+  // görünmüyordu. Kip seçilir: ya adet ya tutar, ikisi birden değil.
+  const adetAlani = field('Adet', f.units, 'Fon payı adedi, tutar değil.');
+  // Bu ipucu uyarı rengiyle: alanın sonucu diğerlerinden farklı — girilen
+  // kayıt hiçbir hesaba katılmayacak ve kullanıcı bunu alanı doldurmadan
+  // önce görmeli.
+  const tutarAlani = field('Tutar ₺', f.orderAmount,
+    el('div', { class: 'field-hint field-pending' }, [
+      'Bankaya verdiğin tutar. Adet gelene kadar kayıt pasif bekler, '
+      + 'hiçbir hesaba katılmaz.',
+    ]));
+
+  const kipDugmesi = (kip: 'adet' | 'tutar', etiket: string): HTMLElement =>
+    el('button', { type: 'button', class: 'tab-btn', 'data-kip': kip }, [etiket]);
+  // Ayrım olgusal: adet belli mi değil mi. "Gerçek / geçici" kaydın
+  // gerçekliğini tartışıyor gibi okunuyordu — oysa alım gerçek, eksik olan
+  // yalnız adet. Rozet sonucu söylüyor (Pasif), bu seçici sebebi.
+  const gercekBtn = kipDugmesi('adet', 'Adet Belli · Kesin Giriş');
+  const geciciBtn = kipDugmesi('tutar', 'Adet Belli Değil · Ön Giriş');
+  const kipSecici = el('div', { class: 'tabs mode-tabs' }, [gercekBtn, geciciBtn]);
+
+  const kipUygula = (kip: 'adet' | 'tutar'): void => {
+    const adet = kip === 'adet';
+    gercekBtn.classList.toggle('tab-on', adet);
+    geciciBtn.classList.toggle('tab-on', !adet);
+    adetAlani.hidden = !adet;
+    tutarAlani.hidden = adet;
+    // required kiple birlikte taşınıyor; yoksa gizli alan gönderimi
+    // engelliyor ve kullanıcı sebebini göremiyor.
+    f.units.toggleAttribute('required', adet);
+    f.orderAmount.toggleAttribute('required', !adet);
+    if (adet) f.orderAmount.setCustomValidity('');
+    else f.units.setCustomValidity('');
+  };
+  gercekBtn.addEventListener('click', () => { kipUygula('adet'); });
+  geciciBtn.addEventListener('click', () => { kipUygula('tutar'); });
+  // Düzenlemede kip kaydın kendisinden: pasif kayıt açılınca tutar kipinde
+  // gelir, adedi yazmak için kullanıcı "Gerçek alım"a geçer.
+  kipUygula(existing !== null && existing.units === null ? 'tutar' : 'adet');
+
   const form = el('form', { class: 'modal-form-grid', id: 'tx-form' }, [
+    // En üstte ve tam genişlikte: altındaki alanın ne olacağını belirliyor,
+    // sonuç sebebin altında durmalı.
+    el('div', { class: 'field field-wide' }, [
+      el('label', {}, ['Giriş türü']),
+      kipSecici,
+      el('div', { class: 'field-hint field-pending' }, [
+        'Bankaya tutar söyleyip adedi sonra öğreniyorsan Ön Giriş yap: '
+        + 'kayıt adet girilene kadar pasif bekler ve hiçbir hesaba katılmaz.',
+      ]),
+    ]),
     field('Fon Kodu', f.fundCode, 'TEFAS kodu, üç harf.'),
-    field('Adet', f.units, 'Fon payı adedi, tutar değil.'),
+    adetAlani,
+    tutarAlani,
     el('div', { class: 'form-section' }, [el('span', {}, ['Alış']), buyValorNote]),
     field('Emir Tarihi', tarihAlani(f.buyOrderDate), 'İsteğe bağlı; girilirse alış tarihi hesaplanır.'),
     field('Alış Tarihi', tarihAlani(f.tradeDate), 'Emrin fiyatlandığı gün.'),
@@ -2986,11 +3063,16 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
         throw new Error('Tarihi gg-aa-yyyy olarak yazın.');
       }
     }
+    // Kip hangisiyse o gönderilir. Tutar kipinde adet gönderilmez: aksi
+    // hâlde eski bir değer kayda sızıp pasif kaydı sessizce aktifleştirirdi.
+    const tutarKipi = !tutarAlani.hidden;
     const payload = {
       fundCode: f.fundCode.value,
       platform: f.platform.value,
       tradeDate: tarihOku(f.tradeDate),
-      units: f.units.value,
+      units: tutarKipi ? null : f.units.value || null,
+      // Tutar aktifleşince de saklanıyor: ne ödendiği bilgisi değerli.
+      orderAmount: f.orderAmount.value || null,
       buyOrderDate: tarihOku(f.buyOrderDate) || null,
       sellOrderDate: tarihOku(f.sellOrderDate) || null,
       sellDate: tarihOku(f.sellDate) || null,
@@ -3032,6 +3114,16 @@ function transactionForm(existing: Transaction | null, onDone: () => void): {
       await kaydet(true);
     }
     writeSonBanka(f.platform.value);
+    // Emir işleme dönüştüyse emir kaydı burada siliniyor: iki yerde iki
+    // kayıt kalmamalı. Kayıt yazıldıktan sonra çalıştığı için başarısız
+    // olursa işlem yine yerinde durur.
+    if (kayitSonrasi !== undefined) {
+      try {
+        await kayitSonrasi();
+      } catch {
+        // Emir silinemediyse kullanıcı elle silebilir; işlem kaydı sağlam.
+      }
+    }
     // Kayıt yazıldı. Buradan sonra bir şey patlarsa "kaydedilemedi" demek
     // yanlış olur ve kullanıcı tekrar gönderip mükerrer kayıt yaratır —
     // yaşandı, on kayıt oluştu.
@@ -3305,13 +3397,20 @@ function openSellModal(havuzlar: Map<string, Transaction[]>, reload: () => void)
   cancel.addEventListener('click', () => { close(); });
 }
 
-function openTransactionModal(existing: Transaction | null, reload: () => void): void {
+function openTransactionModal(
+  existing: Transaction | null,
+  reload: () => void,
+  emir?: { onDolgu: IslemOnDolgu; sil: () => Promise<void>; baslik: string },
+): void {
   let close = (): void => {};
-  const { body, submit } = transactionForm(existing, () => { close(); reload(); });
+  const { body, submit } = transactionForm(
+    existing, () => { close(); reload(); }, emir?.onDolgu, emir?.sil);
   const cancel = el('button', { class: 'btn-ghost', type: 'button' }, ['Vazgeç']);
   close = openModal(
-    existing === null ? 'Alış Ekle' : 'İşlemi Düzenle',
-    existing === null ? 'Yeni alış kaydı' : `${existing.fundCode} · ${existing.tradeDate}`,
+    emir !== undefined ? 'Emri İşleme Çevir'
+      : existing === null ? 'Alış Ekle' : 'İşlemi Düzenle',
+    emir?.baslik
+      ?? (existing === null ? 'Yeni alış kaydı' : `${existing.fundCode} · ${existing.tradeDate}`),
     body,
     [cancel, submit],
   );
@@ -4809,7 +4908,9 @@ const txFiltre = { fundCode: '', platform: '' };
 
 async function transactionsView(reload: () => void): Promise<Node[]> {
   const rows = (await api('/api/transactions')) as Transaction[];
-  const open = rows.filter((t) => t.sellDate === null);
+  // Pasif kayıt açık pozisyon değil: adedi yok, hiçbir hesaba girmiyor.
+  const open = rows.filter((t) => t.sellDate === null && t.units !== null);
+  const pasif = rows.filter((t) => t.units === null);
   const funds = new Set(open.map((t) => t.fundCode));
   const platforms = new Set(open.map((t) => t.platform));
   // Son işlem alış da satış da olabilir. Yalnız alış tarihine bakılıyordu ve
@@ -4922,8 +5023,13 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
     // aynı dil. Gerçekleşmiş satış soluk yazılır: kapanmış bir kayıt artık
     // takip edilecek bir şey değil, listede yer tutuyor.
     const kapali = t.sellDate !== null && t.sellDate <= bugun;
+    // Pasif kayıt kendi rengini taşır ve kâr/zarar şeridini almaz: onun bir
+    // sonucu yok, hesaplara da girmiyor. Rozet tek başına yetmiyordu —
+    // satırın tamamı diğerleriyle aynı görünüyor ve göz kaymıyordu.
+    const pasifSatir = t.units === null;
     const sinif = [
-      t.gain === null ? '' : Number(t.gain) < 0 ? 'tx-loss' : 'tx-gain',
+      pasifSatir ? 'tx-pending'
+        : t.gain === null ? '' : Number(t.gain) < 0 ? 'tx-loss' : 'tx-gain',
       kapali ? 'tx-closed' : '',
     ].filter((c) => c !== '').join(' ');
     const tr = el('tr', sinif === '' ? {} : { class: sinif }, [
@@ -4956,7 +5062,15 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
           }, [t.splitRole === 'parent' ? 'Bölündü' : 'Kalan']);
         })()]),
       ]),
-      el('td', { class: 'num' }, [Number(t.units).toLocaleString('tr-TR')]),
+      // Adet yoksa tutar yazılır ve satır pasif: fiyat açıklanınca adet
+      // girilecek. Sıfır yazmak yanlış rakam yazmaktır.
+      el('td', { class: 'num' }, t.units !== null
+        ? [Number(t.units).toLocaleString('tr-TR')]
+        : [
+            el('span', { class: 'stack-from est-label' }, ['Adet bekleniyor']),
+            el('span', { class: 'stack-to' }, [
+              `${Number(t.orderAmount ?? 0).toLocaleString('tr-TR')} ₺`]),
+          ]),
       el('td', { class: 'num' }, [t.tradeDate]),
       el('td', {}, [t.platform]),
       // Alış ve güncel fiyat tek hücrede alt alta: ayrı sütun olsalar tablo
@@ -4978,7 +5092,12 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
             el('span', { class: 'stack-from' }, [money(t.cost)]),
             el('span', { class: 'stack-to' }, [money(t.value)]),
           ]
-        : t.latestNav === null
+        // Pasif kayıtta adet yok, yani tahmin de yok. Rozet burada duruyor:
+        // "hesaba girmiyor" sözü tam da maliyet ve değerin olması gereken
+        // yerde söylenmeli. Satış sütununda dururken ilgisiz bir yerdeydi.
+        : t.units === null
+          ? [badge('Pasif', 'pending')]
+          : t.latestNav === null
           ? ['—']
           : [
               el('span', { class: 'stack-from est-label' }, ['Tahmini']),
@@ -5034,7 +5153,10 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
 
   return [
     el('div', { class: 'metric-grid' }, [
-      metric('Açık Pozisyon', String(open.length), `${String(rows.length)} İşlem Kaydı`, 'portfolio'),
+      metric('Açık Pozisyon', String(open.length),
+        pasif.length === 0
+          ? `${String(rows.length)} İşlem Kaydı`
+          : `${String(rows.length)} Kayıt · ${String(pasif.length)} Pasif`, 'portfolio'),
       metric('Fon', String(funds.size), 'Açık Pozisyondaki Farklı Fon', 'fund'),
       metric('Platform', String(platforms.size), 'Banka / Aracı', 'money'),
       metric('Son İşlem', last === undefined ? '—' : gunAd(last),
@@ -5046,7 +5168,9 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
       // yoksa süzülmüş hali mi belli etmiyor. Bölü işareti "şu kadarın içinden"
       // demeyi anlatıyor; "102 içinden" diye eklemek belirsiz kalıyordu.
       (filtreliMi ? `${String(gorunen.length)} / ${String(rows.length)} kayıt` : `${String(rows.length)} kayıt`)
-        + ` · ${String(gorunen.filter((t) => t.sellDate === null).length)} açık`,
+        + ` · ${String(gorunen.filter((t) => t.sellDate === null && t.units !== null).length)} açık`
+        + (gorunen.some((t) => t.units === null)
+          ? ` · ${String(gorunen.filter((t) => t.units === null).length)} pasif` : ''),
       el('div', { class: 'panel-body' }, [
         // Kendi sınıfı: on sütunla tablo genişliyor, fon adı ve satış hücresi
         // burada daha dar tutulur. Diğer tablolar etkilenmez.

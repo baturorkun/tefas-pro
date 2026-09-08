@@ -807,6 +807,9 @@ describe('FIFO satış', () => {
     // Kayıt açan bütün formlar aynı kilidi kullanmalı; biri dışarıda kalırsa
     // aynı açık orada sürer. Giriş ve parola ekranları hariç: onlarda ikinci
     // istek yeni bir kayıt açmıyor.
+    // Sayı elle güncelleniyor ve bu bilinçli: yeni bir kayıt formu eklenince
+    // test kırılıyor ve kilidi kullanıp kullanmadığı sorulmuş oluyor.
+    // Bugünküler: işlem, satış, takip listesi, banka.
     expect(main.match(/tekGonderim\(form, submit, status,/g)?.length).toBe(4);
     // Kural "iki kez gönderilemesin", "tek yardımcı kullanılsın" değil.
     // Sohbet formu kayıt açmıyor ve kendi kilidini taşıyor: gönderirken hem

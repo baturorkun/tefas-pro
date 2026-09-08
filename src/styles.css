@@ -419,6 +419,12 @@ td.actions { text-align: right; }
    Opaklık satırın tamamına uygulanır ki renkli K/Z sayıları da geri çekilsin;
    yalnız metin rengini soldurmak onları olduğu gibi bırakırdı. Üzerine gelince
    tam okunurluğa döner. */
+/* Pasif kayıt: adedi belli değil, hiçbir hesaba girmiyor. Soldaki şerit ve
+   zemin bunu satıra bakar bakmaz söylüyor; rozet tek başına yetmiyordu. */
+.tx-pending td { background: color-mix(in srgb, var(--warn) 7%, transparent); }
+.tx-pending td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.tx-pending:hover td { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+
 .tx-closed { opacity: .55; }
 .tx-closed:hover { opacity: 1; }
 
@@ -453,7 +459,8 @@ td.actions { text-align: right; }
              color: var(--danger); font-size: .76rem; line-height: 1.5;
              background: var(--danger-tint); border-radius: 6px; padding: .5rem .7rem; }
 /* Bekleyen durum: veri henüz gelmemiş, "yok" değil. */
-.status-pending { color: var(--accent); background: var(--panel); border-color: var(--line); }
+.status-pending { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent);
+                  border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
 .status-danger  { color: var(--danger); background: var(--danger-tint); border-color: var(--danger); }
 
 /* Ayarlarda banka ekleme şeridi: alan solda geniş, düğme sağda. */
@@ -461,6 +468,9 @@ td.actions { text-align: right; }
 .settings-add input { flex: 1; min-width: 0; }
 /* Banka listesi boşken formun uyarısı: ipucu değil, engel. */
 .field-warn { color: var(--danger); }
+/* Pasif kayıt hep aynı renk: form ipucu, satır şeridi ve rozet. Kavram tek
+   olduğu için rengi de tek olmalı — kullanıcı ilişkiyi kurabilsin. */
+.field-pending { color: var(--warn); }
 
 /* Dönemsel getiri tablosu: ay satırı kendi haftalarının başlığı gibi durur.
    Ayrı bir dolgu rengi vermek yerine üstten çizgi ve koyu metin kullanılır —
@@ -995,6 +1005,20 @@ textarea:focus  { outline: none; border-color: var(--accent);
   background: var(--bg-raised); color: var(--muted);
 }
 .date-pick:hover { color: var(--text); border-color: var(--accent); }
+.btn-sm { padding: .3rem .6rem; font-size: .8rem; }
+/* [hidden] display'i ezen kurallarla kayboluyordu: .field kendi display'ini
+   tanımlıyor ve öznitelik geçersiz kalıyor. */
+.field[hidden] { display: none; }
+/* Tam satır: altındaki alanların hangisi olacağını belirleyen seçici,
+   yanında ikinci bir alanla paylaşılmamalı. */
+.field-wide { grid-column: 1 / -1; }
+
+/* Giriş türü seçici: iki kip, aynı anda yalnız biri. Alanların ikisi birden
+   açıkken hangisinin geçerli olduğu formda görünmüyordu. */
+.mode-tabs { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; gap: 0; }
+.mode-tabs .tab-btn { flex: 1; justify-content: center; border-bottom: 0;
+                      padding: .5rem .7rem; white-space: nowrap; }
+.mode-tabs .tab-on { background: var(--panel-hover); }
 
 .pending-note { margin: 0 0 .9rem; padding: .6rem .8rem; font-size: .84rem;
                 color: var(--muted); background: var(--bg-raised);
