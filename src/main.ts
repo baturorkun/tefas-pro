@@ -36,6 +36,9 @@ interface Transaction {
   gainPct: string | null;
   buyPrice: string | null;
   nowPrice: string | null;
+  /** Son bilinen birim fiyat; fiyatı açıklanmamış işlemde tahmin bunun üzerinden. */
+  latestNav: string | null;
+  latestNavDate: string | null;
   splitRole: 'parent' | 'remainder' | null;
   splitTotal: string | null;
 }
@@ -1546,11 +1549,27 @@ function watchlistToggle(checked: boolean, onChange: (v: boolean) => void): HTML
  * yüzden gün sayısı burada piyasa grafiklerindekinden de kritik: 114 gündür
  * tutulan fon, 5 gündür tutulanın yanında haksız bir avantajla başa geçer.
  */
+interface BekleyenIslemSatiri {
+  fundCode: string;
+  title: string | null;
+  /** Alımda işlem tarihi, satışta satış tarihi. */
+  date: string;
+  platform: string;
+  units: string;
+  /** Son bilinen birim fiyat; tahmin bunun üzerinden. Yoksa null. */
+  navPerShare: string | null;
+  navDate: string | null;
+}
+
 interface BekleyenAlim {
   count: number;
   funds: string[];
   firstDate: string | null;
   dataDate: string | null;
+  /** Alım kırılımı: Portföyüm satırlarını işaretlemek için. */
+  rows: BekleyenIslemSatiri[];
+  sellCount: number;
+  sells: BekleyenIslemSatiri[];
 }
 
 /**
@@ -3523,7 +3542,31 @@ async function openFundModal(fundCode: string): Promise<void> {
           : [table(['Hisse', 'Ağırlık', 'Önceki Ay', 'Fark', '1 Hafta', '1 Ay'], rows),
             agirlikNotu];
 
+  // Bekleyen işlemler burada da duruyor: kullanıcı detaya girmeden de
+  // görebilmeli ama girince de kaybetmemeli. Ayrı uç değil, Portföyüm'ün
+  // kullandığı ucun aynısı — hata verirse detay yine açılır.
+  let bekleyenNot: HTMLElement[] = [];
+  try {
+    const b = (await api('/api/portfolio/pending')) as BekleyenAlim;
+    const al = b.rows.filter((x) => x.fundCode === kod);
+    const sat = b.sells.filter((x) => x.fundCode === kod);
+    const parca = [
+      ...(al.length === 0 ? [] : [`${String(al.length)} alım bekliyor (${al[0]?.date ?? ''})`]),
+      ...(sat.length === 0 ? [] : [`${String(sat.length)} satış bekliyor (${sat[0]?.date ?? ''})`]),
+    ];
+    if (parca.length > 0) {
+      bekleyenNot = [el('p', { class: 'pending-note' }, [
+        `${parca.join(' · ')} — ${al.length === 0
+          ? 'pozisyon satış tarihine kadar açık kalır.'
+          : 'fiyatı henüz açıklanmadığı için yukarıdaki rakamlara girmiyor.'}`,
+      ])];
+    }
+  } catch {
+    // Bekleyen bilgisi alınamazsa detay yine açılır; ikincil bir not bu.
+  }
+
   const govde = el('div', { class: 'fund-modal' }, [
+    ...bekleyenNot,
     el('div', { class: 'metric-grid' }, [
       metric('Portföyümdeki Değer', Number(d.value) === 0 ? '—' : money(d.value),
         Number(d.value) === 0 ? 'pozisyon yok' : 'açık pozisyon', 'money'),
@@ -4733,10 +4776,25 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
       // Maliyet ve değer de aynı desende: üstte başlangıç, altta son. İkisi
       // ayrı sütunken tablo kapsayıcısını aşıyordu ve zaten hep birbirine
       // bakılarak okunuyorlar.
-      el('td', { class: 'num' }, t.cost === null ? ['—'] : [
-        el('span', { class: 'stack-from' }, [money(t.cost)]),
-        el('span', { class: 'stack-to' }, [money(t.value)]),
-      ]),
+      // Maliyet yoksa işlemin fiyatı henüz açıklanmamış demek. Boş bırakmak
+      // yerine son bilinen fiyattan tahmin veriliyor; üst satır "tahmini"
+      // diyor ki rakam ölçülmüş gibi okunmasın. Fonun hiç fiyatı yoksa
+      // tahmin de yok.
+      el('td', { class: 'num' }, t.cost !== null
+        ? [
+            el('span', { class: 'stack-from' }, [money(t.cost)]),
+            el('span', { class: 'stack-to' }, [money(t.value)]),
+          ]
+        : t.latestNav === null
+          ? ['—']
+          : [
+              el('span', { class: 'stack-from est-label' }, ['Tahmini']),
+              el('span', {
+                class: 'stack-to',
+                title: `${t.latestNavDate ?? ''} birim fiyatıyla; gerçek fiyat `
+                  + 'işlem günü açıklanınca belli olacak',
+              }, [`≈ ${money(String(Number(t.units) * Number(t.latestNav)))}`]),
+            ]),
       el('td', {}, [signed(t.gain, ' ₺')]),
       // Birim başlıkta ("K/Z %"), her satırda tekrarlanmıyor.
       el('td', {}, [signed(t.gainPct, '')]),
@@ -4847,6 +4905,71 @@ async function portfolioView(): Promise<Node[]> {
       minimumFractionDigits: digits, maximumFractionDigits: digits,
     });
 
+  // Fon başına bekleyen alımlar: hem mevcut satırı işaretlemek hem de hiç
+  // satırı olmayan fonlara satır açmak için gerekiyor.
+  const fonaGore = (liste: BekleyenIslemSatiri[]): Map<string, BekleyenIslemSatiri[]> => {
+    const m = new Map<string, BekleyenIslemSatiri[]>();
+    for (const b of liste) m.set(b.fundCode, [...(m.get(b.fundCode) ?? []), b]);
+    return m;
+  };
+  const bekleyenFon = fonaGore(bekleyen.rows);
+  const bekleyenSatis = fonaGore(bekleyen.sells);
+  const gunAy = (d: string): string => `${d.slice(8)}.${d.slice(5, 7)}`;
+
+  // Tahmin son bilinen fiyattan. "Tahmini" sözü ve fiyatın günü aynı cümlede
+  // duruyor: rakamın nereden geldiği görünmezse ölçülmüş bir tutar gibi
+  // okunur, oysa gerçek fiyat işlem gününde açıklanacak.
+  const tahminNotu = (liste: BekleyenIslemSatiri[], tur: 'alim' | 'satis'): string => {
+    const fiyatli = liste.filter((b) => b.navPerShare !== null);
+    if (fiyatli.length === 0) return 'Bu fonun henüz fiyat verisi yok, tahmin üretilemiyor.';
+    const g = fiyatli[0]?.navDate ?? '';
+    const f = num(fiyatli[0]?.navPerShare ?? '0', 6);
+    return `Tahmin ${gunAy(g)} birim fiyatıyla (${f} ₺) hesaplandı. `
+      + (tur === 'alim'
+        ? 'Gerçek maliyet işlem günü fiyatı açıklanınca belli olacak.'
+        : 'Gerçek tutar satış günü fiyatı açıklanınca belli olacak.');
+  };
+
+  // İşaret hem imleçle hem tıklamayla açılıyor: tooltip dokunmatikte yok ve
+  // bu bilgi ekranda başka hiçbir yerde durmuyor.
+  //
+  // Alım "+", satış "−". İkisi ayrı işaret çünkü anlamları farklı: bekleyen
+  // alımın fiyatı yok, satırı bile olmayabilir; bekleyen satışın pozisyonu
+  // hâlâ açık ve rakamları gerçek — yalnız çıkışı ileri tarihli.
+  const bekleyenIsaret = (liste: BekleyenIslemSatiri[], tur: 'alim' | 'satis'): HTMLElement => {
+    const ad = tur === 'alim' ? 'alım' : 'satış';
+    const metin = liste.map((b) =>
+      `${gunAy(b.date)} · ${num(b.units, 0)} adet · ${b.platform}`).join('\n');
+    const btn = el('button', {
+      type: 'button', class: `pending-mark pending-${tur}`,
+      title: `${String(liste.length)} ${ad} bekliyor\n${metin}`,
+    }, [tur === 'alim' ? '+' : '−']);
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openModal(
+        `Bekleyen ${ad}`,
+        `${liste[0]?.fundCode ?? ''} · ${tur === 'alim'
+          ? 'fiyatı henüz açıklanmadı'
+          : 'pozisyon satış tarihine kadar açık'}`,
+        el('div', {}, [
+          table(['Tarih', 'Banka', 'Adet', 'Tahmini ₺'], liste.map((b) => el('tr', {}, [
+            el('td', {}, [b.date]),
+            el('td', {}, [b.platform]),
+            el('td', { class: 'num' }, [num(b.units, 0)]),
+            // Fiyatı olmayan fonda tire: tahmin de üretilemiyor. Yeni
+            // eklenmiş fonda collector henüz koşmamış olabiliyor (CKL).
+            el('td', { class: 'num' }, [b.navPerShare === null
+              ? '—'
+              : `≈ ${num(String(Number(b.units) * Number(b.navPerShare)), 0)}`]),
+          ]))),
+          el('p', { class: 'pending-note' }, [tahminNotu(liste, tur)]),
+        ]),
+        [],
+      );
+    });
+    return btn;
+  };
+
   const body: HTMLElement[] = [];
   for (const r of rows) {
     // NAV günü veri gününden eskiyse fiyat getirilerle taşınmıştır. Taşınmış
@@ -4857,8 +4980,12 @@ async function portfolioView(): Promise<Node[]> {
     // bölüyordu hem de aynı bilginin ikinci yeri oluyordu.
     const detay = iconButton('search', 'Fon detayı');
     detay.addEventListener('click', () => { void openFundModal(r.fundCode); });
+    const bek = bekleyenFon.get(r.fundCode);
+    const bekSat = bekleyenSatis.get(r.fundCode);
     body.push(el('tr', {}, [
       el('td', {}, [
+        ...(bek === undefined ? [] : [bekleyenIsaret(bek, 'alim')]),
+        ...(bekSat === undefined ? [] : [bekleyenIsaret(bekSat, 'satis')]),
         el('span', { class: 'fund-code' }, [r.fundCode]),
         el('span', { class: 'fund-title' }, [r.title ?? '']),
       ]),
@@ -4883,6 +5010,30 @@ async function portfolioView(): Promise<Node[]> {
     ]));
   }
 
+  // Yalnız bekleyen alımı olan fonun position_return'de satırı yok ve ekranda
+  // hiç görünmüyordu. Ölçüldü: CKL ve DFI böyleydi — kullanıcı aldığı fonu
+  // ekranda arayıp bulamıyordu. Para hücreleri BOŞ: fiyat açıklanmadığı için
+  // maliyet de değer de hesaplanamıyor, sıfır yazmak yanlış rakam yazmaktır.
+  const yalnizBekleyen = [...bekleyenFon.entries()]
+    .filter(([kod]) => !rows.some((r) => r.fundCode === kod))
+    .sort((a, b) => a[0].localeCompare(b[0], 'tr'));
+  for (const [kod, liste] of yalnizBekleyen) {
+    const detay = iconButton('search', 'Fon detayı');
+    detay.addEventListener('click', () => { void openFundModal(kod); });
+    body.push(el('tr', { class: 'pending-row' }, [
+      el('td', {}, [
+        bekleyenIsaret(liste, 'alim'),
+        el('span', { class: 'fund-code' }, [kod]),
+        el('span', { class: 'fund-title' }, [liste[0]?.title ?? '']),
+      ]),
+      el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []),
+      el('td', { class: 'num' }, [num(
+        String(liste.reduce((a, b) => a + Number(b.units), 0)), 0)]),
+      el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []),
+      el('td', { class: 'actions' }, [detay]),
+    ]));
+  }
+
   const foot = el('tr', { class: 'total-row' }, [
     el('td', {}, [`TOPLAM (${String(rows.length)})`]),
     el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []),
@@ -4893,13 +5044,25 @@ async function portfolioView(): Promise<Node[]> {
     el('td', {}, []),
   ]);
 
+  const bekleyenToplam = bekleyen.count + bekleyen.sellCount;
   return [
-    el('div', { class: 'metric-grid' }, [
+    // Beşinci kutu çıkınca dörtlü ızgarada tek başına ikinci sıraya düşüyor
+    // ve yanında koca bir boşluk kalıyordu.
+    el('div', { class: bekleyenToplam === 0 ? 'metric-grid' : 'metric-grid metric-grid-5' }, [
       metric('Maliyet', money(String(cost)), `${String(rows.length)} Fon`, 'money'),
       metric('Bugünkü Değer', money(String(value)), rows[0]?.asOfDate ?? '—', 'chart'),
       metric('Kâr / Zarar', money(String(gain)),
         cost === 0 ? '—' : pct(((value / cost) - 1) * 100)),
       metric('Kârda', String(winners), `${String(rows.length - winners)} Zararda`, 'flag'),
+      // Yalnız bekleyen alım varken çizilir; sıfırken boş bir kutu şeridi
+      // kalabalıklaştırırdı. Tutar YOK: fiyat açıklanmadı.
+      // Tek kutu, iki sayı: alım ve satış için ayrı kutu şeridi altıya
+      // çıkarıyordu ve dörtlü ızgarada ikisi ortada asılı kalıyordu.
+      ...(bekleyenToplam === 0 ? [] : [metric(
+        'Bekleyen İşlem', String(bekleyenToplam),
+        [`${String(bekleyen.count)} alım`, `${String(bekleyen.sellCount)} satış`]
+          .filter((t) => !t.startsWith('0 ')).join(' · '),
+        'transactions', 'işlem')]),
     ]),
     panel(
       'Portföyüm',

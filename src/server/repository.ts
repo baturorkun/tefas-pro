@@ -362,6 +362,11 @@ const TX_COLUMNS = `t.id, t.fund_code AS "fundCode", f.title AS "fundTitle",
                       AS "gainPct",
                     CASE WHEN t.units > 0 THEN round(s.cost  / t.units, 6)::text END AS "buyPrice",
                     CASE WHEN t.units > 0 THEN round(s.value / t.units, 6)::text END AS "nowPrice",
+                    -- Son bilinen birim fiyat. Fiyatı henüz açıklanmamış
+                    -- işlemde maliyet de değer de yok; tahmin bunun üzerinden
+                    -- kuruluyor ve "tahmini" diye etiketleniyor.
+                    l.nav_per_share::text AS "latestNav",
+                    to_char(l.nav_date, 'YYYY-MM-DD') AS "latestNavDate",
                     -- Bölünmenin iki parçası aynı şey değil: biri kullanıcının
                     -- girdiği, adedi küçülmüş kayıt; diğeri makinenin açtığı
                     -- artık. Tek etiket ikisini de "bölündü" diye gösteriyordu.
@@ -384,6 +389,7 @@ export async function listTransactions(pool: pg.Pool, userId: number): Promise<T
     // görünmeye devam etmeli, yoksa kullanıcı az önce girdiği kaydı bulamaz.
     `SELECT ${TX_COLUMNS} FROM portfolio_transaction t
      LEFT JOIN dim_fund f USING (fund_code)
+     LEFT JOIN analytics.fund_latest l ON l.fund_code = t.fund_code
      LEFT JOIN analytics.position_slice s ON s.transaction_id = t.id
      WHERE t.user_id = $1
      ORDER BY t.trade_date DESC, t.id DESC`,
@@ -2959,12 +2965,37 @@ export async function removeSystemFund(pool: pg.Pool, fundCode: string): Promise
  * pozisyona bugünkü değer atamak uydurma bir rakam üretirdi; doğrusu
  * "portföyde neden yok" sorusunun cevabını verebilmek.
  */
+export interface BekleyenIslemSatiri {
+  fundCode: string;
+  title: string | null;
+  /** Alımda işlem tarihi, satışta satış tarihi. */
+  date: string;
+  platform: string;
+  units: string;
+  /**
+   * Son bilinen birim fiyat ve günü. Tahmin bunun üzerinden kurulur; gerçek
+   * fiyat işlem gününde açıklanacak. Fonun hiç fiyatı yoksa null — yeni
+   * eklenen fonda collector daha koşmamış olabiliyor.
+   */
+  navPerShare: string | null;
+  navDate: string | null;
+}
+
 export interface BekleyenAlim {
   count: number;
   /** Fon kodları, tekrarsız ve sıralı. */
   funds: string[];
   firstDate: string | null;
   dataDate: string | null;
+  /** Alım kırılımı: Portföyüm satırlarını işaretlemek için gerekiyor. */
+  rows: BekleyenIslemSatiri[];
+  /**
+   * Bekleyen satışlar. Alımdan farkı var: satışı bekleyen pozisyon hâlâ
+   * açık, adedi ve değeri gerçek — yalnız çıkış ileri tarihli. Alımda ise
+   * fiyat açıklanmadığı için ortada hesaplanabilir bir rakam yok.
+   */
+  sellCount: number;
+  sells: BekleyenIslemSatiri[];
 }
 
 export async function pendingPurchases(
@@ -2989,11 +3020,50 @@ export async function pendingPurchases(
     [userId],
   );
   const x = r.rows[0];
+
+  // Kırılım ayrı sorgu: özet satırı count/array_agg ile geliyor, işlem
+  // listesini oraya sığdırmak sorguyu okunmaz hale getirirdi.
+  const d = await pool.query<BekleyenIslemSatiri>(
+    `WITH son AS (
+       SELECT max(trade_date) AS d FROM fact_fund_daily WHERE daily_return_pct IS NOT NULL)
+     SELECT t.fund_code AS "fundCode", f.title,
+            to_char(t.trade_date, 'YYYY-MM-DD') AS "date",
+            t.platform, t.units::text,
+            l.nav_per_share::text AS "navPerShare",
+            to_char(l.nav_date, 'YYYY-MM-DD') AS "navDate"
+       FROM portfolio_transaction t
+       CROSS JOIN son
+       LEFT JOIN dim_fund f ON f.fund_code = t.fund_code
+       LEFT JOIN analytics.fund_latest l ON l.fund_code = t.fund_code
+      WHERE t.user_id = $1 AND t.sell_date IS NULL AND t.trade_date > son.d
+      ORDER BY t.trade_date, t.fund_code`,
+    [userId],
+  );
+
+  // Bekleyen satış son veri gününe değil BUGÜNE göre: satış tarihi gelene
+  // kadar pozisyon açık ve position_slice de aynı kuralı kullanıyor.
+  const sat = await pool.query<BekleyenIslemSatiri>(
+    `SELECT t.fund_code AS "fundCode", f.title,
+            to_char(t.sell_date, 'YYYY-MM-DD') AS "date",
+            t.platform, t.units::text,
+            l.nav_per_share::text AS "navPerShare",
+            to_char(l.nav_date, 'YYYY-MM-DD') AS "navDate"
+       FROM portfolio_transaction t
+       LEFT JOIN dim_fund f ON f.fund_code = t.fund_code
+       LEFT JOIN analytics.fund_latest l ON l.fund_code = t.fund_code
+      WHERE t.user_id = $1 AND t.sell_date > current_date
+      ORDER BY t.sell_date, t.fund_code`,
+    [userId],
+  );
+
   return {
     count: Number(x?.n ?? 0),
     funds: x?.funds ?? [],
     firstDate: x?.first_date ?? null,
     dataDate: x?.data_date ?? null,
+    rows: d.rows,
+    sellCount: sat.rows.length,
+    sells: sat.rows,
   };
 }
 
