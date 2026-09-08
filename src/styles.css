@@ -612,7 +612,19 @@ td.actions .icon-btn + .icon-btn { margin-left: 6px; }
 /* On sütunlu kapanan işlem tablosu 1054 px istiyor; 64rem'de son sütun
    kesiliyordu. */
 .modal-card.modal-xwide { width: min(78rem, 96vw); padding: 0; }
-.modal-xwide .modal-body { max-height: min(78vh, 46rem); }
+/* Kaydırma modal-body'de değil tablonun kendi çerçevesinde: uzun listede
+   thead body ile birlikte kayıp gidiyordu ve on sütunlu bir tabloda başlığı
+   kaybetmek okumayı bitiriyor. table-wrap zaten overflow-x taşıyor, sticky'nin
+   tutunacağı kutu da o olmalı — üstteki kutuda kalsaydı yükseklik sınırı
+   olmadığı için hiç yapışmazdı. */
+.modal-xwide .modal-body { max-height: none; overflow: visible; padding: 0; }
+.modal-xwide .table-wrap { max-height: min(70vh, 40rem); overflow: auto; }
+.modal-xwide thead th { position: sticky; top: 0; z-index: 1; }
+/* Toplam da yapışık: uzun listede "bu fon toplam ne yaptı" sorusu ekranın
+   dibine kayıp gidiyordu. */
+.modal-xwide tbody tr.total-row td { position: sticky; bottom: 0; z-index: 1;
+                                     background: var(--panel);
+                                     border-top: 1px solid var(--line); }
 /* Pencere içindeki paneller kendi çerçevelerini taşımaz: pencerenin kendisi
    zaten bir çerçeve, iç içe kutu gürültü olurdu. */
 .fund-modal .panel { border: 0; background: transparent; margin: 0; }

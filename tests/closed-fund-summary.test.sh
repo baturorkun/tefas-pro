@@ -64,3 +64,18 @@ awk '/function readKapananSekme/,/^}/' "${M}" | grep -q "=== 'tx' ? 'tx' : 'fund
   || fail "varsayılan sekme fon değil"
 grep -q "KAPANAN_SEKME_KEY = 'tefas.closed.section'" "${M}" || fail "seçim saklanmıyor"
 printf 'PASS: fon satırı işlemleri pencerede açıyor, sıralamalar ve varsayılan sekme yerinde\n'
+
+# Uzun listede pencere nasıl kayıyor. Kaydırma tablonun kendi çerçevesinde
+# olmalı: modal-body'de kalsaydı thead onunla birlikte kayıp giderdi ve on
+# sütunlu bir tabloda başlığı kaybetmek okumayı bitirir. table-wrap zaten
+# overflow-x taşıyor; sticky'nin tutunacağı kutu da o.
+C="${PROJECT_ROOT}/src/styles.css"
+awk '/\.modal-xwide \.modal-body/' "${C}" | grep -q "max-height: none" \
+  || fail "kaydırma hâlâ modal-body'de; başlık kayıp gider"
+awk '/\.modal-xwide \.table-wrap/' "${C}" | grep -q "max-height" \
+  || fail "tablo çerçevesinin yükseklik sınırı yok"
+grep -q "\.modal-xwide thead th { position: sticky; top: 0" "${C}" \
+  || fail "sütun başlıkları yapışkan değil"
+grep -q "\.modal-xwide tbody tr.total-row td { position: sticky; bottom: 0" "${C}" \
+  || fail "toplam satırı yapışkan değil"
+printf 'PASS: uzun listede başlık ve toplam ekranda kalıyor\n'

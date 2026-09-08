@@ -81,6 +81,12 @@ altındaki tarih aralığı okunmuyordu.
 Pencere ikisinin de sorununu taşımıyor: liste yerinde kalıyor, hiçbir başlık
 ödünç alınmıyor, kapatmanın üç yolu var (çarpı, Esc, dışarı tıklama).
 
+Uzun listede kaydırma tablonun kendi çerçevesinde olur, pencerenin
+gövdesinde değil: gövdede kalsaydı sütun başlıkları listeyle birlikte kayıp
+giderdi ve on sütunlu bir tabloda başlığı kaybetmek okumayı bitirir. Toplam
+satırı da yapışıktır — "bu fon toplam ne yaptı" sorusu listenin dibine kayıp
+gitmemeli.
+
 Penceredeki tablo İşlemler sekmesindekinin **aynısı** — aynı sütunlar, aynı
 satır ve toplam kurucusu. İki yerde ayrı kurulsaydı sütunlar zamanla
 birbirinden ayrılırdı. Filtre yok: pencere zaten tek fonun penceresi.
@@ -109,6 +115,8 @@ sekmesinde zaten duruyor.
 - Penceredeki tablo İşlemler sekmesindekiyle aynı sütunları taşır.
 - Pencerede filtre yoktur.
 - Pencere tablosu kesilmeden sığar.
+- Liste uzunsa pencere kendi içinde kayar; sütun başlıkları ve toplam satırı
+  kaydırma boyunca görünür kalır.
 - Pencerenin toplam satırı fon satırındaki rakamlarla birebir tutar.
 - Filtreliyken başlık kaç kaydın kaçının görüldüğünü yazar.
 - Varsayılan sekme fon; seçim sayfa yenilendiğinde korunur.
