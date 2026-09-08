@@ -52,6 +52,26 @@ fiyat hiç gelmez ve adet hiç belli olmaz.
 Veritabanı kısıtları da kuralı taşıyor: ya adet ya tutar dolu olacak, tutar
 pozitif olacak, adedi olmayan kayıt satılamayacak.
 
+## Formda kip, iki alan değil
+
+İlk hâlde Adet ve Tutar aynı anda açıktı ve ikisi de doldurulabiliyordu;
+hangisinin geçerli olduğu formda görünmüyordu. Artık bir seçici var:
+
+    Gerçek alım  |  Geçici giriş · adet bilmiyorum
+
+Seçime göre tek alan görünür ve yalnız o gönderilir. Tutar kipinde adet hiç
+gönderilmez — ekranda kalmış eski bir değer pasif kaydı sessizce
+aktifleştirebilirdi.
+
+Düzenlemede kip kaydın kendisinden geliyor: pasif kayıt tutar kipinde açılır,
+kullanıcı "Gerçek alım"a geçip adedi yazar.
+
+## Listede görünürlük
+
+Rozet tek başına yetmiyordu; satır diğerleriyle aynı görünüyor ve göz
+kaymıyordu. Pasif satırın kendi rengi ve sol şeridi var, kâr/zarar şeridini
+almıyor — pasif kaydın bir sonucu yok.
+
 ## Kayıt kesinleşince
 
 Fiyat açıklanınca kullanıcı satırı düzenleyip adedi yazıyor; kayıt aynı
@@ -72,5 +92,9 @@ adet maliyet tabanına girerse bütün getiri zinciri yanlışlanır.
 - Adet ya da tutardan biri zorunludur; ikisi de boş kayıt reddedilir.
 - Adet girilince kayıt aynı kayıt olarak aktifleşir; yeni satır açılmaz.
 - Adet otomatik hesaplanmaz.
+- Formda aynı anda yalnız bir alan görünür; kip seçilir.
+- Tutar kipinde adet gönderilmez.
+- Düzenlemede kip kaydın durumundan gelir.
+- Pasif satır listede rengiyle ayrışır; kâr/zarar şeridi almaz.
 - Pasif kaydın fonu takip edilen fon sayılır ve verisi toplanır.
 - Hesap yapan her view süzülmüş kaynağı okur.

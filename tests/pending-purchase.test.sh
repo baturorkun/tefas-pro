@@ -53,4 +53,21 @@ awk '/^async function transactionsView/,/^}/' "${M}" \
   || fail "pasif kayıt açık pozisyon sayılıyor"
 grep -q "'Adet bekleniyor'" "${M}" || fail "pasif satır tutarını göstermiyor"
 grep -q "badge('Pasif', 'pending')" "${M}" || fail "pasif rozeti yok"
+# Rozet tek başına yetmiyordu: satır diğerleriyle aynı görünüyor ve göz
+# kaymıyordu. Kendi rengi var ve kâr/zarar şeridini almıyor — pasif kaydın
+# bir sonucu yok.
+grep -q "pasifSatir ? 'tx-pending'" "${M}" || fail "pasif satırın kendi rengi yok"
+grep -q ".tx-pending td:first-child" "${PROJECT_ROOT}/src/styles.css" \
+  || fail "pasif satırın şeridi yok"
+
+# Kip seçici: iki alan birden açık kalınca hangisinin geçerli olduğu formda
+# görünmüyordu. Tutar kipinde adet GÖNDERİLMEZ; eski bir değer sızarsa pasif
+# kayıt sessizce aktifleşirdi.
+grep -q "class: 'tabs mode-tabs'" "${M}" || fail "giriş türü seçici yok"
+grep -q "const tutarKipi = !tutarAlani.hidden" "${M}" || fail "kip gönderime yansımıyor"
+grep -q "units: tutarKipi ? null :" "${M}" || fail "tutar kipinde adet gönderiliyor"
+grep -q "kipUygula(existing !== null && existing.units === null ? 'tutar' : 'adet')" "${M}" \
+  || fail "düzenlemede kip kayıttan gelmiyor"
+grep -q ".field\[hidden\] { display: none; }" "${PROJECT_ROOT}/src/styles.css" \
+  || fail "gizlenen alan görünmeye devam ediyor"
 printf 'PASS: tek form, tek liste; pasif satır işaretli ve pozisyon sayılmıyor\n'

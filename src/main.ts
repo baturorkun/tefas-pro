@@ -2973,11 +2973,48 @@ function transactionForm(
   const submit = el('button', { type: 'submit', class: 'btn-primary' }, [
     existing ? 'Güncelle' : 'Alış Ekle',
   ]) as HTMLButtonElement;
+  // İki alan aynı anda açık kalınca hangisinin geçerli olduğu formda
+  // görünmüyordu. Kip seçilir: ya adet ya tutar, ikisi birden değil.
+  const adetAlani = field('Adet', f.units, 'Fon payı adedi, tutar değil.');
+  const tutarAlani = field('Tutar ₺', f.orderAmount,
+    'Bankaya verdiğin tutar. Adet gelene kadar kayıt pasif bekler.');
+
+  const kipDugmesi = (kip: 'adet' | 'tutar', etiket: string): HTMLElement =>
+    el('button', { type: 'button', class: 'tab-btn', 'data-kip': kip }, [etiket]);
+  const gercekBtn = kipDugmesi('adet', 'Gerçek alım');
+  const geciciBtn = kipDugmesi('tutar', 'Geçici giriş · adet bilmiyorum');
+  const kipSecici = el('div', { class: 'tabs mode-tabs' }, [gercekBtn, geciciBtn]);
+
+  const kipUygula = (kip: 'adet' | 'tutar'): void => {
+    const adet = kip === 'adet';
+    gercekBtn.classList.toggle('tab-on', adet);
+    geciciBtn.classList.toggle('tab-on', !adet);
+    adetAlani.hidden = !adet;
+    tutarAlani.hidden = adet;
+    // required kiple birlikte taşınıyor; yoksa gizli alan gönderimi
+    // engelliyor ve kullanıcı sebebini göremiyor.
+    f.units.toggleAttribute('required', adet);
+    f.orderAmount.toggleAttribute('required', !adet);
+    if (adet) f.orderAmount.setCustomValidity('');
+    else f.units.setCustomValidity('');
+  };
+  gercekBtn.addEventListener('click', () => { kipUygula('adet'); });
+  geciciBtn.addEventListener('click', () => { kipUygula('tutar'); });
+  // Düzenlemede kip kaydın kendisinden: pasif kayıt açılınca tutar kipinde
+  // gelir, adedi yazmak için kullanıcı "Gerçek alım"a geçer.
+  kipUygula(existing !== null && existing.units === null ? 'tutar' : 'adet');
+
   const form = el('form', { class: 'modal-form-grid', id: 'tx-form' }, [
     field('Fon Kodu', f.fundCode, 'TEFAS kodu, üç harf.'),
-    field('Adet', f.units, 'Fon payı adedi. Bilmiyorsan boş bırak, tutarı yaz.'),
-    field('Tutar ₺', f.orderAmount,
-      'Adet yerine tutar: kayıt, fiyat açıklanana kadar pasif bekler.'),
+    el('div', { class: 'field' }, [
+      el('label', {}, ['Giriş türü']),
+      kipSecici,
+      el('div', { class: 'field-hint' }, [
+        'Adet fiyat açıklanınca belli oluyorsa geçici giriş yap; sonra adedi yaz.',
+      ]),
+    ]),
+    adetAlani,
+    tutarAlani,
     el('div', { class: 'form-section' }, [el('span', {}, ['Alış']), buyValorNote]),
     field('Emir Tarihi', tarihAlani(f.buyOrderDate), 'İsteğe bağlı; girilirse alış tarihi hesaplanır.'),
     field('Alış Tarihi', tarihAlani(f.tradeDate), 'Emrin fiyatlandığı gün.'),
@@ -3014,18 +3051,15 @@ function transactionForm(
         throw new Error('Tarihi gg-aa-yyyy olarak yazın.');
       }
     }
-    // Biri dolu olmalı; ikisi de boşsa kayıt hiçbir şey anlatmıyor.
-    if (f.units.value.trim() === '' && f.orderAmount.value.trim() === '') {
-      f.units.setCustomValidity('Adet ya da tutar girin.');
-      f.units.reportValidity();
-      throw new Error('Adet ya da tutar girin.');
-    }
-    f.units.setCustomValidity('');
+    // Kip hangisiyse o gönderilir. Tutar kipinde adet gönderilmez: aksi
+    // hâlde eski bir değer kayda sızıp pasif kaydı sessizce aktifleştirirdi.
+    const tutarKipi = !tutarAlani.hidden;
     const payload = {
       fundCode: f.fundCode.value,
       platform: f.platform.value,
       tradeDate: tarihOku(f.tradeDate),
-      units: f.units.value || null,
+      units: tutarKipi ? null : f.units.value || null,
+      // Tutar aktifleşince de saklanıyor: ne ödendiği bilgisi değerli.
       orderAmount: f.orderAmount.value || null,
       buyOrderDate: tarihOku(f.buyOrderDate) || null,
       sellOrderDate: tarihOku(f.sellOrderDate) || null,
@@ -4977,8 +5011,13 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
     // aynı dil. Gerçekleşmiş satış soluk yazılır: kapanmış bir kayıt artık
     // takip edilecek bir şey değil, listede yer tutuyor.
     const kapali = t.sellDate !== null && t.sellDate <= bugun;
+    // Pasif kayıt kendi rengini taşır ve kâr/zarar şeridini almaz: onun bir
+    // sonucu yok, hesaplara da girmiyor. Rozet tek başına yetmiyordu —
+    // satırın tamamı diğerleriyle aynı görünüyor ve göz kaymıyordu.
+    const pasifSatir = t.units === null;
     const sinif = [
-      t.gain === null ? '' : Number(t.gain) < 0 ? 'tx-loss' : 'tx-gain',
+      pasifSatir ? 'tx-pending'
+        : t.gain === null ? '' : Number(t.gain) < 0 ? 'tx-loss' : 'tx-gain',
       kapali ? 'tx-closed' : '',
     ].filter((c) => c !== '').join(' ');
     const tr = el('tr', sinif === '' ? {} : { class: sinif }, [
