@@ -2686,6 +2686,71 @@ export async function userBenchmark(
   return { code, personal: own !== null, inherited, hasData: await fundHasData(pool, code) };
 }
 
+export interface NakitGirisi {
+  /** Paranın bankaya geçtiği/geçeceği gün. */
+  date: string;
+  platform: string;
+  fundCode: string;
+  sellDate: string;
+  valorDays: number | null;
+  amount: string;
+  /** Satış gerçekleşmemişse tutar son fiyattan tahmin edilir. */
+  estimated: boolean;
+}
+
+/**
+ * Satıştan gelecek paranın banka ve tarih takvimi.
+ *
+ * Bakiye değil: uygulama bankaya dışarıdan yatırılan parayı görmüyor, yalnız
+ * fon alım satımını biliyor. Sıfırdan net akış "eksi bakiye" gibi okunurdu.
+ * Gösterilen şey gerçekten bilinen şey — hangi satıştan hangi bankaya hangi
+ * gün ne kadar geçecek.
+ *
+ * Para günü = satış tarihi. Valör İKİNCİ KEZ eklenmiyor: uygulamanın modelinde
+ * satış tarihi zaten emir tarihine valör eklenerek bulunuyor — işlem formu da
+ * öyle hesaplıyor ("Satış Emir Tarihi girilirse satış tarihi hesaplanır").
+ * İlk sürümde valör bir kez daha eklenmişti ve para günü iki gün ileri
+ * çıkıyordu; ölçüldü — 03 Eylül'de verilen DFI emri 07 Eylül'de sonuçlandı,
+ * takvim 09 Eylül diyordu.
+ */
+export async function cashCalendar(pool: pg.Pool, userId: number): Promise<NakitGirisi[]> {
+  const r = await pool.query<{
+    platform: string; fund_code: string; sell_date: string;
+    valor_days: number | null; amount: string | null; estimated: boolean;
+  }>(
+    `-- Gerçekleşmiş satışlar: tutar closed_position'dan, ölçülmüş.
+     SELECT c.platform, c.fund_code, to_char(c.sell_date, 'YYYY-MM-DD') AS sell_date,
+            l.sell_valor_days AS valor_days, c.sell_value::text AS amount,
+            false AS estimated
+       FROM analytics.closed_position c
+       LEFT JOIN analytics.fund_latest l ON l.fund_code = c.fund_code
+      WHERE c.user_id = $1
+     UNION ALL
+     -- Gerçekleşmemiş satışlar: fiyat açıklanmadı, son fiyattan tahmin.
+     -- Fiyatı hiç olmayan fonda tutar null kalır; uydurulmuş rakam yazılmaz.
+     SELECT t.platform, t.fund_code, to_char(t.sell_date, 'YYYY-MM-DD') AS sell_date,
+            l.sell_valor_days AS valor_days,
+            CASE WHEN l.nav_per_share IS NULL THEN NULL
+                 ELSE round(t.units * l.nav_per_share, 2)::text END AS amount,
+            true AS estimated
+       FROM portfolio_transaction t
+       LEFT JOIN analytics.fund_latest l ON l.fund_code = t.fund_code
+      WHERE t.user_id = $1 AND t.units IS NOT NULL AND t.sell_date > current_date`,
+    [userId],
+  );
+
+  return r.rows.map((x) => ({
+    date: x.sell_date,
+    platform: x.platform,
+    fundCode: x.fund_code,
+    sellDate: x.sell_date,
+    valorDays: x.valor_days,
+    amount: x.amount ?? '',
+    estimated: x.estimated,
+  })).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1
+    : a.platform.localeCompare(b.platform, 'tr')));
+}
+
 export async function holidays(pool: pg.Pool): Promise<string[]> {
   return readSetting<string[]>(pool, 'holidays', DEFAULT_HOLIDAYS);
 }
