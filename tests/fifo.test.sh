@@ -43,11 +43,17 @@ sapan="$(q "SELECT count(*) FROM portfolio_transaction c
 printf 'PASS: bölünmüş kayıtlar alış tarihini ve bankayı koruyor\n'
 
 # Bölünmüş parçaların birim maliyeti aynı olmalı.
+#
+# Tolerans adede göre: position_slice maliyeti iki haneye yuvarlıyor, yani
+# birim maliyette en fazla 0,01/adet hata olabiliyor. Sabit 0,000001 eşiği
+# adedi küçük fonlarda yuvarlamayı sapma sanıyordu — ölçüldü, TLY'nin 9 ve
+# 24 adetlik iki parçasında fark 0,000303 çıkıyor ve bu tamamen yuvarlama.
 fark="$(q "SELECT count(*) FROM analytics.position_slice a
            JOIN portfolio_transaction ct ON ct.id = a.transaction_id
            JOIN analytics.position_slice b ON b.transaction_id = ct.split_from_id
            JOIN portfolio_transaction pt ON pt.id = b.transaction_id
-           WHERE abs(a.cost / ct.units - b.cost / pt.units) > 0.000001")"
+           WHERE abs(a.cost / ct.units - b.cost / pt.units)
+                 > 0.01 / ct.units + 0.01 / pt.units")"
 [ "${fark}" = "0" ] || fail "${fark} bölünmüş kayıtta birim maliyet ayrışmış"
 printf 'PASS: bölünmüş kayıtlarda birim maliyet aynı\n'
 

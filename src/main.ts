@@ -321,7 +321,7 @@ interface PerformanceSeries {
 }
 
 type ViewId =
-  | 'dashboard' | 'portfolio' | 'closed' | 'periods' | 'market'
+  | 'dashboard' | 'portfolio' | 'closed' | 'cash' | 'periods' | 'market'
   | 'allocation' | 'stocks' | 'chat' | 'transactions' | 'watchlist' | 'prefs'
   | 'profile' | 'users' | 'banks' | 'sysfunds' | 'runs' | 'settings';
 
@@ -428,6 +428,20 @@ function fiyat(raw: string | null): string {
   return n.toLocaleString('tr-TR', {
     minimumFractionDigits: digits, maximumFractionDigits: digits,
   });
+}
+
+/**
+ * Bugünün tarihi, KULLANICININ saatine göre.
+ *
+ * `toISOString()` UTC veriyor: Türkiye'de gece 00:00 ile 03:00 arasında bir
+ * önceki günü "bugün" sanıyordu. Ölçüldü — yerel 09 Eylül 00:07'de ekran
+ * 8 Eylül diyordu ve o günün para girişleri "gelmiş" yerine "bugün"
+ * kutusunda duruyordu.
+ */
+function bugunISO(): string {
+  const d = new Date();
+  return `${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    + `-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function gunAd(iso: string | null): string {
@@ -561,6 +575,7 @@ const ICON_PATHS: Record<string, string[]> = {
   money: ['M12 3v18', 'M16 7.5A3.5 3.5 0 0 0 12.5 5h-1a3 3 0 0 0 0 6h1a3 3 0 0 1 0 6h-1A3.5 3.5 0 0 1 8 16.5'],
   chart: ['M4 19h16', 'm5 15 4-5 3 3 6-8'],
   calendar: ['M4 6h16v14H4z', 'M4 10h16', 'M9 3v4', 'M15 3v4'],
+  cash: ['M3 7h18v10H3z', 'M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z', 'M7 7v10', 'M17 7v10'],
   flag: ['M5 21V4h9l-1 3h6v8h-7l-1-3H5'],
   closed: ['M20 6 9 17l-5-5'],
   periods: ['M4 5h16v15H4z', 'M4 10h16', 'M9 5V3M15 5V3', 'M8 14h3M13 14h3'],
@@ -4870,6 +4885,139 @@ async function closedView(): Promise<Node[]> {
   ];
 }
 
+interface NakitGirisi {
+  date: string;
+  platform: string;
+  fundCode: string;
+  sellDate: string;
+  valorDays: number | null;
+  amount: string;
+  estimated: boolean;
+}
+
+/**
+ * Nakit takvimi: satıştan gelecek para, banka ve tarih kırılımında.
+ *
+ * Bakiye YOK ve bu bilinçli: uygulama bankaya dışarıdan yatırılan parayı
+ * görmüyor, yalnız fon alım satımını biliyor. Sıfırdan net akış "eksi
+ * bakiye" gibi okunurdu. Gösterilen şey gerçekten bilinen şey.
+ */
+async function cashView(): Promise<Node[]> {
+  const rows = (await api('/api/cash')) as NakitGirisi[];
+  const bugun = bugunISO();
+
+  // Aynı gün aynı bankaya gelen tutarlar toplanıyor; hangi satışlardan
+  // geldiği kaynak sütununda duruyor.
+  interface Grup {
+    date: string; platform: string; toplam: number;
+    kaynak: NakitGirisi[]; tahmin: boolean; eksik: boolean;
+  }
+  const gruplar = new Map<string, Grup>();
+  for (const r of rows) {
+    const k = `${r.date}·${r.platform}`;
+    const g = gruplar.get(k)
+      ?? { date: r.date, platform: r.platform, toplam: 0, kaynak: [], tahmin: false, eksik: false };
+    g.toplam += Number(r.amount || 0);
+    g.kaynak.push(r);
+    if (r.estimated) g.tahmin = true;
+    if (r.amount === '') g.eksik = true;
+    gruplar.set(k, g);
+  }
+  // Bugün ile sonrası ayrı: biri hesabında duran para, diğeri henüz yolda.
+  // Tek listede olunca ikisi aynı şeymiş gibi okunuyordu.
+  const liste = [...gruplar.values()];
+  const bugunku = liste.filter((g) => g.date === bugun)
+    .sort((a, b) => a.platform.localeCompare(b.platform, 'tr'));
+  const sonraki = liste.filter((g) => g.date > bugun).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const gelmis = liste.filter((g) => g.date < bugun).sort((a, b) => (a.date > b.date ? -1 : 1));
+
+  // Yalnız fon kodları. Valör bilgisi burada bir işe yaramıyordu: para günü
+  // zaten satırın kendisinde ve valör onu açıklamıyor — satış tarihi emirden
+  // türetilirken zaten uygulanmış oluyor.
+  const kaynakMetni = (liste: NakitGirisi[]): string => {
+    const sayim = new Map<string, number>();
+    for (const r of liste) sayim.set(r.fundCode, (sayim.get(r.fundCode) ?? 0) + 1);
+    return [...sayim.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], 'tr'))
+      .map(([kod, n]) => `${kod}${n > 1 ? ` ×${String(n)}` : ''}`).join(', ');
+  };
+
+  const satir = (g: Grup): HTMLElement => el('tr', {}, [
+    el('td', { class: 'num' }, [g.date]),
+    el('td', {}, [g.platform]),
+    el('td', { class: 'num' }, [
+      // Tahmin işaretli: satış gerçekleşmemişse fiyat açıklanmamıştır.
+      g.eksik && g.toplam === 0 ? '—' : `${g.tahmin ? '≈ ' : ''}${money(String(g.toplam))}`,
+    ]),
+    // Bir satış birden çok FIFO bacağına bölünüyor; kaynakta aynı fon üç kez
+    // tekrar ediyordu. Fon ve satış gününe göre toplanıp kaç bacak olduğu
+    // yazılıyor.
+    el('td', { class: 'dim' }, [kaynakMetni(g.kaynak)]),
+  ]);
+
+  const bugunToplam = bugunku.reduce((a, g) => a + g.toplam, 0);
+  const sonrakiToplam = sonraki.reduce((a, g) => a + g.toplam, 0);
+
+  // Banka kutusunda iki rakam: bugün hesaba geçen ve yolda olan. "bugün +
+  // yolda" diye etiket yazmak toplamın neden o kadar olduğunu söylemiyordu.
+  const banka = new Map<string, { bugun: number; yolda: number }>();
+  const ekle = (ad: string, tutar: number, alan: 'bugun' | 'yolda'): void => {
+    const v = banka.get(ad) ?? { bugun: 0, yolda: 0 };
+    v[alan] += tutar;
+    banka.set(ad, v);
+  };
+  for (const g of bugunku) ekle(g.platform, g.toplam, 'bugun');
+  for (const g of sonraki) ekle(g.platform, g.toplam, 'yolda');
+
+  return [
+    el('div', { class: 'metric-grid' }, [
+      // Kutuda gün de yazıyor: "bugün" tek başına hangi güne bakıldığını
+      // söylemiyor ve ekran açık kaldığında gün değişebiliyor.
+      metric('Bugün Gelen', money(String(bugunToplam)),
+        bugunku.length === 0 ? `${gunAd(bugun)} · giriş yok`
+          : `${gunAd(bugun)} · ${String(bugunku.length)} banka`, 'money'),
+      metric('Sonraki Günler', money(String(sonrakiToplam)),
+        sonraki.length === 0 ? 'yolda para yok'
+          : `en yakın ${gunAd(sonraki[0]?.date ?? null)}`, 'chart'),
+      ...[...banka.entries()]
+        .sort((a, b) => (b[1].bugun + b[1].yolda) - (a[1].bugun + a[1].yolda))
+        .slice(0, 2)
+        .map(([ad, v]) => metric(ad, money(String(v.bugun + v.yolda)),
+          `bugün ${money(String(v.bugun))} · yolda ${money(String(v.yolda))}`, 'chart')),
+    ]),
+    panel(
+      'Bugün Gelen',
+      // Para gün içinde değil, öğleden sonra hesaba geçiyor: sabah bakıp
+      // "gelmemiş" diye okumasın.
+      bugunku.length === 0 ? `${gunAd(bugun)} · para girişi yok`
+        : `${gunAd(bugun)} · saat 15:00'ten sonra hesapta`,
+      el('div', { class: 'panel-body' }, [
+        bugunku.length === 0
+          ? el('div', { class: 'empty-state' }, ['Bugün para girişi yok.'])
+          : table(['Para Günü', 'Banka', 'Tutar', 'Fonlar'], bugunku.map(satir)),
+      ]),
+    ),
+    panel(
+      'Sonraki Günler',
+      'Satış girilmiş, para henüz hesapta değil',
+      el('div', { class: 'panel-body' }, [
+        sonraki.length === 0
+          ? el('div', { class: 'empty-state' }, ['Yolda bekleyen para yok.'])
+          : table(['Para Günü', 'Banka', 'Tutar', 'Fonlar'], sonraki.map(satir)),
+      ]),
+    ),
+    panel(
+      'Gelmiş Para',
+      `${String(gelmis.length)} giriş · en yeni üstte`,
+      el('div', { class: 'panel-body' }, [
+        gelmis.length === 0
+          ? el('div', { class: 'empty-state' }, ['Henüz para girişi yok.'])
+          : table(['Para Günü', 'Banka', 'Tutar', 'Fonlar'], gelmis.map(satir)),
+      ]),
+    ),
+  ];
+}
+
 /**
  * Dönemsel getiri: ay ay, her ayın içinde hafta hafta kâr/zarar.
  *
@@ -4994,10 +5142,10 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
   // İleri tarihli satış sayılmaz: girilmiş ama henüz gerçekleşmemiş bir işlem
   // "son yaptığın şey" değil. Uygulama başka yerlerde de onu "Bekliyor" diye
   // ayırıyor.
-  const bugunISO = new Date().toISOString().slice(0, 10);
+  const buGun = bugunISO();
   const olaylar: { date: string; tur: string }[] = [
     ...rows.map((t) => ({ date: t.tradeDate, tur: 'Alış' })),
-    ...rows.flatMap((t) => (t.sellDate !== null && t.sellDate <= bugunISO
+    ...rows.flatMap((t) => (t.sellDate !== null && t.sellDate <= buGun
       ? [{ date: t.sellDate, tur: 'Satış' }] : [])),
   ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const sonOlay = olaylar.at(-1);
@@ -5064,7 +5212,7 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
 
   // Toplam yalnız parası ölçülebilen satırlardan: getiri günü olmayan işlem
   // maliyetsiz görünüyor, onu sıfır sayıp toplama katmak yanlış olurdu.
-  const bugun = new Date().toISOString().slice(0, 10);
+  const bugun = bugunISO();
   const olculen = gorunen.filter((t) => t.cost !== null);
   const tMaliyet = olculen.reduce((a, t) => a + Number(t.cost), 0);
   const tDeger = olculen.reduce((a, t) => a + Number(t.value), 0);
@@ -5792,6 +5940,7 @@ const VIEWS: {
   { id: 'stocks', label: 'Hisseler', adminOnly: false, crumb: 'Genel' },
   { id: 'chat', label: 'Asistan', adminOnly: false, crumb: 'Genel' },
   { id: 'closed', label: 'Kapananlar', adminOnly: false, crumb: 'Genel' },
+  { id: 'cash', label: 'Nakit', adminOnly: false, crumb: 'Genel' },
   { id: 'periods', label: 'Dönemsel Getiri', adminOnly: false, crumb: 'Genel' },
   { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },
   { id: 'watchlist', label: 'Takip Listem', adminOnly: false, crumb: 'Genel' },
@@ -5964,6 +6113,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     else if (current.id === 'stocks') bodyNodes = await stocksView();
     else if (current.id === 'chat') bodyNodes = await chatView(reload);
     else if (current.id === 'closed') bodyNodes = await closedView();
+    else if (current.id === 'cash') bodyNodes = await cashView();
     else if (current.id === 'periods') bodyNodes = await periodsView();
     else if (current.id === 'market') bodyNodes = await marketView(reload);
     else if (current.id === 'transactions') bodyNodes = await transactionsView(reload);

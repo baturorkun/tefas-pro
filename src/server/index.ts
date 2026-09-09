@@ -46,6 +46,7 @@ import {
   addBank,
   addToWatchlist,
   allocation,
+  cashCalendar,
   duplicateTransaction,
   fundOptions,
   stockAllocation,
@@ -802,6 +803,12 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
       }
 
       // İşlem formunun fon listesi: serbest metin yerine seçim.
+      // Satıştan gelecek paranın banka ve tarih takvimi.
+      if (path === '/api/cash' && method === 'GET') {
+        sendJson(res, 200, await cashCalendar(pool, user.id));
+        return;
+      }
+
       if (path === '/api/funds' && method === 'GET') {
         sendJson(res, 200, await fundOptions(pool));
         return;
