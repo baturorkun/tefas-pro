@@ -13,25 +13,36 @@
       }
     ]
   },
-  "status": "running",
+  "status": "approved",
   "createdAt": "2026-09-08T20:28:57.861Z",
-  "updatedAt": "2026-09-08T20:28:58.335Z",
+  "updatedAt": "2026-09-09T05:51:50.917Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "running",
-      "retries": 0,
-      "startedAt": "2026-09-08T20:28:58.334Z"
+      "status": "passed",
+      "startedAt": "2026-09-08T20:28:58.334Z",
+      "finishedAt": "2026-09-09T05:51:50.718Z",
+      "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "package.json",
+    "requirements/RQ-0058-satis-parasinin-hangi-banka-ve-tarihte-gelecegi-takvimi.md",
+    "src/main.ts",
+    "src/server/index.ts",
+    "src/server/repository.ts",
+    "tests/cash-calendar.test.sh",
+    "tests/fifo.test.sh"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
-  }
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-09-09T05:51:50.918Z",
+  "approvedBy": "human"
 }
