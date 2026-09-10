@@ -67,7 +67,12 @@ ensure_env_file() {
 # konmaz: orada tırnak podman tarafından değerin parçası sayılır, tırnaksız
 # boşluk ise bash source'unda komuta bölünür.
 COLLECTOR_NETWORK="tefas-pro-db_default"
-COLLECTOR_ARGS=""
+# Zamanlanmış koşum fvt adımını atlar: fvt'nin veri uçları sunucunun IP'sine
+# kapalı (403, Cloudflare) ve her koşumda 71 fonun 71'i de hata veriyordu —
+# koşum "partial" bitiyor, Collector Log hata doluyor ve engellenmiş bir uca
+# günde 71 istek gidiyordu. Ölçüm src/collect-fvt.ts başında; hisse kırılımı
+# artık ev IP'sinden `pnpm collect:fvt` ile toplanıyor.
+COLLECTOR_ARGS="--skip-stocks"
 # Hafta içi sabah 10:30. Gece 03:00 değil: fon fiyatları sabah yayımlanıyor ve
 # hafta sonu yeni veri yok — gece koşum bir önceki günün verisini tekrar
 # çekiyordu. Sunucudaki timer zaten buydu; varsayılan farklı kaldığı için bir

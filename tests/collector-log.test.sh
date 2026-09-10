@@ -18,6 +18,24 @@ grep -q "LEFT JOIN analytics.fund_latest" "${PROJECT_ROOT}/src/server/repository
   || fail "takip listesi verisi olmayan fonu da göstermeli"
 printf 'PASS: kaynak ayrımı ve takip listesi sorgusu doğru\n'
 
+# Panel'deki "Getiri Günü" kutusunun alt satırı üç durumu ayırmalı. Koşum
+# sürerken finished_at boş olduğu için kutu "Henüz Koşmadı" diyordu; toplama
+# tam o sırada koşuyorken bu yanlıştı ve kullanıcı timer'ın hiç çalışmadığını
+# sandı.
+MAIN="${PROJECT_ROOT}/src/main.ts"
+grep -qF "run === null" "${MAIN}" || fail "hiç koşmamış hâl kayıt yokluğuna bakmalı"
+grep -qF "Toplanıyor" "${MAIN}" || fail "süren koşumun kendi cümlesi olmalı"
+grep -qF "run.finishedAt === null" "${MAIN}" || fail "süren koşum bitiş zamanının boşluğundan anlaşılmalı"
+printf 'PASS: suren kosum "hic kosmadi" gibi gorunmuyor\n'
+
+# Aynı gün ikinci koşum atlanmalı: timer'dan önce elle koşturulan gün timer
+# 10:30'da aynı veriyi bir daha çekiyordu.
+COL="${PROJECT_ROOT}/src/collector.ts"
+grep -qF "successfulRunToday" "${COL}" || fail "gün içinde tekrar koşum kontrolü olmalı"
+grep -qF "status = 'passed'" "${COL}" || fail "yalnız başarılı koşum engellemeli"
+grep -qF "'--force'" "${COL}" || fail "zorlama bayrağı olmalı"
+printf 'PASS: gunde bir kez, --force ile zorlanabilir\n'
+
 if [ -z "${DATABASE_URL:-}" ] || ! command -v psql >/dev/null 2>&1 \
    || ! psql "${DATABASE_URL}" -tAc 'SELECT 1' >/dev/null 2>&1; then
   printf 'SKIP: veritabanı yok\n'; exit 0

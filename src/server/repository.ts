@@ -1054,8 +1054,24 @@ export async function dashboard(
               (SELECT count(*) FROM portfolio_transaction
                 WHERE user_id = $1
                   AND (sell_date IS NULL OR sell_date > current_date)) AS open_lots,
-              (SELECT to_char(max(trade_date), 'YYYY-MM-DD') FROM fact_fund_daily
-                WHERE daily_return_pct IS NOT NULL) AS data_date`,
+              -- Gün, KULLANICININ ölçülebilir son günü. Evrenin en son günü
+              -- değil: fact_fund_daily'de bir tek fonun bugünü gelmiş olması
+              -- yetiyordu ve kutu "10 Eylül" yazarken altındaki Günlük Getiri
+              -- 9 Eylül'ü gösteriyordu — portfolio_daily o günü, açık
+              -- fonlardan birinin fiyatı gelmediği için düşürmüştü.
+              --
+              -- Kural kullanıcı başına: tek bir fonun eksikliği herkesin
+              -- gününü dondurmamalı. TEFAS'a kapanan AAK bunu göstermişti —
+              -- fiyatı bir daha hiç gelmiyor.
+              --
+              -- Portföyü olmayan kullanıcıda seri boş kalır; orada evrenin
+              -- son günü doğru cevap, çünkü ekranda yalnız piyasa var.
+              coalesce(
+                (SELECT to_char(max(trade_date), 'YYYY-MM-DD')
+                   FROM analytics.portfolio_daily
+                  WHERE user_id = $1 AND daily_gain IS NOT NULL),
+                (SELECT to_char(max(trade_date), 'YYYY-MM-DD') FROM fact_fund_daily
+                  WHERE daily_return_pct IS NOT NULL)) AS data_date`,
       [userId],
     ),
     pool.query<{ id: number; status: string; finished_at: string | null }>(

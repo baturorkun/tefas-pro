@@ -2,6 +2,7 @@
  * Takip listesi collector'ı. Oneshot çalışır.
  *
  *   pnpm collect [--funds AAA,BBB] [--backfill] [--skip-yield]
+ *                [--skip-stocks] [--force]
  *                [--flow-months 12] [--size-months 6]
  *
  * Fon başına dört istek; her biri tek çağrıda tüm seriyi döndürdüğü için gün
@@ -24,7 +25,12 @@ import { FvtClient, chunkSymbols } from './sources/fvt.js';
 import { makePool } from './db/pool.js';
 import { upsertWatchedFunds } from './db/seed.js';
 
-const THROTTLE_MS = 700;
+/**
+ * İstekler arası bekleme. Ortamdan ayarlanabilir: fvt toplaması ev IP'sinden
+ * ve elle koşuyor, orada acele yok — aralığı açmak kaynağa da bize de daha
+ * güvenli. Sunucudaki zamanlanmış koşum varsayılanla devam eder.
+ */
+const THROTTLE_MS = Number(process.env['COLLECT_THROTTLE_MS'] ?? '') || 700;
 /** Artımlı çekimde geriye örtüşme: geç gelen revizyonu yakalar. */
 const OVERLAP_DAYS = 5;
 
@@ -45,6 +51,8 @@ interface Args {
   skipYield: boolean;
   /** Hisse kırılımı ve fiyatları atla; ayrı kaynak, ayrı hata yüzeyi. */
   skipStocks: boolean;
+  /** Bugün başarıyla toplandıysa yine de topla. */
+  force: boolean;
   flowMonths: number;
   sizeMonths: number;
 }
@@ -55,6 +63,7 @@ export function parseArgs(argv: string[]): Args {
     backfill: false,
     skipYield: false,
     skipStocks: false,
+    force: false,
     flowMonths: 12,
     sizeMonths: 6,
   };
@@ -63,6 +72,7 @@ export function parseArgs(argv: string[]): Args {
     else if (argv[i] === '--backfill') args.backfill = true;
     else if (argv[i] === '--skip-yield') args.skipYield = true;
     else if (argv[i] === '--skip-stocks') args.skipStocks = true;
+    else if (argv[i] === '--force') args.force = true;
     else if (argv[i] === '--flow-months') args.flowMonths = Number(argv[(i += 1)]);
     else if (argv[i] === '--size-months') args.sizeMonths = Number(argv[(i += 1)]);
   }
@@ -579,6 +589,48 @@ async function ingestYieldSnapshot(
   return res.rowCount ?? 0;
 }
 
+/**
+ * Bugün zamanlanmış toplama başarıyla bittiyse bitiş zamanını döndürür.
+ *
+ * Yalnız `passed` sayılır. `failed` ve `partial` koşumdan sonra veri eksik
+ * demek; orada tekrar denemek işin kendisi.
+ */
+export async function successfulRunToday(
+  pool: pg.Pool,
+  today: string,
+): Promise<string | null> {
+  const r = await pool.query<{ bitis: string }>(
+    `SELECT to_char(finished_at, 'HH24:MI') AS bitis
+       FROM ingest_run
+      WHERE source = $1 AND status = 'passed'
+        AND started_at >= $2::date AND started_at < $2::date + 1
+      ORDER BY started_at DESC LIMIT 1`,
+    [SCHEDULED_SOURCE, today],
+  );
+  return r.rows[0]?.bitis ?? null;
+}
+
+/**
+ * Son veri gününü alamamış takip edilen fonların kodları.
+ *
+ * "Son gün" evrenin en ilerideki günü: fonlar aynı günü farklı saatlerde
+ * yayımlıyor, bu yüzden ilk fon bugünü verdiği anda geride kalanlar eksik
+ * sayılır. Hafta sonu ve tatilde en ileri gün Cuma'dır ve herkeste vardır —
+ * kural kendiliğinden susar.
+ */
+export async function missingFundsToday(pool: pg.Pool): Promise<string[]> {
+  const r = await pool.query<{ fund_code: string }>(
+    `WITH son AS (SELECT max(trade_date) AS d FROM fact_fund_daily
+                   WHERE daily_return_pct IS NOT NULL)
+     SELECT f.fund_code FROM analytics.tracked_fund f, son
+      WHERE NOT EXISTS (SELECT 1 FROM fact_fund_daily d
+                         WHERE d.fund_code = f.fund_code AND d.trade_date = son.d
+                           AND d.daily_return_pct IS NOT NULL)
+      ORDER BY f.fund_code`,
+  );
+  return r.rows.map((x) => x.fund_code);
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const today = todayIso();
@@ -595,6 +647,30 @@ async function main(): Promise<void> {
   //
   // Tamamen satilmis bir fon yalniz takip listesinde kaldigi surece toplanir;
   // bu kullanicinin karari, portfoy gecmisinin yan etkisi degil.
+  // Yapılandırma kontrolleri gibi bu da ingest_run satırı açılmadan önce
+  // yapılır: atlanan koşum Collector Log'a girmemeli.
+  // Aynı günün ikinci koşumu boşa istek: Fintables günde bir kez yayımlıyor,
+  // ikinci tarama aynı satırları aynı değerlerle üzerine yazıyor. Timer'ın
+  // saatinden önce elle koşturulduğu gün timer 10:30'da tekrar giriyordu.
+  //
+  // Ama kapı "koştu mu" ile değil "bitti mi" ile kapanır: fonlar günü farklı
+  // saatlerde yayımlıyor ve bugün 71 fonun dördü hâlâ dünde. Başarılı koşum
+  // eksik fonu tamamlamıyorsa tekrar denemek işin kendisi — sonraki koşum
+  // eksikleri toplasın diye kapı açık kalır.
+  if (!args.force) {
+    const bitis = await successfulRunToday(pool, today);
+    const eksik = bitis === null ? [] : await missingFundsToday(pool);
+    if (bitis !== null && eksik.length === 0) {
+      await pool.end();
+      console.log(`Bugün ${bitis} itibarıyla toplandı, eksik fon yok — atlandı.`);
+      return;
+    }
+    if (bitis !== null) {
+      console.log(`Bugün ${bitis}'de toplandı ama ${String(eksik.length)} fon eksik `
+        + `(${eksik.slice(0, 5).join(', ')}${eksik.length > 5 ? '…' : ''}) — yeniden koşuluyor.`);
+    }
+  }
+
   const codes =
     args.funds ??
     (
