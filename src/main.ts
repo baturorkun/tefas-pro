@@ -135,6 +135,7 @@ interface Dashboard {
     openLots?: number;
     watchlistSold?: number;
     dataDate: string | null;
+    pendingFunds: number;
     lastRun: { id: number; status: string; finishedAt: string | null } | null;
     /** Eski bir sunucu sürümü bunu göndermeyebilir; kutular tireye düşer. */
     portfolio?: {
@@ -1831,10 +1832,13 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
           ? 'Henüz Koşmadı'
           : run.finishedAt === null
           ? 'Toplanıyor…'
-          // Toplama günü veri günüyle aynıysa tarih tekrarlanmaz: üstte zaten
-          // yazıyor. Ayrıldıklarında yazılır, çünkü o zaman "hangi gün
-          // toplandı" ayrı bir bilgi olur.
-          : `toplandı ${gunAd(run.finishedAt) === gunAd(m.dataDate) ? '' : `${gunAd(run.finishedAt)} `}${run.finishedAt.slice(11)} · ${String(m.trackedFunds)} fon`,
+          // Gün geride kaldığında SEBEBİ yazılır. Toplama gününü yazmak kutuyu
+          // kendisiyle çelişkiye düşürüyordu: başlıkta 9 Eylül, altında
+          // "toplandı 10 Eylül". Toplama koştu; eksik olan fonların fiyatıydı
+          // ve okuyanın öğrenmesi gereken tek şey buydu.
+          : m.pendingFunds > 0
+          ? `${String(m.pendingFunds)} fonun fiyatı gelmedi · toplandı ${run.finishedAt.slice(11)}`
+          : `toplandı ${run.finishedAt.slice(11)} · ${String(m.trackedFunds)} fon`,
         'fund',
       ),
       // Panel'in üstünde artık portföyün kendisi duruyor. Takip Listem ve

@@ -28,6 +28,15 @@ grep -qF "Toplanıyor" "${MAIN}" || fail "süren koşumun kendi cümlesi olmalı
 grep -qF "run.finishedAt === null" "${MAIN}" || fail "süren koşum bitiş zamanının boşluğundan anlaşılmalı"
 printf 'PASS: suren kosum "hic kosmadi" gibi gorunmuyor\n'
 
+# Gün geride kaldığında kutu sebebini yazmalı. Başlıkta 9 Eylül, altında
+# "toplandı 10 Eylül" yazıyordu ve kutu kendisiyle çelişiyordu: toplama
+# koşmuştu, eksik olan fonların fiyatıydı.
+grep -qF "pendingFunds" "${MAIN}" || fail "eksik fon sayisi ekrana gelmeli"
+grep -q "pendingFunds > 0" "${MAIN}" || fail "gun gerideyken sebep yazilmali"
+grep -qF "pending_funds" "${PROJECT_ROOT}/src/server/repository.ts" \
+  || fail "sunucu eksik fon sayisini uretmeli"
+printf 'PASS: gun gerideyken sebebi yaziyor\n'
+
 # Aynı gün ikinci koşum atlanmalı: timer'dan önce elle koşturulan gün timer
 # 10:30'da aynı veriyi bir daha çekiyordu.
 COL="${PROJECT_ROOT}/src/collector.ts"

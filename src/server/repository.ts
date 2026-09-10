@@ -997,6 +997,8 @@ export interface DashboardData {
     /** Takip listesinde alıp sattığım fon sayısı; kalanı hâlâ izlediklerim. */
     watchlistSold: number;
     dataDate: string | null;
+    /** dataDate'i geriye çeken, o günü henüz vermemiş açık fon sayısı. */
+    pendingFunds: number;
     lastRun: { id: number; status: string; finishedAt: string | null } | null;
     /** Portföyün güncel değeri ve kazancı. Pozisyon yoksa null. */
     portfolio: PortfolioHeadline | null;
@@ -1036,6 +1038,7 @@ export async function dashboard(
     pool.query<{
       watchlist: string; tracked_funds: string; open_positions: string;
       open_lots: string; watchlist_sold: string; data_date: string | null;
+      pending_funds: string;
     }>(
       `SELECT (SELECT count(*) FROM analytics.watchlist_visible WHERE user_id = $1) AS watchlist,
               (SELECT count(*) FROM analytics.tracked_fund) AS tracked_funds,
@@ -1071,7 +1074,20 @@ export async function dashboard(
                    FROM analytics.portfolio_daily
                   WHERE user_id = $1 AND daily_gain IS NOT NULL),
                 (SELECT to_char(max(trade_date), 'YYYY-MM-DD') FROM fact_fund_daily
-                  WHERE daily_return_pct IS NOT NULL)) AS data_date`,
+                  WHERE daily_return_pct IS NOT NULL)) AS data_date,
+              -- Günün neden geride kaldığı. Sayı olmadan kutu kendi kendisiyle
+              -- çelişiyordu: başlıkta 9 Eylül, altında "toplandı 10 Eylül".
+              -- Toplama koştu, eksik olan iki fonun fiyatıydı.
+              (SELECT count(*) FROM (
+                 SELECT DISTINCT fund_code FROM portfolio_transaction
+                  WHERE user_id = $1 AND units IS NOT NULL
+                    AND (sell_date IS NULL OR sell_date > current_date)) f
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM fact_fund_daily d
+                   WHERE d.fund_code = f.fund_code AND d.daily_return_pct IS NOT NULL
+                     AND d.trade_date = (SELECT max(trade_date) FROM fact_fund_daily
+                                          WHERE daily_return_pct IS NOT NULL))
+              ) AS pending_funds`,
       [userId],
     ),
     pool.query<{ id: number; status: string; finished_at: string | null }>(
@@ -1343,6 +1359,7 @@ export async function dashboard(
       openLots: Number(c.open_lots),
       watchlistSold: Number(c.watchlist_sold),
       dataDate: c.data_date,
+      pendingFunds: Number(c.pending_funds),
       lastRun: run ? { id: run.id, status: run.status, finishedAt: run.finished_at } : null,
       portfolio: await portfolioHeadline(pool, userId),
     },
