@@ -106,8 +106,8 @@ printf 'PASS: alanlar admin kullanıcı formunda da var\n'
 # ve üçü de elle yazılmış alan listesi taşıyor; biri unutulduğunda hata
 # görünmüyor, alan sessizce boş geliyor. Ölçüldü: ad soyad eklendi, giriş
 # yanıtına konmadı ve kenar çubuğu kullanıcı adını göstermeye devam etti.
-awk '/export async function findSessionUser/,/^}/' "${R}" \
-  | grep -q 'full_name AS "fullName"' || fail "oturum kullanıcısında kimlik alanları yok"
+awk '/const SESSION_USER_COLUMNS/,/^$/' "${R}" \
+  | grep -q 'full_name AS' || fail "oturum kullanıcısında kimlik alanları yok"
 awk '/const USER_COLUMNS/,/;/' "${R}" | grep -q 'full_name AS "fullName"' \
   || fail "USER_COLUMNS kimlik alanlarını taşımıyor"
 for alan in "fullName: found.fullName" "email: found.email" "telegram: found.telegram"; do

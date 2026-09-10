@@ -63,7 +63,10 @@ import {
   deleteTransaction,
   changeOwnPassword,
   fifoBlocker,
-  findSessionUser,
+  findSessionContext,
+  findUserById,
+  setImpersonation,
+  clearImpersonation,
   fundDaily,
   konusmaAc,
   konusmaMesajlari,
@@ -365,7 +368,13 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
     }
 
     const sessionId = readCookie(req.headers.cookie, COOKIE_NAME);
-    const user: AppUser | null = sessionId ? await findSessionUser(pool, sessionId) : null;
+    const ctx = sessionId ? await findSessionContext(pool, sessionId) : null;
+    // `user` verisi gösterilen kullanıcı: geçiş varken hedef, yoksa giriş
+    // yapanın kendisi. Veri uçlarının hepsi bunu kullanıyor ve geçişten
+    // habersiz kalabiliyor — geçişin bütün anlamı da bu.
+    const user: AppUser | null = ctx?.user ?? null;
+    // Yetki kararları giriş yapana bakar. Geçiş kimseye yeni yetki vermez.
+    const oturumSahibi: AppUser | null = ctx === null ? null : ctx.actor ?? ctx.user;
 
     try {
       // ─── Kimlik doğrulaması gerektirmeyen uçlar ───
@@ -421,11 +430,73 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
       }
 
       if (path === '/api/me' && method === 'GET') {
-        if (!user) {
+        if (!user || ctx === null) {
           sendJson(res, 401, { error: 'Oturum yok.' });
           return;
         }
-        sendJson(res, 200, user);
+        // `actor` yalnız geçiş hâlinde dolu. Arayüz sol alttaki kutuyu buna
+        // bakarak kuruyor: gizli bir geçiş, yanlış hesapta işlem demek.
+        sendJson(res, 200, {
+          ...user,
+          actor: ctx.actor === null
+            ? null
+            : { id: ctx.actor.id, username: ctx.actor.username, fullName: ctx.actor.fullName },
+        });
+        return;
+      }
+
+      // ─── Kullanıcı geçişi ───
+      //
+      // Yetki kararı `oturumSahibi` üzerinden veriliyor: geçiş hâlindeki bir
+      // superuser sıradan bir kullanıcı gibi görünür ama geçişi başlatma ve
+      // bitirme hakkı hâlâ kendisinindir. `user` üzerinden bakılsaydı geçiş
+      // yapan kişi kendi kendini kilitlerdi.
+      if (path === '/api/impersonate' && method === 'POST') {
+        if (!ctx || sessionId === null || oturumSahibi === null) {
+          sendJson(res, 401, { error: 'Oturum gerekli.' });
+          return;
+        }
+        if (oturumSahibi.type !== 'super') {
+          sendJson(res, 403, { error: 'Bu işlem için superuser yetkisi gerekir.' });
+          return;
+        }
+        const body = asRecord(await readJson(req));
+        const hedefId = Number(body['userId']);
+        if (!Number.isInteger(hedefId)) {
+          sendJson(res, 400, { error: 'Geçilecek kullanıcı seçilmedi.' });
+          return;
+        }
+        if (hedefId === oturumSahibi.id) {
+          // Kendine geçiş yok: istenen şey geçişi bitirmekse yolu DELETE.
+          sendJson(res, 400, { error: 'Zaten bu hesaptasınız.' });
+          return;
+        }
+        const hedef = await findUserById(pool, hedefId);
+        if (hedef === null || !hedef.isActive) {
+          sendJson(res, 404, { error: 'Kullanıcı bulunamadı.' });
+          return;
+        }
+        if (hedef.type === 'super') {
+          // Superuser'a geçiş, geçişi bitirme hakkını devretmek olurdu.
+          sendJson(res, 403, { error: 'Superuser hesabına geçilemez.' });
+          return;
+        }
+        await setImpersonation(pool, sessionId, hedefId);
+        sendJson(res, 200, { ok: true, user: hedef });
+        return;
+      }
+
+      if (path === '/api/impersonate' && method === 'DELETE') {
+        if (!ctx || sessionId === null) {
+          sendJson(res, 401, { error: 'Oturum gerekli.' });
+          return;
+        }
+        if (ctx.actor === null) {
+          sendJson(res, 400, { error: 'Geçiş hâlinde değilsiniz.' });
+          return;
+        }
+        await clearImpersonation(pool, sessionId);
+        sendJson(res, 200, { ok: true, user: ctx.actor });
         return;
       }
 
@@ -915,7 +986,11 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
 
       // ─── Admin uçları ───
       if (path.startsWith('/api/admin/')) {
-        if (user.type !== 'admin') {
+        // Superuser yönetim ekranlarını da görür: geçiş yapacağı kullanıcı
+        // listesi orada. Geçiş hâlindeyken bakılan kullanıcının yetkisi
+        // geçerli — superuser sıradan bir kullanıcıya geçtiyse yönetim
+        // ekranlarını görmemeli, gördüğü şey o kullanıcının gördüğü olmalı.
+        if (user.type !== 'admin' && user.type !== 'super') {
           sendJson(res, 403, { error: 'Bu işlem için admin yetkisi gerekir.' });
           return;
         }
@@ -1052,6 +1127,18 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         const userId = matchPath('/api/admin/users/:id', path);
         if (userId !== null && method === 'PATCH') {
           const body = asRecord(await readJson(req));
+          // Superuser bu formdan düşürülemez. Form `type` alanını her kayıtta
+          // gönderiyor ve 'super' burada 'user'a çevrilirdi: tek superuser
+          // hesabı, kimse istemeden, ad soyad düzeltilirken kaybolurdu.
+          // Pasifleştirme de aynı kapıdan geçiyor.
+          const mevcut = await findUserById(pool, Number(userId));
+          if (mevcut !== null && mevcut.type === 'super'
+              && (body['type'] !== undefined || body['isActive'] !== undefined)) {
+            sendJson(res, 409, {
+              error: 'Superuser hesabının tipi ve durumu bu ekrandan değiştirilemez.',
+            });
+            return;
+          }
           const patch: {
             type?: 'admin' | 'user'; isActive?: boolean; password?: string;
             fullName?: string; email?: string; telegram?: string;
