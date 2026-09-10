@@ -16,7 +16,8 @@
     "db:user": "tsx src/db/user.ts",
     "collect": "tsx src/collector.ts",
     "serve": "pnpm build && tsx src/server/index.ts",
-    "serve:watch": "trap 'kill 0' EXIT INT TERM; tsc --project tsconfig.build.json --watch --preserveWatchOutput & tsx watch src/server/index.ts"
+    "serve:watch": "trap 'kill 0' EXIT INT TERM; tsc --project tsconfig.build.json --watch --preserveWatchOutput & tsx watch src/server/index.ts",
+    "collect:fvt": "bash scripts/collect-fvt.sh"
   },
   "dependencies": {
     "impit": "^0.14.4",

@@ -59,3 +59,12 @@ awk '/- name: Replace slot container/,/run: \|/' "${WF}" \
   | grep -q "RUNNER_TRACKING_ID: ''" \
   || fail "container adımı runner'ın orphan temizliğinden muaf değil"
 printf 'PASS: container conmon süreci deploy sonunda öldürülmüyor\n'
+
+# Zamanlanmış kosum fvt adimini atlar. fvt'nin veri uclari sunucunun IP'sine
+# kapali: her kosumda 71 fonun 71'i de 403 aliyordu, kosum "partial" bitiyor
+# ve Collector Log hata doluyordu. Hisse kirilimi ev IP'sinden toplaniyor.
+grep -Fq 'COLLECTOR_ARGS="--skip-stocks"' "${PROJECT_ROOT}/collector/install.sh" \
+  || fail "zamanlanmis kosum fvt adimini deniyor"
+grep -Fq "'--skip-stocks'" "${PROJECT_ROOT}/src/collector.ts" \
+  || fail "--skip-stocks bayragi kodda yok"
+printf 'PASS: zamanlanmis kosum engellenmis uca istek atmiyor\n'

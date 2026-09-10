@@ -10,7 +10,9 @@ import {
   mergeDailySources,
   monthsBack,
   parseArgs,
+  missingFundsToday,
   prevWeekday,
+  successfulRunToday,
   todayIso,
 } from '../src/collector.js';
 import { parseWatchlistFile } from '../src/db/seed.js';
@@ -33,15 +35,69 @@ describe('parseArgs', () => {
   it('varsayılan: akış 12 ay, büyüklük 6 ay, artımlı', () => {
     expect(parseArgs([])).toEqual({
       funds: undefined, backfill: false, skipYield: false,
-      skipStocks: false, flowMonths: 12, sizeMonths: 6,
+      skipStocks: false, force: false, flowMonths: 12, sizeMonths: 6,
     });
   });
   it('bayrakları okur', () => {
     expect(parseArgs(['--funds', 'AAA,BBB', '--backfill', '--skip-yield',
-                      '--skip-stocks', '--flow-months', '24', '--size-months', '3'])).toEqual({
+                      '--skip-stocks', '--force',
+                      '--flow-months', '24', '--size-months', '3'])).toEqual({
       funds: ['AAA', 'BBB'], backfill: true, skipYield: true,
-      skipStocks: true, flowMonths: 24, sizeMonths: 3,
+      skipStocks: true, force: true, flowMonths: 24, sizeMonths: 3,
     });
+  });
+});
+
+describe('günde bir kez', () => {
+  // Sahte pool: sorgunun kendisini de kaydeder, çünkü kapıyı açan asıl şey
+  // WHERE koşulu — yanlış status'ü de engellerse timer başarısız koşumdan
+  // sonra bir daha denemez.
+  function sahtePool(rows: { bitis: string }[]) {
+    const cagrilar: { text: string; values: unknown[] }[] = [];
+    return {
+      cagrilar,
+      query: (text: string, values: unknown[]) => {
+        cagrilar.push({ text, values });
+        return Promise.resolve({ rows });
+      },
+    };
+  }
+
+  it('bugün passed koşum varsa bitiş saatini döndürür', async () => {
+    const pool = sahtePool([{ bitis: '10:27' }]);
+    expect(await successfulRunToday(pool as never, '2026-09-10')).toBe('10:27');
+    expect(pool.cagrilar[0]?.values).toEqual(['fintables-watchlist', '2026-09-10']);
+  });
+
+  it('koşum yoksa null döndürür', async () => {
+    expect(await successfulRunToday(sahtePool([]) as never, '2026-09-10')).toBeNull();
+  });
+
+  it('yalnız passed engeller: failed ve partial tekrar denenebilir', async () => {
+    const pool = sahtePool([]);
+    await successfulRunToday(pool as never, '2026-09-10');
+    const sorgu = pool.cagrilar[0]!.text;
+    expect(sorgu).toContain("status = 'passed'");
+    expect(sorgu).not.toContain('partial');
+    expect(sorgu).not.toContain('failed');
+  });
+
+  it('eksik fon sorgusu evrenin en ileri gününe bakar', async () => {
+    const pool = sahtePool([{ bitis: 'GUH' }] as never);
+    await missingFundsToday(pool as never);
+    const sorgu = pool.cagrilar[0]!.text;
+    // Sabit bir tarih değil: hafta sonu ve tatilde en ileri gün Cuma olur ve
+    // herkeste bulunduğu için kural kendiliğinden susar.
+    expect(sorgu).toContain('max(trade_date)');
+    expect(sorgu).toContain('analytics.tracked_fund');
+    expect(sorgu).toContain('NOT EXISTS');
+  });
+
+  it('gün sınırı yerel takvim gününden gelir, now() değil', () => {
+    const pool = sahtePool([]);
+    void successfulRunToday(pool as never, '2026-09-10');
+    expect(pool.cagrilar[0]!.text).not.toContain('now()');
+    expect(pool.cagrilar[0]!.text).toContain('$2::date');
   });
 });
 
