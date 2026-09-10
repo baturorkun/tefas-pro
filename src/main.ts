@@ -14,8 +14,10 @@ interface Me {
   fullName: string;
   email: string | null;
   telegram: string | null;
-  type: 'admin' | 'user';
+  type: 'super' | 'admin' | 'user';
   mustChangePassword: boolean;
+  /** Geçiş hâlindeyse geçişi yapan superuser; değilse null. */
+  actor: { id: number; username: string; fullName: string } | null;
 }
 
 interface Transaction {
@@ -67,7 +69,7 @@ interface UserRow {
   /** Alanın eklenmesinden önceki kayıtlarda boş olabilir. */
   email: string | null;
   telegram: string | null;
-  type: 'admin' | 'user';
+  type: 'super' | 'admin' | 'user';
   isActive: boolean;
 }
 
@@ -364,6 +366,11 @@ function badge(text: string, kind: string): HTMLElement {
   return el('span', { class: `status-badge status-${kind}` }, [text]);
 }
 
+/** Rol adı tek yerde: üç ayrı yerde yazılınca biri 'super'ı unutuyordu. */
+function rolAdi(type: 'super' | 'admin' | 'user'): string {
+  return type === 'super' ? 'Superuser' : type === 'admin' ? 'Yönetici' : 'Kullanıcı';
+}
+
 function errorBox(message: string): HTMLElement {
   return el('p', { class: 'error' }, [message]);
 }
@@ -561,6 +568,10 @@ const ICON_PATHS: Record<string, string[]> = {
   add: ['M12 5v14M5 12h14'],
   logout: ['M15 17l5-5-5-5', 'M20 12H9', 'M12 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6'],
   close: ['M6 6l12 12M18 6 6 18'],
+  // Kullanıcı geçişi: bir kişi ve yön değiştiren ok.
+  impersonate: ['M13 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20',
+                'M7.5 10.5a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5z',
+                'M16 8h6l-2.5-2.5', 'M22 13h-6l2.5 2.5'],
   // Aşağı ok: satış paylardan çıkış. Yukarı bakarken "artır" gibi okunuyordu,
   // üstelik yanındaki "Alış Ekle" artı işaretiyle aynı yöne bakıyordu.
   sell: ['M12 5v14', 'm5 12 7 7 7-7'],
@@ -5816,9 +5827,21 @@ function userForm(existing: UserRow | null, onDone: () => void): {
   ]);
   const uactive = el('input', { type: 'checkbox' });
   uactive.checked = existing?.isActive ?? true;
+  // Superuser'ın tipi ve durumu bu formdan değişmez. Sebep: form iki alanı da
+  // her kayıtta gönderiyor ve 'super' listede olmadığı için 'user'a düşerdi —
+  // tek superuser hesabı, ad soyad düzeltilirken kaybolurdu. Alanlar
+  // gizlenmiyor, kilitleniyor: neden değiştirilemediği görünsün.
+  const superKayit = existing !== null && existing.type === 'super';
+  if (superKayit) {
+    utype.disabled = true;
+    uactive.disabled = true;
+  }
   if (existing !== null) {
     uname.value = existing.username;
     uname.disabled = true;
+    if (superKayit) {
+      utype.replaceChildren(el('option', { value: 'super' }, [rolAdi('super')]));
+    }
     utype.value = existing.type;
     ufull.value = existing.fullName;
     uemail.value = existing.email ?? '';
@@ -5837,7 +5860,9 @@ function userForm(existing: UserRow | null, onDone: () => void): {
     field('Parola', upass, existing === null
       ? 'En az 8 karakter.'
       : 'Boş bırakılırsa parola değişmez.'),
-    field('Tip', utype, 'Yönetici kullanıcı yönetebilir.'),
+    field('Tip', utype, superKayit
+      ? 'Superuser tipi ve durumu bu ekrandan değiştirilemez.'
+      : 'Yönetici kullanıcı yönetebilir.'),
     el('label', { class: 'switch-field' }, [
       uactive,
       el('span', { class: 'switch-track' }, []),
@@ -5861,9 +5886,15 @@ function userForm(existing: UserRow | null, onDone: () => void): {
       });
     } else {
       const patch: Record<string, unknown> = {
-        type: utype.value, isActive: uactive.checked,
         fullName: ufull.value, email: uemail.value, telegram: utelegram.value,
       };
+      // Superuser'da bu iki alan hiç gönderilmiyor; sunucu da reddediyor ama
+      // asıl mesele isteğin oraya gitmemesi: kullanıcı kaydete basıp hata
+      // almasın, alan zaten kilitli.
+      if (!superKayit) {
+        patch['type'] = utype.value;
+        patch['isActive'] = uactive.checked;
+      }
       // Boş parola "değiştirme" demektir; sunucuya boş dize göndermeyiz.
       if (upass.value !== '') patch['password'] = upass.value;
       await api(`/api/admin/users/${String(existing.id)}`, {
@@ -5888,17 +5919,43 @@ function openUserModal(existing: UserRow | null, reload: () => void): void {
   cancel.addEventListener('click', () => { close(); });
 }
 
-async function usersView(reload: () => void): Promise<Node[]> {
+async function usersView(reload: () => void, me: Me): Promise<Node[]> {
   const rows = (await api('/api/admin/users')) as UserRow[];
-  const admins = rows.filter((u) => u.type === 'admin').length;
+  const admins = rows.filter((u) => u.type === 'admin' || u.type === 'super').length;
   const active = rows.filter((u) => u.isActive).length;
 
   const addBtn = el('button', { class: 'btn-primary' }, [icon('add'), 'Kullanıcı Ekle']);
   addBtn.addEventListener('click', () => { openUserModal(null, reload); });
 
+  // Geçiş yalnız superuser'da ve yalnız superuser olmayan aktif hesaplara.
+  // Kendi satırında da yok: oraya zaten dönülüyor.
+  const gecisVar = me.type === 'super' && me.actor === null;
+  const durum = el('p', { class: 'error', hidden: 'hidden' }, []);
+
   const body = rows.map((u) => {
     const editBtn = iconButton('edit', 'Düzenle');
     editBtn.addEventListener('click', () => { openUserModal(u, reload); });
+    const actions: HTMLElement[] = [];
+    if (gecisVar && u.type !== 'super' && u.isActive) {
+      const gec = iconButton('impersonate', `${u.fullName} olarak görüntüle`);
+      gec.addEventListener('click', () => {
+        void (async () => {
+          gec.disabled = true;
+          try {
+            await api('/api/impersonate', {
+              method: 'POST', body: JSON.stringify({ userId: u.id }),
+            });
+            location.reload();
+          } catch (err) {
+            gec.disabled = false;
+            durum.textContent = err instanceof Error ? err.message : 'Geçiş yapılamadı.';
+            durum.hidden = false;
+          }
+        })();
+      });
+      actions.push(gec);
+    }
+    actions.push(editBtn);
     return el('tr', {}, [
       el('td', {}, [
         el('span', { class: 'fund-code' }, [u.username]),
@@ -5910,9 +5967,9 @@ async function usersView(reload: () => void): Promise<Node[]> {
         ? [badge('E-posta yok', 'pending')]
         : [u.email]),
       el('td', {}, [u.telegram === null ? '—' : `@${u.telegram}`]),
-      el('td', {}, [badge(u.type === 'admin' ? 'Yönetici' : 'Kullanıcı', u.type)]),
+      el('td', {}, [badge(rolAdi(u.type), u.type)]),
       el('td', {}, [u.isActive ? badge('Aktif', 'open') : badge('Pasif', 'passive')]),
-      el('td', { class: 'actions' }, [editBtn]),
+      el('td', { class: 'actions' }, actions),
     ]);
   });
 
@@ -5927,6 +5984,7 @@ async function usersView(reload: () => void): Promise<Node[]> {
       'Kullanıcılar',
       `${String(rows.length)} kayıt · ${String(active)} aktif`,
       el('div', { class: 'panel-body' }, [
+        durum,
         table(['Kullanıcı', 'E-posta', 'Telegram', 'Tip', 'Durum', ''], body),
       ]),
       addBtn,
@@ -5999,7 +6057,8 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
   // ekran her kurulduğunda güncel kabuğa bağlanır.
   stocksReload = reload;
   gotoView = (v: ViewId): void => { void appShell(me, v); };
-  const izinli = VIEWS.filter((v) => !v.adminOnly || me.type === 'admin');
+  const yonetici = me.type === 'admin' || me.type === 'super';
+  const izinli = VIEWS.filter((v) => !v.adminOnly || yonetici);
   // Ana listede yalnız gündelik ekranlar. Admin bağlantıları ve Profil
   // aşağıdaki kullanıcı menüsünde: haftada bir girilen ekranlar her sayfada
   // yer kaplamamalı.
@@ -6073,7 +6132,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     el('div', { class: 'avatar' }, [basHarfler]),
     el('div', { class: 'sidebar-user-text' }, [
       el('div', { class: 'sidebar-user-name' }, [gorunenAd]),
-      el('div', { class: 'sidebar-user-role' }, [me.type === 'admin' ? 'Yönetici' : 'Kullanıcı']),
+      el('div', { class: 'sidebar-user-role' }, [rolAdi(me.type)]),
     ]),
     icon('caretUp', 16),
   ]) as HTMLButtonElement;
@@ -6133,10 +6192,41 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     else if (current.id === 'sysfunds') bodyNodes = await sysFundsView(reload);
     else if (current.id === 'runs') bodyNodes = await runsView();
     else if (current.id === 'settings') bodyNodes = await settingsView(reload);
-    else bodyNodes = await usersView(reload);
+    else bodyNodes = await usersView(reload, me);
   } catch (err) {
     bodyNodes = [errorBox(err instanceof Error ? err.message : 'Yüklenemedi.')];
   }
+
+  // Geçiş şeridi: superuser hangi hesaba baktığını her ekranda görmeli,
+  // yoksa yanlış hesapta işlem girmesi an meselesi. X asıl hesaba döndürüyor.
+  const gecisSeridi = me.actor === null ? null : (() => {
+    const dur = el('button', {
+      class: 'impersonate-stop', type: 'button',
+      title: `${me.actor.fullName} hesabına dön`, 'aria-label': 'Geçişi bitir',
+    }, [icon('close', 14)]) as HTMLButtonElement;
+    const metin = el('span', { class: 'impersonate-text' }, [
+      el('strong', {}, [gorunenAd]), ' olarak görüntülüyorsunuz',
+    ]);
+    dur.addEventListener('click', () => {
+      void (async () => {
+        dur.disabled = true;
+        try {
+          await api('/api/impersonate', { method: 'DELETE' });
+          // Tam yeniden yükleme: her ekran kendi verisini oturumdan okuyor,
+          // tek tek tazelemek yerine kabuk baştan kuruluyor.
+          location.reload();
+        } catch (err) {
+          // Hata şeridin kendi içinde: burada bir modal açmak, kullanıcıyı
+          // görmediği bir sorun için ekrandan koparmak olurdu.
+          dur.disabled = false;
+          metin.replaceChildren(
+            err instanceof Error ? err.message : 'Geçiş bitirilemedi.',
+          );
+        }
+      })();
+    });
+    return el('div', { class: 'impersonate-bar' }, [icon('impersonate', 14), metin, dur]);
+  })();
 
   const content = el('main', { class: 'content' }, [
     el('header', { class: 'content-header' }, [
@@ -6144,7 +6234,14 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
         el('div', { class: 'breadcrumb' }, [`${current.crumb} / ${current.label}`]),
         el('h1', {}, [current.label]),
       ]),
-      versionBadge(),
+      // Geçiş şeridi sürüm rozetinin solunda: üst şerit her ekranda sabit
+      // duruyor ve sayfa kaydırılsa da görünür kalıyor. Kenar çubuğunun
+      // dibinde gözden kaçıyordu — bakılan hesabın hangisi olduğu, en çok
+      // bakılan yerde durmalı.
+      el('div', { class: 'header-right' }, [
+        ...(gecisSeridi === null ? [] : [gecisSeridi]),
+        versionBadge(),
+      ]),
     ]),
     el('div', { class: 'content-body' }, bodyNodes),
   ]);

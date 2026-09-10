@@ -303,6 +303,7 @@ td.actions { text-align: right; }
 .status-watch  { color: var(--warn); background: #e8c07d1a; border-color: #5c4a2a; }
 .status-sold   { color: var(--muted-dim); background: var(--panel); border-color: var(--line); }
 .status-admin  { color: var(--accent-soft); background: var(--accent-tint); border-color: #2c5f57; }
+.status-super  { color: var(--warn); background: #e8c07d1a; border-color: #5c4a2a; }
 .status-user   { color: var(--muted); background: var(--panel); border-color: var(--line); }
 .status-passive { color: var(--danger); background: var(--danger-tint); border-color: #5c3535; }
 
@@ -570,6 +571,38 @@ td.dim { color: var(--muted-dim); }
                   background: var(--danger-tint); }
 td.actions      { text-align: right; white-space: nowrap; }
 td.actions .icon-btn + .icon-btn { margin-left: 6px; }
+
+/* Üst şeridin sağ ucu: geçiş şeridi ve sürüm rozeti yan yana. */
+.header-right { display: flex; align-items: stretch; gap: .6rem; min-width: 0; }
+
+/* Geçiş şeridi sürüm rozetinin solunda. Uyarı rengi bilinçli: bakılan hesap
+   kendi hesabın değil ve bunun sayfa kaydırılsa da görünmesi gerekiyor. */
+.impersonate-bar {
+  display: flex; align-items: center; gap: .45rem;
+  min-width: 0; padding: .4rem .5rem .4rem .65rem;
+  border: 1px solid #5c4a2a; border-radius: var(--radius);
+  background: #e8c07d14; color: var(--warn);
+}
+.impersonate-bar .icon { flex: none; color: var(--warn); }
+.impersonate-text {
+  min-width: 0; font-size: .76rem; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.impersonate-text strong { font-weight: 600; }
+.impersonate-stop {
+  flex: none; display: grid; place-items: center;
+  width: 22px; height: 22px; padding: 0;
+  border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--warn); cursor: pointer;
+}
+.impersonate-stop:hover { background: #e8c07d26; }
+.impersonate-stop:disabled { opacity: .5; cursor: default; }
+
+/* Dar ekranda metin düşer, ikon ve X kalır: hangi hesapta olduğun
+   okunamasa da geçiş hâlinde olduğun ve çıkış yolu görünür kalır. */
+@media (max-width: 720px) {
+  .impersonate-text { display: none; }
+}
 
 /* Sürüm rozeti sağ üstte; tarih yerine hangi sürümün çalıştığını söyler. */
 .version-badge  { display: grid; gap: 2px; justify-items: end; padding: .55rem .8rem;

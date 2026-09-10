@@ -24,7 +24,11 @@ export interface AppUser {
   email: string | null;
   /** Telegram kullanıcı adı, @ olmadan. İsteğe bağlı. */
   telegram: string | null;
-  type: 'admin' | 'user';
+  /**
+   * `super` üçüncü seviye: admin kullanıcı yönetir, superuser başkasının
+   * verisini görebilir. Yönetim ekranlarında ikisi de admin sayılır.
+   */
+  type: 'super' | 'admin' | 'user';
   isActive: boolean;
   mustChangePassword: boolean;
 }
@@ -290,15 +294,87 @@ export async function createSession(
 }
 
 /** Süresi geçmiş, iptal edilmiş veya pasif kullanıcıya ait oturum kabul edilmez. */
-export async function findSessionUser(pool: pg.Pool, sessionId: string): Promise<AppUser | null> {
-  const r = await pool.query<AppUser>(
-    `SELECT u.id, u.username, u.full_name AS "fullName", u.email, u.telegram,
-            u.type, u.is_active AS "isActive",
-            u.must_change_password AS "mustChangePassword"
-     FROM app_session s JOIN app_user u ON u.id = s.user_id
-     WHERE s.id = $1 AND s.revoked_at IS NULL AND s.expires_at > now() AND u.is_active`,
+/**
+ * Oturumun iki kimliği.
+ *
+ * Superuser başka bir kullanıcıya geçtiğinde uygulama o kullanıcının verisini
+ * gösterir ama oturumun sahibi değişmez. `user` verisi gösterilen, `actor`
+ * geçişi yapan kişidir; geçiş yokken `actor` null olur ve `user` giriş
+ * yapanın kendisidir.
+ */
+export interface SessionContext {
+  user: AppUser;
+  actor: AppUser | null;
+}
+
+const SESSION_USER_COLUMNS = (a: string, p: string): string =>
+  `${a}.id AS "${p}Id", ${a}.username AS "${p}Username",
+   ${a}.full_name AS "${p}FullName", ${a}.email AS "${p}Email",
+   ${a}.telegram AS "${p}Telegram", ${a}.type AS "${p}Type",
+   ${a}.is_active AS "${p}IsActive",
+   ${a}.must_change_password AS "${p}MustChangePassword"`;
+
+export async function findSessionContext(
+  pool: pg.Pool,
+  sessionId: string,
+): Promise<SessionContext | null> {
+  // Geçiş hedefi pasifleştirilmişse geçiş düşer ama oturum düşmez: superuser
+  // kendi hesabına döner. Hedefi LEFT JOIN olması bunun için.
+  const r = await pool.query<Record<string, unknown>>(
+    `SELECT ${SESSION_USER_COLUMNS('o', 'owner')},
+            ${SESSION_USER_COLUMNS('a', 'acting')}
+       FROM app_session s
+       JOIN app_user o ON o.id = s.user_id
+       LEFT JOIN app_user a ON a.id = s.acting_user_id AND a.is_active
+      WHERE s.id = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
+        AND o.is_active`,
     [sessionId],
   );
+  const row = r.rows[0];
+  if (row === undefined) return null;
+
+  const oku = (p: string): AppUser | null => {
+    const id = row[`${p}Id`];
+    if (id === null || id === undefined) return null;
+    return {
+      id: Number(id),
+      username: String(row[`${p}Username`]),
+      fullName: String(row[`${p}FullName`]),
+      email: (row[`${p}Email`] ?? null) as string | null,
+      telegram: (row[`${p}Telegram`] ?? null) as string | null,
+      type: row[`${p}Type`] as AppUser['type'],
+      isActive: Boolean(row[`${p}IsActive`]),
+      mustChangePassword: Boolean(row[`${p}MustChangePassword`]),
+    };
+  };
+
+  const owner = oku('owner')!;
+  const acting = oku('acting');
+  return acting === null ? { user: owner, actor: null } : { user: acting, actor: owner };
+}
+
+/** Geçişi başlatır ya da hedefi değiştirir. */
+export async function setImpersonation(
+  pool: pg.Pool,
+  sessionId: string,
+  targetUserId: number,
+): Promise<void> {
+  await pool.query(
+    'UPDATE app_session SET acting_user_id = $2 WHERE id = $1',
+    [sessionId, targetUserId],
+  );
+}
+
+/** Geçişi bitirir; oturum sahibinin kendi hesabına döner. */
+export async function clearImpersonation(pool: pg.Pool, sessionId: string): Promise<void> {
+  await pool.query(
+    'UPDATE app_session SET acting_user_id = NULL WHERE id = $1',
+    [sessionId],
+  );
+}
+
+export async function findUserById(pool: pg.Pool, id: number): Promise<AppUser | null> {
+  const r = await pool.query<AppUser>(`SELECT ${USER_COLUMNS} FROM app_user WHERE id = $1`, [id]);
   return r.rows[0] ?? null;
 }
 

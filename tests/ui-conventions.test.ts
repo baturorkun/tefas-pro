@@ -81,7 +81,13 @@ describe('kullanıcı yönetimi', () => {
   });
 
   it('tip ve durum insan diliyle yazılır', () => {
-    expect(main).toContain("u.type === 'admin' ? 'Yönetici' : 'Kullanıcı'");
+    // Etiket tek yerde: üç ayrı yerde yazılınca biri 'super'ı unutuyordu ve
+    // superuser ekranda "Kullanıcı" görünüyordu.
+    expect(main).toContain("function rolAdi(");
+    expect(main).toContain("type === 'super' ? 'Superuser'");
+    expect(main).toContain("type === 'admin' ? 'Yönetici' : 'Kullanıcı'");
+    expect(main).toContain("[rolAdi(me.type)]");
+    expect(main).toContain("[badge(rolAdi(u.type), u.type)]");
   });
 });
 
