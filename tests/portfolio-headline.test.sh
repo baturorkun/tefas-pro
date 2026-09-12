@@ -97,3 +97,15 @@ grep -qF ".metric-card { break-inside: avoid; }" <<<"${PR}" || fail "kart bolune
 grep -qE "\.metric-card, \.panel \{[^}]*break-inside" <<<"${PR}" \
   && fail "panel bolunmez sayiliyor; tablo ikinci sayfaya atilir"
 printf 'PASS: yazdirmada panel bolunebilir, kutular yalniz kalmiyor\n'
+
+# Kağıtta sütun sayısı sabit: A4 dikey ~794px sayılıyor ve ekranın dar-ekran
+# kuralı ızgarayı iki sütuna düşürüyordu; sekiz kutu dört satır olup son
+# satır ikinci sayfaya kayıyor, bir kutu eksik görünüyordu.
+grep -qF ".metric-grid, .metric-grid-5, .metric-grid-7, .metric-grid-8 {" <<<"${PR}" || fail "yazdirmada izgara sabitlenmemis"
+grep -qE "grid-template-columns: repeat\(4, minmax\(0, 1fr\)\); gap: 6px" <<<"${PR}" || fail "yazdirmada 4 sutun degil"
+grep -qF ".metric-grid-9 { grid-template-columns: repeat(3" <<<"${PR}" || fail "9 kutu kagitta 3x3 degil"
+grep -qF ".metric-value { font-size: 1.05rem; }" <<<"${PR}" || fail "kart kagida sigacak kadar kucultulmemis"
+# Print bloğu ekran kırılma noktalarından SONRA: eşit özgüllükte sıra kazanır.
+awk '/@media \(max-width: 520px\)/{a=NR} /^@media print/{b=NR} END{exit !(a && b && a<b)}' "${C}" \
+  || fail "print blogu dar-ekran kurallarindan once; onlar kazanir"
+printf 'PASS: kagitta 4 sutun sabit, son satir sayfaya sigiyor\n'

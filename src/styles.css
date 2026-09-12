@@ -1238,8 +1238,19 @@ textarea:focus  { outline: none; border-color: var(--accent);
   /* Bölünmezlik kartta ve satırda, PANELDE DEĞİL: tablo paneli tek parça
      sayılınca ilk sayfanın kalanına sığmıyor ve tarayıcı bütün paneli ikinci
      sayfaya atıyordu — kutular ilk sayfada yalnız kalıyordu. Ölçüldü. */
-  .metric-card { break-inside: avoid; }
-  .metric-grid { gap: 8px; break-after: avoid; }
+  .metric-card { break-inside: avoid; padding: .55rem .7rem; }
+  .metric-value { font-size: 1.05rem; }
+  .metric-label { font-size: .68rem; }
+  .metric-foot  { font-size: .68rem; }
+  /* Sütun sayısı kağıtta SABİT. A4 dikey ~794px genişlik sayılıyor ve ekranın
+     dar-ekran kuralları (900px → 2 sütun) yazdırmada da devreye giriyordu:
+     sekiz kutu dört satır oluyor, son satır ilk sayfaya sığmayıp ikinci
+     sayfaya kayıyor ve bir kutu eksik görünüyordu. Ölçüldü. Bu blok dosyanın
+     sonunda: aynı özgüllükteki ekran kurallarını sırayla eziyor. */
+  .metric-grid, .metric-grid-5, .metric-grid-7, .metric-grid-8 {
+    grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; break-after: avoid;
+  }
+  .metric-grid-9 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .panel-heading { break-after: avoid; }
   .table-wrap { overflow: visible; }
   table { font-size: .8rem; }
