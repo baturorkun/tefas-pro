@@ -918,6 +918,10 @@ textarea:focus  { outline: none; border-color: var(--accent);
 .status-error { color: var(--danger); }
 /* Uyarı hata değil: iş yapıldı ama sonucu beklenenden farklı. */
 .status-warn  { color: var(--warn); line-height: 1.5; }
+/* Panel durum satırı: eklemenin hemen altında, kendi satırında. Tablodan
+   sonra duruyordu ve uzun listede ekranın dışında kalıyordu. */
+.panel-status { margin: -.4rem 0 .9rem; line-height: 1.5; }
+.panel-status[hidden] { display: none; }
 .hint { font-size: .8rem; color: var(--muted-dim); margin: 0 0 1.25rem; }
 
 /* ─── Dar ekran ────────────────────────────────────────────────────────── */
