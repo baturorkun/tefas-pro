@@ -25,7 +25,7 @@ grep -q "confirmDuplicate" "${I}" || fail "onay bayrağı sunucuda okunmuyor"
 grep -q "duplicate: true" "${I}" || fail "mükerrer durumu istemciye bildirilmiyor"
 grep -q "confirmDuplicate: true" "${M}" || fail "istemci ısrar edemiyor"
 # Kayıt yazıldıktan sonraki hata "kaydedilemedi" diye gösterilmemeli.
-awk '/const kaydet = async/,/}, .Kaydedilemedi/' "${M}" | grep -q "try {" \
+grep -q "try {" <<<"$(awk '/const kaydet = async/,/}, .Kaydedilemedi/' "${M}")" \
   || fail "kayıt sonrası hata kaydı başarısız gösterebilir"
 printf 'PASS: mükerrer kayıt soruluyor, kayıt sonrası hata yanıltmıyor\n'
 
@@ -37,7 +37,7 @@ grep -q "type: 'date'" "${M}" && ! grep -q "class: 'date-hidden'" "${M}" \
   && fail "hâlâ tarayıcı biçimli tarih alanı var"
 grep -q "gizli.showPicker()" "${M}" || fail "takvim seçici yok"
 grep -q "placeholder: 'gg-aa-yyyy'" "${M}" || fail "sabit biçimli tarih alanı yok"
-awk '/^function tarihOku/,/^}/' "${M}" | grep -q "toISOString().slice(0, 10) !== iso" \
+grep -q "toISOString().slice(0, 10) !== iso" <<<"$(awk '/^function tarihOku/,/^}/' "${M}")" \
   || fail "olmayan gün (31-02) kabul ediliyor"
 # Doğrulama gönderimden hemen önce de koşmalı: kullanıcı yarım tarih yazıp
 # doğrudan Kaydet'e basabiliyor ve alan hiç blur almıyor.

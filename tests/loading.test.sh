@@ -15,7 +15,7 @@ H="${PROJECT_ROOT}/public/index.html"
 # Sayaç tek yerde, api() içinde: bütün istekler oradan geçiyor.
 grep -qF "yuklemeBasladi();" "${M}" || fail "api() sayaci artirmiyor"
 grep -qF "yuklemeBitti();" "${M}" || fail "api() sayaci dusurmuyor"
-awk '/^async function api\(/,/^}/' "${M}" | grep -qF "finally" \
+grep -qF "finally" <<<"$(awk '/^async function api\(/,/^}/' "${M}")" \
   || fail "sayac hata yolunda dusmuyor; cubuk sonsuza kadar acik kalir"
 test "$(grep -c "yuklemeBasladi()" "${M}")" = "2" \
   || fail "sayac api() disinda da artiriliyor; tek yer olmali"

@@ -27,12 +27,12 @@ sekme="$(grep -n "^    sekmeler," <<<"${blok}" | head -1 | cut -d: -f1)"
 # konumunu da sıfırlar.
 SEC="$(awk '/const sec = \(id: MarketSekme\)/,/^  };/' <<<"${MV}" | grep -v '^ *//')"
 grep -q "reload()" <<<"${SEC}" && fail "sekme değişimi veriyi yeniden çekiyor"
-printf '%s\n' "${SEC}" \
-  | grep -q "govde.replaceChildren(bolum(id))" || fail "sekme gövdeyi yerinde değiştirmiyor"
+grep -q "govde.replaceChildren(bolum(id))" <<<"$(printf '%s\n' "${SEC}")" \
+  || fail "sekme gövdeyi yerinde değiştirmiyor"
 printf 'PASS: bölümler sekmede, sekme değişimi veriyi yeniden çekmiyor\n'
 
 # Seçim sayfa yenilendiğinde korunur; varsayılan Getiri.
 grep -q "MARKET_SEKME_KEY = 'tefas.market.section'" "${M}" || fail "seçim saklanmıyor"
-awk '/function readMarketSekme/,/^}/' "${M}" | grep -q "return 'returns'" \
+grep -q "return 'returns'" <<<"$(awk '/function readMarketSekme/,/^}/' "${M}")" \
   || fail "varsayılan sekme Getiri değil"
 printf 'PASS: seçili sekme saklanıyor, varsayılanı Getiri\n'

@@ -23,16 +23,16 @@ printf 'PASS: kullanıcı adı araması her yerde aynı kurala uyuyor\n'
 
 # Kendi profilini güncelleme admin uçlarından ayrı ve kimlik oturumdan.
 grep -q "updateProfile(pool, user.id" "${I}" || fail "profil kimliği oturumdan gelmiyor"
-awk '/export async function updateProfile/,/^}/' "${R}" \
-  | grep -q "AND id <> \$2" || fail "kullanıcı adı çakışması kendini saymalı"
-awk '/export async function updateProfile/,/^}/' "${R}" \
-  | grep -qE "type|is_active" && fail "profil ucu yetki alanlarına yazıyor"
+grep -q "AND id <> \$2" <<<"$(awk '/export async function updateProfile/,/^}/' "${R}")" \
+  || fail "kullanıcı adı çakışması kendini saymalı"
+grep -qE "type|is_active" <<<"$(awk '/export async function updateProfile/,/^}/' "${R}")" \
+  && fail "profil ucu yetki alanlarına yazıyor"
 printf 'PASS: kullanıcı yalnız kendi adını ve görünen adını değiştirebiliyor\n'
 
 # Sonradan parola değiştirmek mevcut parolayı ister. Açık bırakılmış bir
 # oturumun başına geçen biri, parolayı bilmeden hesabı devralabilirdi.
-awk '/export async function changeOwnPassword/,/^}/' "${R}" \
-  | grep -q "verifyPassword" || fail "mevcut parola doğrulanmıyor"
+grep -q "verifyPassword" <<<"$(awk '/export async function changeOwnPassword/,/^}/' "${R}")" \
+  || fail "mevcut parola doğrulanmıyor"
 grep -q "Mevcut parola yanlış" "${I}" || fail "yanlış parola kolu yok"
 # Zorunlu değişiklik ucu, parolasını belirlemiş kullanıcıya kapalı olmalı:
 # açık kalsaydı mevcut parola sorma kuralı oradan atlanırdı.
@@ -106,9 +106,9 @@ printf 'PASS: alanlar admin kullanıcı formunda da var\n'
 # ve üçü de elle yazılmış alan listesi taşıyor; biri unutulduğunda hata
 # görünmüyor, alan sessizce boş geliyor. Ölçüldü: ad soyad eklendi, giriş
 # yanıtına konmadı ve kenar çubuğu kullanıcı adını göstermeye devam etti.
-awk '/const SESSION_USER_COLUMNS/,/^$/' "${R}" \
-  | grep -q 'full_name AS' || fail "oturum kullanıcısında kimlik alanları yok"
-awk '/const USER_COLUMNS/,/;/' "${R}" | grep -q 'full_name AS "fullName"' \
+grep -q 'full_name AS' <<<"$(awk '/const SESSION_USER_COLUMNS/,/^$/' "${R}")" \
+  || fail "oturum kullanıcısında kimlik alanları yok"
+grep -q 'full_name AS "fullName"' <<<"$(awk '/const USER_COLUMNS/,/;/' "${R}")" \
   || fail "USER_COLUMNS kimlik alanlarını taşımıyor"
 for alan in "fullName: found.fullName" "email: found.email" "telegram: found.telegram" \
             "actor: null"; do
