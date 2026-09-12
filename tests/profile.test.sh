@@ -110,7 +110,13 @@ awk '/const SESSION_USER_COLUMNS/,/^$/' "${R}" \
   | grep -q 'full_name AS' || fail "oturum kullanıcısında kimlik alanları yok"
 awk '/const USER_COLUMNS/,/;/' "${R}" | grep -q 'full_name AS "fullName"' \
   || fail "USER_COLUMNS kimlik alanlarını taşımıyor"
-for alan in "fullName: found.fullName" "email: found.email" "telegram: found.telegram"; do
+for alan in "fullName: found.fullName" "email: found.email" "telegram: found.telegram" \
+            "actor: null"; do
   grep -qF "${alan}" "${I}" || fail "giriş yanıtında eksik: ${alan}"
 done
+# Aynı hata bir kez daha yaşandı: geçiş alanı /api/me'ye eklendi, giriş
+# yanıtına konmadı. Alan eksik olunca `undefined` geliyor, arayüz `=== null`
+# ile baktığı için geçiş varmış gibi davranıp çöküyor ve ekran boş kalıyordu.
+# Sayfa yenilenince açılması hatayı gizliyordu.
+grep -qF "me.actor ?? null" "${M}" || fail "arayuz eksik alana karsi korumasiz"
 printf 'PASS: kimlik alanları giriş, oturum ve liste yollarının üçünde de var\n'

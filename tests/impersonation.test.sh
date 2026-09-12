@@ -84,7 +84,7 @@ grep -qF "'/api/impersonate', { method: 'DELETE' }" "${M}" || fail "X gecisi bit
 printf 'PASS: ust seritte serit ve X var\n'
 
 # Geçiş düğmesi yalnız superuser'da ve zincirlenmiyor.
-grep -qF "me.type === 'super' && me.actor === null" "${M}" \
+grep -qF "me.type === 'super' && (me.actor ?? null) === null" "${M}" \
   || fail "gecis dugmesi herkese gorunuyor"
 grep -qF "u.type !== 'super' && u.isActive" "${M}" || fail "hedef suzgeci eksik"
 printf 'PASS: gecis dugmesi yalniz superuser da ve uygun hedeflerde\n'
