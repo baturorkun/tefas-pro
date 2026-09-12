@@ -80,8 +80,13 @@ grep -qF "adminOnly: true" <<<"$(grep -F "id: 'alarm'" "${M}")" || fail "alarm e
 # her satirda baska bir sey anlatiyordu — birinde gun, otekinde yuzde,
 # ucunculude puan farki — ve iki kuralda pencere hic kullanilmadigi halde
 # 1 yaziyordu.
-grep -qF "table(['Kural', 'Puan', 'Uyan Fon', 'Etkin'], kuralSatir)" <<<"${AV}" \
-  || fail "kural tablosu sadelesmemis"
+# Aile ilk sutunda, rozet olarak: cumlenin altinda kucuk yaziyken gorunmuyordu.
+grep -qF "table(['Aile', 'Kural', 'Puan', 'Uyan Fon', 'Etkin'], kuralSatir)" <<<"${AV}" \
+  || fail "kural tablosu: aile ilk sutun degil"
+# "4 (2 puan)" okunmuyordu; kademe suzgecinin ayrintisi ekranda degil.
+# Koda bakilir, yoruma degil: aciklama satirinda ornek olarak gecen "(2 puan)"
+# cagri degil. Ayrintiyi ureten degisken kodda kalmamali.
+grep -qF "puanVeren" <<<"${AV}" && fail "parantezli puan ayrintisi hâlâ ekranda"
 grep -qF "'Pencere'" "${M}" && fail "belirsiz Pencere sutunu duruyor"
 grep -qF "'2. Eşik'" "${M}" && fail "belirsiz 2. Esik sutunu duruyor"
 grep -qF "const SABLON: Record<string, Parca[]>" <<<"${AV}" || fail "kural cumlesi sablonu yok"

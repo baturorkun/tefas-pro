@@ -6469,26 +6469,18 @@ async function alarmView(reload: () => void): Promise<Node[]> {
     // puan verenleri taşıyor ve alt kademe üst kademeye yenildiği için orada
     // görünmüyor — "3 gün"e 4 fon uyuyor ama ikisi "5 gün"ü de aştığı için
     // puanı üst kademeden alıyor.
+    // Eşiğe kaç fon uyuyor: eşiği ayarlarken bakılacak tek sayı. Kademe
+    // süzgecinden sonra kaçına puan verdiği burada yazılmıyor — "4 (2 puan)"
+    // diye yazılıyordu ve okuyan anlamıyordu; o ayrıntı motorun içinde kalsın.
     const uyan = d.funds.filter((f) => f.matched.includes(r.id)).length;
-    const puanVeren = d.funds.filter((f) => f.hits.some((h) => h.ruleId === r.id)).length;
     return el('tr', { class: r.isActive ? '' : 'alarm-pasif' }, [
-      el('td', {}, [
-        el('div', { class: 'alarm-cumle' }, cumle(r)),
-        el('span', { class: 'fund-title' }, [
-          d.families.find((f) => f.code === r.family)?.label ?? r.family,
-        ]),
-      ]),
+      // Aile ilk sütunda, rozet olarak: cümlenin altında küçük yazıyken
+      // görünmüyordu ve hangi kuralın hangi aileden olduğu okunmuyordu.
+      el('td', {}, [badge(d.families.find((f) => f.code === r.family)?.label ?? r.family, r.family)]),
+      el('td', {}, [el('div', { class: 'alarm-cumle' }, cumle(r))]),
       el('td', { class: 'num' }, [sayiAlani(String(r.points), '4.5rem',
         `/api/admin/alarm/rules/${String(r.id)}`, 'points', 'Puan değişti.')]),
-      el('td', { class: 'num' }, [uyan === 0
-        ? el('span', { class: 'dim' }, ['0'])
-        : el('span', {}, [
-          String(uyan),
-          // Alt kademe üst kademeye yenildiyse fark yazılır, yoksa sessiz.
-          ...(puanVeren === uyan
-            ? []
-            : [el('span', { class: 'dim' }, [` (${String(puanVeren)} puan)`])]),
-        ])]),
+      el('td', { class: 'num' }, [uyan === 0 ? el('span', { class: 'dim' }, ['0']) : String(uyan)]),
       el('td', {}, [el('label', { class: 'switch-field alarm-switch' }, [
         aktif, el('span', { class: 'switch-track' }, []),
       ])]),
@@ -6539,13 +6531,11 @@ async function alarmView(reload: () => void): Promise<Node[]> {
         durum.node,
         el('p', { class: 'settings-note' }, [
           'Her kural bir cümle; içindeki sayıları doğrudan değiştirebilirsin. '
-          + '"Uyan Fon" o eşiğe şu an kaç fonun uyduğunu söyler ve eşiği '
-          + 'ayarlarken bakılacak sayı budur. Aynı ölçütün birden fazla '
-          + 'kademesi olabilir; bir fon o ölçütten yalnız en yüksek kademenin '
-          + 'puanını alır, alt kademe uyduğu hâlde puan vermiyorsa parantez '
-          + 'içinde kaç fona puan verdiği yazar.',
+          + '"Uyan Fon" o eşiğe şu an kaç fonun uyduğunu söyler. Aynı ölçütün '
+          + 'birden fazla kademesi varsa bir fon yalnız en yüksek kademenin '
+          + 'puanını alır.',
         ]),
-        table(['Kural', 'Puan', 'Uyan Fon', 'Etkin'], kuralSatir),
+        table(['Aile', 'Kural', 'Puan', 'Uyan Fon', 'Etkin'], kuralSatir),
       ]),
     ),
     panel(
