@@ -5769,7 +5769,9 @@ async function portfolioView(me: Me): Promise<Node[]> {
       metric('Toplam Kazanç', money(h.totalGain),
         h.totalPct === null ? '—' : `${pct(Number(h.totalPct))} · net sermaye ${money(h.netCapital)}`,
         'money'),
-      metric('Kârda', String(winners), `${String(rows.length - winners)} Zararda`, 'flag'),
+      // Ana sayı ZARARDAKİLER: bakılması gereken onlar. Kârdakiler alt satırda.
+      // Önce tersiydi ve göz önce iyi haberi görüyordu.
+      metric('Zararda', String(rows.length - winners), `${String(winners)} Kârda`, 'flag'),
       // Portföyün yaşı: maliyet ağırlıklı işlem günü ve en eski alış. Tablo
       // ayağındaki Süre ile aynı alan; "ne kadar zamanda" sorusunu cevaplıyor.
       metric('Ağırlıklı Süre',

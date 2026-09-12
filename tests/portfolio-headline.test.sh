@@ -31,6 +31,10 @@ printf 'PASS: gunluk getiri ve toplam kazanc Panel ile ayni fonksiyondan\n'
 grep -qF "'Günlük Getiri'" <<<"${PV}" || fail "Günlük Getiri kutusu yok"
 grep -qF "'Toplam Kazanç'" <<<"${PV}" || fail "Toplam Kazanç kutusu yok"
 grep -qF "'Açık Kâr / Zarar'" <<<"${PV}" || fail "acik kazanc 'Açık' diye adlandirilmamis"
+# Zarardakiler ana sayı, kârdakiler alt satır: bakılması gereken zarardakiler.
+grep -qF "metric('Zararda', String(rows.length - winners), \`\${String(winners)} Kârda\`" <<<"${PV}" \
+  || fail "Zararda kutusu ters"
+grep -qF "metric('Kârda'" <<<"${PV}" && fail "eski Kârda kutusu duruyor"
 grep -qF "'Kâr / Zarar'" <<<"${PV}" && fail "iki farkli rakam ayni sozcukle yaziliyor"
 # Üçlü yan yana: Açık + Gerçekleşen = Toplam. Toplam'ın alt satırı yüzdenin
 # paydasını söylüyor.
