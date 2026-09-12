@@ -29,6 +29,9 @@ printf 'PASS: gunluk getiri ve toplam kazanc Panel ile ayni fonksiyondan\n'
 
 # ─── Etiketler ayrışıyor ───
 grep -qF "'Günlük Getiri'" <<<"${PV}" || fail "Günlük Getiri kutusu yok"
+# Günlük Getiri en başta: ekrana gelen ilk soru "bugün ne oldu".
+awk "/'Günlük Getiri'/{a=NR} /metric\('Maliyet'/{b=NR} END{exit !(a && b && a<b)}" <<<"${PV}" \
+  || fail "Günlük Getiri ilk kutu degil"
 grep -qF "'Toplam Kazanç'" <<<"${PV}" || fail "Toplam Kazanç kutusu yok"
 grep -qF "'Açık Kâr / Zarar'" <<<"${PV}" || fail "acik kazanc 'Açık' diye adlandirilmamis"
 # Zarardakiler ana sayı, kârdakiler alt satır: bakılması gereken zarardakiler.

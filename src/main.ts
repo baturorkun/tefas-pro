@@ -5748,13 +5748,8 @@ async function portfolioView(me: Me): Promise<Node[]> {
     // ızgara sekiz ile dokuz arasında biçim değiştiriyor, dokuzda bir yer boş
     // kalıyordu. Sabit sayı: boşluk yok, sıçrama yok, kağıtta da aynı.
     el('div', { class: 'metric-grid metric-grid-10' }, [
-      metric('Maliyet', money(String(cost)), `${String(rows.length)} Fon`, 'money'),
-      metric('Bugünkü Değer', money(String(value)), rows[0]?.asOfDate ?? '—', 'chart'),
-      // "Açık": yanındaki Toplam Kazanç kapananları da içeriyor; ikisi aynı
-      // sözcükle yazılsaydı iki farklı rakam aynı şey sanılırdı.
-      metric('Açık Kâr / Zarar', money(String(gain)),
-        cost === 0 ? '—' : pct(((value / cost) - 1) * 100)),
-      // Panel'deki kutunun aynısı: etiket, biçim ve gün. Rakam son ölçülebilir
+      // EN BAŞTA: ekrana gelen ilk soru "bugün ne oldu". Panel'deki kutunun
+      // aynısı: etiket, biçim ve gün. Rakam son ölçülebilir
       // güne ait; hafta sonu bakan kullanıcı hangi günü gördüğünü bilmeli.
       metric('Günlük Getiri',
         h.dayGain === null ? '—' : money(h.dayGain),
@@ -5762,6 +5757,12 @@ async function portfolioView(me: Me): Promise<Node[]> {
           ? 'Ölçülebilir gün yok'
           : `${pct(Number(h.dayPct))}${h.dayDate === null ? '' : ` · ${gunAd(h.dayDate)}`}`,
         'chart'),
+      metric('Maliyet', money(String(cost)), `${String(rows.length)} Fon`, 'money'),
+      metric('Bugünkü Değer', money(String(value)), rows[0]?.asOfDate ?? '—', 'chart'),
+      // "Açık": yanındaki Toplam Kazanç kapananları da içeriyor; ikisi aynı
+      // sözcükle yazılsaydı iki farklı rakam aynı şey sanılırdı.
+      metric('Açık Kâr / Zarar', money(String(gain)),
+        cost === 0 ? '—' : pct(((value / cost) - 1) * 100)),
       // Üçlü yan yana okunsun: Açık + Gerçekleşen = Toplam. Gerçekleşen
       // önce yalnız Toplam'ın alt satırında "kapanan dahil" diye geçiyordu;
       // kutu olunca kazancın nereden geldiği bakmadan görünüyor.
