@@ -82,6 +82,15 @@ interface AlarmFonu {
   fundCode: string; title: string | null; score: number; level: string | null;
   hits: { ruleId: number; label: string; family: string; value: string; points: number }[];
 }
+interface AlarmListeSatiri extends AlarmFonu {
+  scope: 'pozisyon' | 'takip' | 'diger';
+}
+interface AlarmListesi {
+  day: string | null;
+  levels: { code: string; label: string; minScore: number; sort: number }[];
+  funds: AlarmListeSatiri[];
+}
+
 interface AlarmVerisi {
   families: { code: string; label: string; cap: number; sort: number }[];
   levels: { code: string; label: string; minScore: number; sort: number }[];
@@ -358,7 +367,7 @@ interface PerformanceSeries {
 type ViewId =
   | 'dashboard' | 'portfolio' | 'closed' | 'cash' | 'periods' | 'market'
   | 'allocation' | 'stocks' | 'chat' | 'transactions' | 'watchlist' | 'prefs'
-  | 'profile' | 'users' | 'banks' | 'sysfunds' | 'runs' | 'settings' | 'alarm';
+  | 'profile' | 'users' | 'banks' | 'sysfunds' | 'runs' | 'settings' | 'alarm' | 'alarms';
 
 const root = document.getElementById('app');
 
@@ -648,7 +657,9 @@ const ICON_PATHS: Record<string, string[]> = {
   add: ['M12 5v14M5 12h14'],
   logout: ['M15 17l5-5-5-5', 'M20 12H9', 'M12 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6'],
   close: ['M6 6l12 12M18 6 6 18'],
-  // Uyarı üçgeni: alarm ekranı ve fon satırındaki renk işareti.
+  // Uyarı üçgeni: kullanıcının alarm ekranı ve admin kural ekranı. İki view
+  // id'si var (alarms, alarm) ve menü ikonu id'den okunuyor.
+  alarms: ['M12 3 2 20h20z', 'M12 10v5', 'M12 17.5v.5'],
   alarm: ['M12 3 2 20h20z', 'M12 10v5', 'M12 17.5v.5'],
   // Yazıcı: Portföyüm'ün PDF düğmesi. Çıktı tarayıcının yazdırmasından.
   print: ['M6 9V3h12v6', 'M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2',
@@ -6226,6 +6237,82 @@ async function usersView(reload: () => void, me: Me): Promise<Node[]> {
 
 
 /**
+ * Kullanıcının alarm ekranı.
+ *
+ * Üç liste: payın olan fonlar, izlediklerin, diğerleri. Alarm fona ait ve
+ * herkes için aynı; değişen yalnız sıralama. Puanı kullanıcıya göre
+ * değiştirmek aynı fonun iki kişide iki renk olması demekti.
+ *
+ * Kendi fonlarında temiz olanlar da yazılır: "bu fonlara baktım, sorun yok"
+ * bilgisi de bir bilgidir. Diğer fonlarda yalnız alarm verenler listelenir,
+ * yoksa ekran 40 satır sessizlikle dolardı.
+ */
+async function alarmlarView(): Promise<Node[]> {
+  const d = (await api('/api/alarms')) as AlarmListesi;
+  const renkAdi = (kod: string | null): string =>
+    d.levels.find((l) => l.code === kod)?.label ?? 'Temiz';
+
+  const satir = (f: AlarmListeSatiri): HTMLElement => {
+    const detay = iconButton('search', 'Fon detayı');
+    detay.addEventListener('click', () => { void openFundModal(f.fundCode); });
+    const tr = el('tr', { class: f.score === 0 ? 'alarm-temiz' : '' }, [
+      el('td', {}, [
+        el('span', { class: 'fund-code' }, [f.fundCode]),
+        el('span', { class: 'fund-title' }, [f.title ?? '']),
+      ]),
+      el('td', {}, [f.score === 0
+        ? badge('Temiz', 'closed')
+        : badge(renkAdi(f.level), f.level === null ? 'closed' : `alarm-${f.level}`)]),
+      el('td', { class: 'num' }, [f.score === 0 ? el('span', { class: 'dim' }, ['—']) : String(f.score)]),
+      el('td', {}, [el('div', { class: 'alarm-gerekce' },
+        f.hits.map((h) => el('span', { class: 'alarm-hit' }, [
+          `${h.label}: ${h.value}`,
+        ])))]),
+      // Detay düğmesi, tıklanabilir satır değil: projedeki her yerde fon
+      // detayı böyle açılıyor ve satıra basınca pencere açılması sürpriz olur.
+      el('td', { class: 'actions' }, [detay]),
+    ]);
+    return tr;
+  };
+
+  const grup = (
+    kapsam: AlarmListeSatiri['scope'], baslik: string, aciklama: string, temizGoster: boolean,
+  ): HTMLElement => {
+    const hepsi = d.funds.filter((f) => f.scope === kapsam);
+    const gosterilen = temizGoster ? hepsi : hepsi.filter((f) => f.score > 0);
+    const alarmli = hepsi.filter((f) => f.score > 0).length;
+    return panel(
+      baslik,
+      hepsi.length === 0
+        ? aciklama
+        : `${String(alarmli)} alarm · ${String(hepsi.length)} fon · ${aciklama}`,
+      el('div', { class: 'panel-body' }, [
+        gosterilen.length === 0
+          ? el('div', { class: 'empty-state' }, [
+            hepsi.length === 0 ? 'Bu grupta fon yok.' : 'Bu gruptaki fonlarda alarm yok.',
+          ])
+          : table(['Fon', 'Durum', 'Puan', 'Gerekçe', ''], gosterilen.map(satir)),
+      ]),
+    );
+  };
+
+  const say = (kod: string): number => d.funds.filter((f) => f.level === kod).length;
+  const benim = d.funds.filter((f) => f.scope !== 'diger' && f.score > 0).length;
+
+  return [
+    el('div', { class: 'metric-grid' }, [
+      metric('Beni İlgilendiren', String(benim), 'Payım ve takibimdeki alarm', 'alarm'),
+      metric('Kırmızı', String(say('kirmizi')), 'Tüm fonlarda', 'alarm'),
+      metric('Turuncu', String(say('turuncu')), 'Tüm fonlarda', 'alarm'),
+      metric('Veri Günü', d.day === null ? '—' : gunAd(d.day, true), 'Son fiyat günü', 'chart'),
+    ]),
+    grup('pozisyon', 'Payım Olan Fonlar', 'açık pozisyon', true),
+    grup('takip', 'Takip Ettiklerim', 'takip listem', true),
+    grup('diger', 'Diğer Fonlar', 'yalnız alarm verenler', false),
+  ];
+}
+
+/**
  * Alarm kuralları ekranı.
  *
  * Eşiği değiştirirken sonucunu görmeden seçmek tahmindir: ölçüldü, çıkış
@@ -6395,6 +6482,7 @@ const VIEWS: {
   { id: 'cash', label: 'Nakit', adminOnly: false, crumb: 'Genel' },
   { id: 'periods', label: 'Dönemsel Getiri', adminOnly: false, crumb: 'Genel' },
   { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },
+  { id: 'alarms', label: 'Alarmlar', adminOnly: false, crumb: 'Genel' },
   { id: 'watchlist', label: 'Takip Listem', adminOnly: false, crumb: 'Genel' },
   { id: 'prefs', label: 'Tercihlerim', adminOnly: false, crumb: 'Genel' },
   // Aşağıdakiler sol menünün ana listesinde ÇIKMAZ; en alttaki kullanıcı
@@ -6626,6 +6714,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     else if (current.id === 'sysfunds') bodyNodes = await sysFundsView(reload);
     else if (current.id === 'runs') bodyNodes = await runsView();
     else if (current.id === 'settings') bodyNodes = await settingsView(reload);
+    else if (current.id === 'alarms') bodyNodes = await alarmlarView();
     else if (current.id === 'alarm') bodyNodes = await alarmView(reload);
     else bodyNodes = await usersView(reload, me);
   } catch (err) {

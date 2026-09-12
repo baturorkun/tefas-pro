@@ -1286,3 +1286,6 @@ textarea:focus  { outline: none; border-color: var(--accent);
              border-radius: var(--radius-pill); background: var(--bg-raised);
              font-size: .72rem; color: var(--muted); white-space: nowrap; }
 .alarm-hit strong { color: var(--text-strong); }
+/* Temiz satır soluk: göz alarm verenlere gitsin, ama fon yine de listede
+   dursun — "baktım, sorun yok" bilgisi de bir bilgidir. */
+.alarm-temiz td { opacity: .5; }

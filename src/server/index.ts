@@ -109,7 +109,7 @@ import {
 } from './repository.js';
 import {
   alarmAyarlari, alarmHesapla, alarmSonGun,
-  alarmKuralGuncelle, alarmAileGuncelle, alarmKademeGuncelle,
+  alarmKuralGuncelle, alarmAileGuncelle, alarmKademeGuncelle, alarmListesi,
 } from './alarm.js';
 
 const COOKIE_NAME = 'tefas_session';
@@ -654,6 +654,19 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
       // görüyordu ve hangisinin doğru olduğu sorulacaktı. /api/dashboard'un
       // tamamını çekmek yerine yalnız bu parça; o uç grafik ve sıralama
       // taşıyor.
+      // Alarmlar herkese açık: kural düzenlemek admin işi, alarmı GÖRMEK
+      // değil. Fon başına puan herkes için aynı; kullanıcıya göre değişen
+      // yalnız hangi grupta listelendiği.
+      if (path === '/api/alarms' && method === 'GET') {
+        const gun = await alarmSonGun(pool);
+        sendJson(res, 200, {
+          day: gun,
+          levels: (await alarmAyarlari(pool)).levels,
+          funds: gun === null ? [] : await alarmListesi(pool, user.id, gun),
+        });
+        return;
+      }
+
       if (path === '/api/portfolio/headline' && method === 'GET') {
         sendJson(res, 200, await portfolioHeadline(pool, user.id));
         return;

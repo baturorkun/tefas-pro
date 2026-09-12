@@ -83,6 +83,44 @@ grep -qF "alarm-hit" "${C}" || fail "gerekce stilsiz"
 grep -qF "'Ham Puan'" <<<"${AV}" || fail "aile ham puani gosterilmiyor"
 printf 'PASS: ekran kurallari, tavanlari, esikleri ve gerekceyi gosteriyor\n'
 
-# Alarm fona ait ve genel: kullanici pozisyonu hesaba girmez.
-grep -qE "user_id|position_slice|portfolio_transaction" "${A}" && fail "alarm kullanici pozisyonuna bakiyor"
-printf 'PASS: alarm fona ait, pozisyon hesaba girmiyor\n'
+# Alarm fona ait ve genel: PUAN kullanici pozisyonundan etkilenmez. Gruplama
+# kullaniciya bakar (hangi listede gorunecek) ama hesap bakmaz; aksi halde
+# ayni fon iki kiside iki renk olurdu.
+HESAP="$(awk '/^const HESAP = `/,/^`;$/' "${A}")"
+[ -n "${HESAP}" ] || fail "hesap sorgusu bulunamadi"
+grep -qE "user_id|position_slice|portfolio_transaction" <<<"${HESAP}" \
+  && fail "puan hesabi kullanici pozisyonuna bakiyor"
+printf 'PASS: puan fona ait, pozisyon hesaba girmiyor\n'
+
+# ─── Kullanıcı ekranı ───
+# Alarmı GÖRMEK herkesin hakkı; kural düzenlemek admin işi. Ölçüldü: sıradan
+# kullanıcı /api/alarms'ta 200, /api/admin/alarm'da 403 alıyor.
+grep -qF "path === '/api/alarms' && method === 'GET'" "${I}" || fail "kullanici alarm ucu yok"
+# Uç admin bloğunun DIŞINDA olmalı, yoksa sıradan kullanıcı 403 alır.
+awk "/path === '\/api\/alarms' && method === 'GET'/{a=NR} /path.startsWith\('\/api\/admin\/'\)/{b=NR} END{exit !(a && b && a<b)}" "${I}" \
+  || fail "kullanici alarm ucu admin blogunun icinde"
+printf 'PASS: alarmi gormek herkese acik, kural duzenlemek admin isi\n'
+
+# Üç grup: payın olan, takip, diğer. Pozisyon takibi ezer, fon iki kez görünmez.
+AL="$(awk '/^export async function alarmListesi/,/^}/' "${A}")"
+[ -n "${AL}" ] || fail "alarmListesi yok"
+grep -qF "if (r.scope === 'pozisyon' || !m.has(r.fund_code)) m.set(r.fund_code, r.scope);" <<<"${AL}" \
+  || fail "pozisyon takibi ezmiyor; fon iki grupta gorunur"
+grep -qF "m.get(s.fundCode) ?? 'diger'" <<<"${AL}" || fail "gruplanmamis fonlar diger degil"
+# Kullanıcıya göre PUAN değişmemeli: aynı fon iki kişide iki renk olamaz.
+grep -qF "alarmHesapla(pool, gun)" <<<"${AL}" || fail "kullanici listesi ortak hesabi kullanmiyor"
+printf 'PASS: uc grup, pozisyon oncelikli, puan kullaniciya gore degismiyor\n'
+
+AV2="$(awk '/^async function alarmlarView/,/^}/' "${M}")"
+[ -n "${AV2}" ] || fail "kullanici alarm ekrani yok"
+grep -qF "grup('pozisyon', 'Payım Olan Fonlar'" <<<"${AV2}" || fail "birinci liste yok"
+grep -qF "grup('takip', 'Takip Ettiklerim'" <<<"${AV2}" || fail "ikinci liste yok"
+grep -qF "grup('diger', 'Diğer Fonlar'" <<<"${AV2}" || fail "ucuncu liste yok"
+# Sıra önemli: once payin olan, sonra takip, sonra digerleri.
+awk "/grup\('pozisyon'/{a=NR} /grup\('takip'/{b=NR} /grup\('diger'/{c=NR} END{exit !(a<b && b<c)}" \
+  <<<"${AV2}" || fail "listeler yanlis sirada"
+# Kendi fonlarinda temiz olanlar da yazilir; digerlerinde yalniz alarm verenler.
+grep -qF "grup('diger', 'Diğer Fonlar', 'yalnız alarm verenler', false)" <<<"${AV2}" \
+  || fail "diger fonlarda temizler de listeleniyor"
+grep -qF "id: 'alarms', label: 'Alarmlar', adminOnly: false" "${M}" || fail "ekran menude degil ya da admin'e kapali"
+printf 'PASS: uc liste dogru sirada, kendi fonlarinda temizler de gorunuyor\n'

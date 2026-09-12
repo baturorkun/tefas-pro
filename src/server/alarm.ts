@@ -126,7 +126,8 @@ SELECT f.fund_code AS "fundCode", f.title,
                   ORDER BY k.points DESC)
                  FROM kademe k WHERE k.fund_code = f.fund_code), '[]'::json) AS hits
   FROM f LEFT JOIN toplam t USING (fund_code)
- ORDER BY coalesce(t.score, 0) DESC, f.fund_code`;
+ ORDER BY coalesce(t.score, 0) DESC, f.fund_code
+`;
 
 /** Verilen gün için bütün takip edilen fonların puanı. Yazmaz. */
 export async function alarmHesapla(pool: pg.Pool, gun: string): Promise<AlarmSatiri[]> {
@@ -241,4 +242,45 @@ export async function alarmSonGun(pool: pg.Pool): Promise<string | null> {
        FROM fact_fund_daily WHERE daily_return_pct IS NOT NULL`,
   );
   return r.rows[0]?.d ?? null;
+}
+
+export type AlarmKapsam = 'pozisyon' | 'takip' | 'diger';
+
+export interface AlarmListeSatiri extends AlarmSatiri {
+  scope: AlarmKapsam;
+}
+
+/**
+ * Kullanıcının gördüğü alarm listesi.
+ *
+ * Alarm fona ait ve herkes için aynı; değişen yalnız SIRALAMA. Kullanıcı önce
+ * parası olan fonu görmeli, sonra izlediğini, sonra diğerlerini. Puanı
+ * kullanıcıya göre değiştirmek aynı fonun iki kişide iki renk olması demekti.
+ */
+export async function alarmListesi(
+  pool: pg.Pool,
+  userId: number,
+  gun: string,
+): Promise<AlarmListeSatiri[]> {
+  const [satirlar, iliski] = await Promise.all([
+    alarmHesapla(pool, gun),
+    pool.query<{ fund_code: string; scope: AlarmKapsam }>(
+      `SELECT fund_code, 'pozisyon'::text AS scope
+         FROM portfolio_transaction
+        WHERE user_id = $1 AND units IS NOT NULL
+          AND (sell_date IS NULL OR sell_date > current_date)
+        GROUP BY fund_code
+       UNION
+       SELECT fund_code, 'takip'::text
+         FROM analytics.watchlist_visible WHERE user_id = $1`,
+      [userId],
+    ),
+  ]);
+  // Pozisyon takibi ezer: alıp sattığın fon hem listende hem portföyünde
+  // olabilir ve iki kez görünmemeli.
+  const m = new Map<string, AlarmKapsam>();
+  for (const r of iliski.rows) {
+    if (r.scope === 'pozisyon' || !m.has(r.fund_code)) m.set(r.fund_code, r.scope);
+  }
+  return satirlar.map((s) => ({ ...s, scope: m.get(s.fundCode) ?? 'diger' }));
 }

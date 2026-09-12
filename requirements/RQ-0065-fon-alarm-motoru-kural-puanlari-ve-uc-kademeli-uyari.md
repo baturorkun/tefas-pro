@@ -125,6 +125,23 @@ Kurallar, puanlar, aile tavanları ve renk eşikleri ekrandan ayarlanır.
 Bir fon kırmızıysa hangi kuralların hangi rakamlarla ateşlediği yazılır.
 Gerekçesiz renk kara kutudur ve kimse güvenmez.
 
+## Kullanıcı ekranı: üç liste
+
+Alarmı GÖRMEK herkesin hakkı; kuralı DÜZENLEMEK admin işi. Ekran üç listeye
+ayrılır, çünkü kullanıcı önce parası olan fonu görmeli:
+
+    1. Payım Olan Fonlar     acik pozisyon
+    2. Takip Ettiklerim      takip listesi
+    3. Diğer Fonlar          yalniz alarm verenler
+
+Puan kullanıcıya göre değişmez; değişen yalnız sıralama. Aksi hâlde aynı fon
+iki kişide iki renk olurdu. Bir fon hem portföyde hem takip listesindeyse
+pozisyon grubu kazanır, iki kez görünmez.
+
+İlk iki listede temiz fonlar da yazılır: "baktım, sorun yok" bilgisi de bir
+bilgidir. Üçüncü listede yalnız alarm verenler; yoksa ekran onlarca satır
+sessizlikle dolardı.
+
 ## Acceptance Criteria
 
 - Kurallar veritabanında; aile, eşik, puan ve etkin/pasif alanları var.
@@ -138,7 +155,11 @@ Gerekçesiz renk kara kutudur ve kimse güvenmez.
 - Admin ekranı o anki dağılımı gösteriyor.
 - Admin ekranı seçilen ayarın geçmişte kaç alarm üreteceğini gösteriyor.
 - Fon satırında renk, detayında gerekçe listesi görünüyor.
-- Alarm fona ait; kullanıcı pozisyonu hesaba girmiyor.
+- Alarm fona ait; kullanıcı pozisyonu PUANA girmiyor.
+- Alarm ekranı admin olmayan kullanıcıya da açık; kural düzenleme uçları değil.
+- Ekran üç listeye ayrılıyor: payım olan, takip, diğer — bu sırayla.
+- Bir fon yalnız bir listede görünüyor; pozisyon takibi eziyor.
+- İlk iki listede temiz fonlar da görünüyor, üçüncüde yalnız alarm verenler.
 
 ## Kapsam dışı
 
