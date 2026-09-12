@@ -111,7 +111,9 @@ okunmamalı.
 
 ## Admin ekranı
 
-Kurallar, puanlar, aile tavanları ve renk eşikleri ekrandan ayarlanır.
+Kurallar, puanlar, aile tavanları ve renk eşikleri ekrandan ayarlanır. Burası
+AYAR ekranıdır; alarmların kendisi Alarmlar ekranında durur ve burada ikinci
+kez listelenmez.
 
 İki şey olmadan eşik seçmek tahmindir ve bu RQ'nun ölçümleri bunu gösterdi:
 
@@ -146,9 +148,10 @@ Puan kullanıcıya göre değişmez; değişen yalnız sıralama. Aksi hâlde ay
 iki kişide iki renk olurdu. Bir fon hem portföyde hem takip listesindeyse
 pozisyon grubu kazanır, iki kez görünmez.
 
-İlk iki listede temiz fonlar da yazılır: "baktım, sorun yok" bilgisi de bir
-bilgidir. Üçüncü listede yalnız alarm verenler; yoksa ekran onlarca satır
-sessizlikle dolardı.
+Her sekmede yalnız alarm veren fonlar listelenir. Temiz fonları da yazmak
+ekranı onlarca satır sessizlikle dolduruyor ve alarm veren satır aralarında
+kayboluyordu; bu ekranın işi sorunları göstermek, envanter saymak değil.
+Sekme özeti kaç fon içinde kaç alarm olduğunu söyler.
 
 ## Acceptance Criteria
 
@@ -162,7 +165,8 @@ sessizlikle dolardı.
 - Admin ekranından kural, puan, tavan ve renk eşikleri düzenlenebiliyor.
 - Admin ekranı o anki dağılımı gösteriyor.
 - Admin ekranı seçilen ayarın geçmişte kaç alarm üreteceğini gösteriyor.
-- Fon satırında renk, detayında gerekçe listesi görünüyor.
+- Ayar ekranında fon listesi yok; dağılım önizlemesi ve kural başına
+  ateşleyen fon sayısı var.
 - Alarm fona ait; kullanıcı pozisyonu PUANA girmiyor.
 - Alarm ekranı admin olmayan kullanıcıya da açık; kural düzenleme uçları değil.
 - Ekran üç sekmeye ayrılıyor: portföyümdekiler, takiptekiler, diğerleri.
@@ -170,7 +174,7 @@ sessizlikle dolardı.
 - Kutular: portföyde kırmızı, turuncu, sarı ayrı; takip ve diğerlerinde
   toplam alarm ve alt satırda renk kırılımı.
 - Bir fon yalnız bir sekmede görünüyor; pozisyon takibi eziyor.
-- İlk iki sekmede temiz fonlar da görünüyor, üçüncüde yalnız alarm verenler.
+- Her sekmede yalnız alarm veren fonlar listeleniyor.
 
 ## Kapsam dışı
 

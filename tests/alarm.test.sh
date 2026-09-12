@@ -76,9 +76,6 @@ grep -qF "adminOnly: true" <<<"$(grep -F "id: 'alarm'" "${M}")" || fail "alarm e
 grep -qF "'Ateşleyen'" <<<"${AV}" || fail "kural basina atesleyen fon sayisi yok"
 grep -qF "d.funds.filter((f) => f.hits.some((h) => h.ruleId === r.id)).length" <<<"${AV}" \
   || fail "atesleyen sayisi hesaplanmiyor"
-# Gerekcesiz renk kara kutudur.
-grep -qF "alarm-gerekce" <<<"${AV}" || fail "gerekce listesi yok"
-grep -qF "alarm-hit" "${C}" || fail "gerekce stilsiz"
 # Aile tavani ekranda ham puanla birlikte: tavanin ne kestigi gorunmeli.
 grep -qF "'Ham Puan'" <<<"${AV}" || fail "aile ham puani gosterilmiyor"
 printf 'PASS: ekran kurallari, tavanlari, esikleri ve gerekceyi gosteriyor\n'
@@ -145,7 +142,20 @@ grep -qF "kirilim('diger')" <<<"${AV2}" || fail "diger kutusunda renk kirilimi y
 grep -qF "'Veri Günü'" <<<"${AV2}" && fail "veri gunu kutusu hâlâ duruyor"
 printf 'PASS: bes kutu, portfoyde renk renk, digerlerinde toplam ve kirilim\n'
 
-# Ilk iki sekmede temiz fonlar da gorunur; ucuncude yalniz alarm verenler.
-grep -qF "k === 'diger' ? hepsi.filter((f) => f.score > 0) : hepsi" <<<"${AV2}" \
-  || fail "temiz fon gosterimi yanlis grupta"
-printf 'PASS: kendi fonlarinda temizler de gorunuyor, digerlerinde yalniz alarmlilar\n'
+# Yalniz alarm verenler listelenir. Temiz fonlari da yazmak ekrani 30 satir
+# sessizlikle dolduruyor ve alarm veren satir aralarinda kayboluyordu.
+grep -qF "const gosterilen = hepsi.filter((f) => f.score > 0);" <<<"${AV2}" \
+  || fail "temiz fonlar da listeleniyor"
+grep -qF "badge('Temiz'" <<<"${AV2}" && fail "temiz rozeti hâlâ var"
+grep -qF "alarm-temiz" "${M}" && fail "temiz satir bicimi hâlâ kullaniliyor"
+grep -qF "alarm-temiz" "${C}" && fail "temiz satir stili olu kod"
+# Gerekcesiz renk kara kutudur: hangi kural hangi rakamla atesledi yazmali.
+grep -qF "alarm-gerekce" <<<"${AV2}" || fail "gerekce listesi yok"
+grep -qF "alarm-hit" "${C}" || fail "gerekce stilsiz"
+printf 'PASS: yalniz alarm veren fonlar listeleniyor, gerekcesiyle\n'
+
+# Admin ekrani AYAR ekranidir: fon listesi orada degil, Alarmlar ekraninda.
+grep -qF "'Alarm Veren Fonlar'" <<<"${AV}" && fail "ayar ekraninda fon listesi duruyor"
+# Dagilim kutulari kaliyor: esigi sonucunu gormeden secmek tahmindir.
+grep -qF "metric('Kırmızı'" <<<"${AV}" || fail "ayar ekraninda dagilim onizlemesi yok"
+printf 'PASS: ayar ekraninda liste yok, dagilim onizlemesi var\n'

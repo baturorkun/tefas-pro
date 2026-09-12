@@ -6269,15 +6269,13 @@ async function alarmlarView(): Promise<Node[]> {
   const satir = (f: AlarmListeSatiri): HTMLElement => {
     const detay = iconButton('search', 'Fon detayı');
     detay.addEventListener('click', () => { void openFundModal(f.fundCode); });
-    return el('tr', { class: f.score === 0 ? 'alarm-temiz' : '' }, [
+    return el('tr', {}, [
       el('td', {}, [
         el('span', { class: 'fund-code' }, [f.fundCode]),
         el('span', { class: 'fund-title' }, [f.title ?? '']),
       ]),
-      el('td', {}, [f.score === 0
-        ? badge('Temiz', 'closed')
-        : badge(renkAdi(f.level), f.level === null ? 'closed' : `alarm-${f.level}`)]),
-      el('td', { class: 'num' }, [f.score === 0 ? el('span', { class: 'dim' }, ['—']) : String(f.score)]),
+      el('td', {}, [badge(renkAdi(f.level), f.level === null ? 'closed' : `alarm-${f.level}`)]),
+      el('td', { class: 'num' }, [String(f.score)]),
       el('td', {}, [el('div', { class: 'alarm-gerekce' },
         f.hits.map((h) => el('span', { class: 'alarm-hit' }, [`${h.label}: ${h.value}`])))]),
       el('td', { class: 'actions' }, [detay]),
@@ -6301,10 +6299,10 @@ async function alarmlarView(): Promise<Node[]> {
   /** Sekme gövdesi. Diğerlerinde yalnız alarm verenler listelenir. */
   const bolum = (k: AlarmSekme): HTMLElement => {
     const hepsi = grupta(k);
-    // İlk iki sekmede temiz fonlar da yazılır: "baktım, sorun yok" bilgisi de
-    // bir bilgidir. Üçüncüde yalnız alarm verenler, yoksa ekran onlarca satır
-    // sessizlikle dolardı.
-    const gosterilen = k === 'diger' ? hepsi.filter((f) => f.score > 0) : hepsi;
+    // Yalnız alarm verenler. Temiz fonları da yazmak ekranı 30 satır
+    // sessizlikle dolduruyordu ve alarm veren satır aralarında kayboluyordu;
+    // bu ekranın işi sorunları göstermek, envanter saymak değil.
+    const gosterilen = hepsi.filter((f) => f.score > 0);
     return el('div', { class: 'panel-body' }, [
       gosterilen.length === 0
         ? el('div', { class: 'empty-state' }, [
@@ -6318,7 +6316,7 @@ async function alarmlarView(): Promise<Node[]> {
     pozisyon: 'Portföyümdekiler', takip: 'Takiptekiler', diger: 'Diğerleri',
   };
   const ozet = (k: AlarmSekme): string =>
-    `${String(alarmli(k))} alarm · ${String(grupta(k).length)} fon`;
+    `${String(alarmli(k))} alarm · ${String(grupta(k).length)} fon içinde`;
 
   const govde = el('div', {}, [bolum(alarmSekme)]);
   const dugmeler = new Map<AlarmSekme, HTMLElement>();
@@ -6378,9 +6376,9 @@ async function alarmView(reload: () => void): Promise<Node[]> {
   const d = (await api('/api/admin/alarm')) as AlarmVerisi;
   const durum = durumSatiri();
 
+  // Dağılım kalıyor: eşiği sonucunu görmeden seçmek tahmindir. Fon listesi
+  // kalktı — burası ayar ekranı, alarmların kendisi Alarmlar ekranında.
   const say = (kod: string | null): number => d.funds.filter((f) => f.level === kod).length;
-  const renkAdi = (kod: string | null): string =>
-    d.levels.find((l) => l.code === kod)?.label ?? 'Renksiz';
 
   const kaydet = async (yol: string, govde: unknown, mesaj: string): Promise<void> => {
     try {
@@ -6457,21 +6455,6 @@ async function alarmView(reload: () => void): Promise<Node[]> {
     el('td', { class: 'num' }, [String(d.funds.filter((x) => x.level === l.code).length)]),
   ]));
 
-  // Alarm veren fonlar, gerekçesiyle. Gerekçesiz renk kara kutudur.
-  const fonSatir = d.funds.filter((f) => f.score > 0).map((f) => el('tr', {}, [
-    el('td', {}, [
-      el('span', { class: 'fund-code' }, [f.fundCode]),
-      el('span', { class: 'fund-title' }, [f.title ?? '']),
-    ]),
-    el('td', {}, [badge(renkAdi(f.level), f.level === null ? 'closed' : `alarm-${f.level}`)]),
-    el('td', { class: 'num' }, [String(f.score)]),
-    el('td', {}, [el('div', { class: 'alarm-gerekce' },
-      f.hits.map((h) => el('span', { class: 'alarm-hit' }, [
-        `${h.label}: ${h.value}`,
-        el('strong', {}, [` +${String(h.points)}`]),
-      ])))]),
-  ]));
-
   return [
     el('div', { class: 'metric-grid metric-grid-5' }, [
       metric('Kırmızı', String(say('kirmizi')), 'En ağır', 'alarm'),
@@ -6508,15 +6491,6 @@ async function alarmView(reload: () => void): Promise<Node[]> {
     panel('Renk Eşikleri', 'Toplam puandan renge', el('div', { class: 'panel-body' }, [
       table(['Renk', 'En Az Puan', 'Şu An'], kademeSatir),
     ])),
-    panel(
-      'Alarm Veren Fonlar',
-      `${String(fonSatir.length)} fon${d.day === null ? '' : ` · ${gunAd(d.day, true)}`}`,
-      el('div', { class: 'panel-body' }, [
-        fonSatir.length === 0
-          ? el('div', { class: 'empty-state' }, ['Hiçbir fon alarm vermiyor.'])
-          : table(['Fon', 'Renk', 'Puan', 'Gerekçe'], fonSatir),
-      ]),
-    ),
   ];
 }
 
