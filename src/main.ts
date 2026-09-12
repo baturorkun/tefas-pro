@@ -6166,6 +6166,57 @@ const VIEWS: {
  * bilemez, kendi başına uydurmamalı. Alınamazsa rozet sessizce boş kalır —
  * sürüm gösterilememesi ekranı bozmamalı.
  */
+/**
+ * Sayfanın doğduğu sürüm.
+ *
+ * Uygulama tek sayfa: ekranlar arasında gezerken app.js bir daha çekilmiyor.
+ * Deploy'dan önce açılmış bir sekme yeni kodu hiç görmüyor; üstelik rozet
+ * her ekranda /api/runtime'ı taze çekip SUNUCUNUN sürümünü yazdığı için eski
+ * kodu çalıştıran sekme yeni sürüm numarası gösteriyordu. Ölçüldü: RQ-0062
+ * main'e girdi, sekmede PDF düğmesi yoktu, rozet "v0.62" diyordu.
+ *
+ * İlk okuma saklanır; rozet onu gösterir. Sonraki okumalar yalnız
+ * karşılaştırma içindir.
+ */
+let yukluSurum: string | null = null;
+
+async function sunucuSurumu(): Promise<string | null> {
+  try {
+    const rt = (await api('/api/runtime')) as { version?: string };
+    return rt.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sunucu sürümü sayfanınkinden ayrıştıysa şeridi açar. Her ekran kurulumunda
+ * ve sekme yeniden görünür olduğunda çağrılır.
+ *
+ * Kendiliğinden yenileme YOK: yarım doldurulmuş bir işlem formunu silmek,
+ * eski sürümde kalmaktan kötü. Düğme kullanıcının.
+ */
+async function surumKontrol(): Promise<void> {
+  const simdiki = await sunucuSurumu();
+  if (simdiki === null) return;
+  if (yukluSurum === null) { yukluSurum = simdiki; return; }
+  if (simdiki === yukluSurum) return;
+  const serit = document.getElementById('surum-uyari');
+  if (serit === null || !serit.hidden) return;
+  const yenile = el('button', { class: 'surum-yenile', type: 'button' }, ['Yenile']);
+  yenile.addEventListener('click', () => { location.reload(); });
+  serit.replaceChildren(
+    el('span', {}, [`Yeni sürüm var (${simdiki}), bu sekme ${yukluSurum} çalıştırıyor.`]),
+    yenile,
+  );
+  serit.hidden = false;
+}
+
+// Arka plandaki sekme deploy'u kaçırır; öne gelince bir kez daha bakılır.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') void surumKontrol();
+});
+
 function versionBadge(): HTMLElement {
   const value = el('strong', { class: 'version-value' }, ['—']);
   const box = el('div', { class: 'version-badge' }, [
@@ -6173,13 +6224,10 @@ function versionBadge(): HTMLElement {
     value,
   ]);
   void (async () => {
-    try {
-      const rt = (await api('/api/runtime')) as { version?: string };
-      // Sürüm gelmezse rozet boş bir kutu olarak kalmasın.
-      value.textContent = rt.version ?? '—';
-    } catch {
-      value.textContent = '—';
-    }
+    await surumKontrol();
+    // Rozet YÜKLÜ sürümü yazar, sunucunun o anki sürümünü değil; yoksa eski
+    // kodu çalıştıran sekme güncel görünür. Sürüm gelmezse boş kutu kalmasın.
+    value.textContent = yukluSurum ?? '—';
   })();
   return box;
 }
