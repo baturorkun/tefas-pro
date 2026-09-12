@@ -5234,7 +5234,14 @@ async function periodsView(): Promise<Node[]> {
 const txFiltre = { fundCode: '', platform: '' };
 
 async function transactionsView(reload: () => void): Promise<Node[]> {
-  const rows = (await api('/api/transactions')) as Transaction[];
+  // Bekleyen sayısı Portföyüm'le aynı uçtan: iki ekran iki farklı sayı
+  // göstermesin. Burada listeden saymak mümkündü ama satış tarihi kuralı
+  // (bugünden ileri) tek yerde, sunucuda dursun.
+  const [rows, bekleyen] = await Promise.all([
+    api('/api/transactions') as Promise<Transaction[]>,
+    api('/api/portfolio/pending') as Promise<BekleyenAlim>,
+  ]);
+  const bekleyenToplam = bekleyen.count + bekleyen.sellCount;
   // Pasif kayıt açık pozisyon değil: adedi yok, hiçbir hesaba girmiyor.
   const open = rows.filter((t) => t.sellDate === null && t.units !== null);
   const pasif = rows.filter((t) => t.units === null);
@@ -5479,7 +5486,8 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
   });
 
   return [
-    el('div', { class: 'metric-grid' }, [
+    // Beş kutu tek satır: Bekleyen İşlem Portföyüm'deki kutunun aynısı.
+    el('div', { class: 'metric-grid metric-grid-5' }, [
       metric('Açık Pozisyon', String(open.length),
         pasif.length === 0
           ? `${String(rows.length)} İşlem Kaydı`
@@ -5488,6 +5496,12 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
       metric('Platform', String(platforms.size), 'Banka / Aracı', 'money'),
       metric('Son İşlem', last === undefined ? '—' : gunAd(last),
         sonOlay === undefined ? '—' : sonOlay.tur, 'transactions'),
+      metric('Bekleyen İşlem', String(bekleyenToplam),
+        bekleyenToplam === 0
+          ? 'işlem yok'
+          : [`${String(bekleyen.count)} alım`, `${String(bekleyen.sellCount)} satış`]
+            .filter((t) => !t.startsWith('0 ')).join(' · '),
+        'transactions', 'işlem'),
     ]),
     panel(
       'Fon Hareketleri',
