@@ -6455,13 +6455,23 @@ async function alarmView(reload: () => void): Promise<Node[]> {
   });
 
   const aileSatir = d.families.map((f) => {
-    const ham = d.rules.filter((r) => r.family === f.code && r.isActive)
-      .reduce((t, r) => t + r.points, 0);
+    // Bir fon aynı ölçütten yalnız EN YÜKSEK kademeyi alır, o yüzden ailenin
+    // ulaşılabilir en yüksek puanı bütün kuralların toplamı değil, ölçüt
+    // başına en yüksek puanların toplamıdır. Getiri ailesinde kuralların
+    // toplamı 150 ama bir fonun alabileceği en çok 100.
+    const enYuksek = [...new Set(d.rules.filter((r) => r.family === f.code && r.isActive)
+      .map((r) => r.kind))]
+      .reduce((t, kind) => t + Math.max(...d.rules
+        .filter((r) => r.family === f.code && r.isActive && r.kind === kind)
+        .map((r) => r.points)), 0);
     return el('tr', {}, [
       el('td', {}, [badge(f.label, f.code)]),
-      el('td', { class: 'num dim' }, [String(ham)]),
+      el('td', { class: 'num dim' }, [String(enYuksek)]),
       el('td', { class: 'num' }, [sayiAlani(String(f.cap), '4.5rem',
         `/api/admin/alarm/families/${f.code}`, 'cap', `${f.label} tavanı değişti.`)]),
+      // Tavan en yüksekten büyükse hiçbir şey kesmiyor demektir; sessiz
+      // kalırsa ayarın işe yaramadığı fark edilmez.
+      el('td', { class: 'dim' }, [f.cap >= enYuksek ? 'tavan etkisiz' : '']),
     ]);
   });
 
@@ -6502,10 +6512,12 @@ async function alarmView(reload: () => void): Promise<Node[]> {
       el('div', { class: 'panel-body' }, [
         el('p', { class: 'settings-note' }, [
           'Getiri ailesindeki kuralların hepsi aynı şeyi ölçüyor: fiyat düşüyor. '
-          + 'Tavan olmadan kural sayısı ağırlığı sessizce belirler. Ham puan, o '
-          + 'ailedeki etkin kuralların toplamıdır.',
+          + 'Tavan olmadan kural sayısı ağırlığı sessizce belirler. '
+          + '"Ulaşılabilir en yüksek", bir fonun o aileden alabileceği en çok '
+          + 'puandır: aynı ölçütün kademelerinden yalnız biri sayıldığı için '
+          + 'kuralların düz toplamından küçüktür.',
         ]),
-        table(['Aile', 'Ham Puan', 'Tavan'], aileSatir),
+        table(['Aile', 'Ulaşılabilir En Yüksek', 'Tavan', ''], aileSatir),
       ]),
     ),
     panel('Renk Eşikleri', 'Toplam puandan renge', el('div', { class: 'panel-body' }, [

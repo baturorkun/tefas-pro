@@ -81,8 +81,16 @@ grep -qF "d.funds.filter((f) => f.matched.includes(r.id)).length" <<<"${AV}" \
   || fail "uyan fon sayisi ham eslesmeden gelmiyor"
 grep -qF "matched: number[];" "${M}" || fail "ham eslesme istemciye tasinmiyor"
 grep -qF "FROM vurus v WHERE v.fund_code = f.fund_code" "${A}" || fail "ham eslesme sunucuda uretilmiyor"
-# Aile tavani ekranda ham puanla birlikte: tavanin ne kestigi gorunmeli.
-grep -qF "'Ham Puan'" <<<"${AV}" || fail "aile ham puani gosterilmiyor"
+# Aile tavani, ULASILABILIR en yuksek puanla birlikte gosterilmeli. Butun
+# kurallarin duz toplami yaniltici: bir fon ayni olcutten yalniz en yuksek
+# kademeyi alir. Olculdu: getiri ailesinde kurallarin toplami 150, bir fonun
+# alabilecegi en cok 100.
+grep -qF "'Ulaşılabilir En Yüksek'" <<<"${AV}" || fail "aile en yuksek puani gosterilmiyor"
+grep -qF "'Ham Puan'" "${M}" && fail "yaniltici ham puan etiketi duruyor"
+grep -qF "[...new Set(d.rules.filter((r) => r.family === f.code && r.isActive)" <<<"${AV}" \
+  || fail "en yuksek puan olcut basina hesaplanmiyor"
+grep -qF "f.cap >= enYuksek ? 'tavan etkisiz' : ''" <<<"${AV}" \
+  || fail "etkisiz tavan isaretlenmiyor"
 printf 'PASS: ekran kurallari, tavanlari, esikleri ve gerekceyi gosteriyor\n'
 
 # Alarm fona ait ve genel: PUAN kullanici pozisyonundan etkilenmez. Gruplama
