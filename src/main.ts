@@ -129,6 +129,8 @@ interface PortfolioHeadline {
   dayGain: string | null;
   dayPct: string | null;
   dayDate: string | null;
+  weightedDays: number | null;
+  firstBuyDate: string | null;
 }
 
 interface PositionSummary {
@@ -5709,7 +5711,11 @@ async function portfolioView(me: Me): Promise<Node[]> {
 
   const foot = el('tr', { class: 'total-row' }, [
     el('td', {}, [`TOPLAM (${String(rows.length)})`]),
-    el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []),
+    el('td', {}, []), el('td', {}, []), el('td', {}, []),
+    // Süre: maliyet ağırlıklı, sunucudan. Satırlar fonun en eski lotunu
+    // gösteriyor; toplam satırı lot lot ağırlıklandırılmış hâli.
+    el('td', { class: 'num' }, [h.weightedDays === null ? '' : `${String(h.weightedDays)}g`]),
+    el('td', {}, []),
     el('td', { class: 'num' }, [num(String(cost), 0)]),
     el('td', { class: 'num' }, [num(String(value), 0)]),
     el('td', {}, [signed(String(gain), ' ₺')]),
@@ -5734,9 +5740,9 @@ async function portfolioView(me: Me): Promise<Node[]> {
       el('strong', {}, ['TEFAS-Pro · Portföyüm']),
       el('span', {}, [`${me.fullName} · ${veriGunu === null ? '—' : gunAd(veriGunu)}`]),
     ]),
-    // Altı kutu üç+üç, bekleyen çıkınca yedi kutu dört+üç: tek başına ikinci
-    // sıraya düşen kutu kalmıyor.
-    el('div', { class: bekleyenToplam === 0 ? 'metric-grid metric-grid-6' : 'metric-grid metric-grid-7' }, [
+    // Yedi kutu dört+üç, bekleyen çıkınca sekiz kutu dört+dört: tek başına
+    // ikinci sıraya düşen kutu kalmıyor.
+    el('div', { class: bekleyenToplam === 0 ? 'metric-grid metric-grid-7' : 'metric-grid metric-grid-8' }, [
       metric('Maliyet', money(String(cost)), `${String(rows.length)} Fon`, 'money'),
       metric('Bugünkü Değer', money(String(value)), rows[0]?.asOfDate ?? '—', 'chart'),
       // "Açık": yanındaki Toplam Kazanç kapananları da içeriyor; ikisi aynı
@@ -5755,6 +5761,12 @@ async function portfolioView(me: Me): Promise<Node[]> {
         h.totalPct === null ? '—' : `${pct(Number(h.totalPct))} · ${money(h.realizedGain)} kapanan dahil`,
         'money'),
       metric('Kârda', String(winners), `${String(rows.length - winners)} Zararda`, 'flag'),
+      // Portföyün yaşı: maliyet ağırlıklı işlem günü ve en eski alış. Tablo
+      // ayağındaki Süre ile aynı alan; "ne kadar zamanda" sorusunu cevaplıyor.
+      metric('Ağırlıklı Süre',
+        h.weightedDays === null ? '—' : `${String(h.weightedDays)}g`,
+        h.firstBuyDate === null ? 'açık lot yok' : `ilk alım ${gunAd(h.firstBuyDate)}`,
+        'transactions'),
       // Yalnız bekleyen alım varken çizilir; sıfırken boş bir kutu şeridi
       // kalabalıklaştırırdı. Tutar YOK: fiyat açıklanmadı.
       ...(bekleyenToplam === 0 ? [] : [metric(

@@ -57,7 +57,31 @@ grep -qF "thead { display: table-header-group; }" <<<"${PR}" || fail "tablo basl
 grep -qF ".print-only { display: none; }" "${C}" || fail "cikti basligi ekranda gorunuyor"
 printf 'PASS: yazdirma gorunumu gezinmesiz, acik zeminli, tablo sayfaya sigiyor\n'
 
-# Altı kutu tek başına ikinci sıraya düşen kutu bırakmıyor.
-grep -qF "'metric-grid metric-grid-6' : 'metric-grid metric-grid-7'" <<<"${PV}" || fail "izgara 6/7 degil"
-grep -qF ".metric-grid-6 { grid-template-columns: repeat(3" "${C}" || fail "6 kutu 3+3 dizilmiyor"
+# Yedi kutu dört+üç, sekiz kutu dört+dört: tek başına kalan kutu yok.
+grep -qF "'metric-grid metric-grid-7' : 'metric-grid metric-grid-8'" <<<"${PV}" || fail "izgara 7/8 degil"
+grep -qF ".metric-grid-7, .metric-grid-8 { grid-template-columns: repeat(4" "${C}" || fail "7/8 kutu 4'lu dizilmiyor"
 printf 'PASS: kutu izgarasi yalniz kutu kalmayacak sekilde\n'
+
+# ─── Ağırlıklı süre ───
+# Sunucuda lot lot: satırdaki Süre en eski lotun günü, onu fon maliyetiyle
+# ağırlıklandırmak sonradan eklenen lotları görmezdi.
+R="${PROJECT_ROOT}/src/server/repository.ts"
+HL="$(awk '/^export async function portfolioHeadline/,/^}/' "${R}")"
+grep -qF "sum(days * units * nav_buy) / sum(units * nav_buy)" <<<"${HL}" || fail "agirlikli gun maliyetle agirlikli degil"
+grep -qF "FROM analytics.position_leg l" <<<"${HL}" || fail "agirlikli gun lot bazinda degil"
+grep -qF "NOT l.simulated" <<<"${HL}" || fail "simule lotlar agirliga giriyor"
+grep -qF "min(start_date)" <<<"${HL}" || fail "ilk alis gunu yok"
+# Kutu ve tablo ayağı aynı alanı okuyor; ekranda ikinci bir hesap yok.
+grep -qF "el('td', { class: 'num' }, [h.weightedDays === null" <<<"${PV}" || fail "ayak satiri weightedDays okumuyor"
+grep -qF "h.weightedDays === null ? '—' : \`\${String(h.weightedDays)}g\`" <<<"${PV}" || fail "kutu weightedDays okumuyor"
+grep -qF "'Ağırlıklı Süre'" <<<"${PV}" || fail "Agirlikli Sure kutusu yok"
+grep -qF "ilk alım \${gunAd(h.firstBuyDate)}" <<<"${PV}" || fail "ilk alis gunu kutuda yazmiyor"
+grep -qE "days *\* *cost|reduce\(.*days" <<<"${PV}" && fail "ekran agirlikli gunu kendi hesapliyor"
+printf 'PASS: agirlikli sure sunucuda lot bazinda, kutu ve ayak ayni alani okuyor\n'
+
+# Yazdırmada bölünmezlik panelde değil: tablo paneli tek parça sayılınca ilk
+# sayfanın kalanına sığmıyor ve bütünüyle ikinci sayfaya atılıyordu.
+grep -qF ".metric-card { break-inside: avoid; }" <<<"${PR}" || fail "kart bolunebiliyor"
+grep -qE "\.metric-card, \.panel \{[^}]*break-inside" <<<"${PR}" \
+  && fail "panel bolunmez sayiliyor; tablo ikinci sayfaya atilir"
+printf 'PASS: yazdirmada panel bolunebilir, kutular yalniz kalmiyor\n'

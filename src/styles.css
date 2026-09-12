@@ -175,10 +175,11 @@ body {
    ikinci sıraya düşüyordu. */
 .metric-grid-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 @media (max-width: 1200px) { .metric-grid-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-/* Portföyüm: altı kutu üç+üç, yedi kutu dört+üç. */
-.metric-grid-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.metric-grid-7 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-@media (max-width: 1200px) { .metric-grid-7 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* Portföyüm: yedi kutu dört+üç, sekiz kutu dört+dört. */
+.metric-grid-7, .metric-grid-8 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1200px) {
+  .metric-grid-7, .metric-grid-8 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 
 .metric-card {
   padding: 1rem 1.1rem;
@@ -1212,9 +1213,13 @@ textarea:focus  { outline: none; border-color: var(--accent);
   .print-only { display: flex; justify-content: space-between; align-items: baseline;
                 gap: 1rem; margin-bottom: 1rem; padding-bottom: .5rem;
                 border-bottom: 1px solid var(--line); font-size: .95rem; }
-  .metric-card, .panel { border: 1px solid var(--line); box-shadow: none;
-                         break-inside: avoid; }
-  .metric-grid { gap: 8px; }
+  .metric-card, .panel { border: 1px solid var(--line); box-shadow: none; }
+  /* Bölünmezlik kartta ve satırda, PANELDE DEĞİL: tablo paneli tek parça
+     sayılınca ilk sayfanın kalanına sığmıyor ve tarayıcı bütün paneli ikinci
+     sayfaya atıyordu — kutular ilk sayfada yalnız kalıyordu. Ölçüldü. */
+  .metric-card { break-inside: avoid; }
+  .metric-grid { gap: 8px; break-after: avoid; }
+  .panel-heading { break-after: avoid; }
   .table-wrap { overflow: visible; }
   table { font-size: .8rem; }
   tr { break-inside: avoid; }
