@@ -113,14 +113,39 @@ printf 'PASS: uc grup, pozisyon oncelikli, puan kullaniciya gore degismiyor\n'
 
 AV2="$(awk '/^async function alarmlarView/,/^}/' "${M}")"
 [ -n "${AV2}" ] || fail "kullanici alarm ekrani yok"
-grep -qF "grup('pozisyon', 'Payım Olan Fonlar'" <<<"${AV2}" || fail "birinci liste yok"
-grep -qF "grup('takip', 'Takip Ettiklerim'" <<<"${AV2}" || fail "ikinci liste yok"
-grep -qF "grup('diger', 'Diğer Fonlar'" <<<"${AV2}" || fail "ucuncu liste yok"
-# Sıra önemli: once payin olan, sonra takip, sonra digerleri.
-awk "/grup\('pozisyon'/{a=NR} /grup\('takip'/{b=NR} /grup\('diger'/{c=NR} END{exit !(a<b && b<c)}" \
-  <<<"${AV2}" || fail "listeler yanlis sirada"
-# Kendi fonlarinda temiz olanlar da yazilir; digerlerinde yalniz alarm verenler.
-grep -qF "grup('diger', 'Diğer Fonlar', 'yalnız alarm verenler', false)" <<<"${AV2}" \
-  || fail "diger fonlarda temizler de listeleniyor"
 grep -qF "id: 'alarms', label: 'Alarmlar', adminOnly: false" "${M}" || fail "ekran menude degil ya da admin'e kapali"
-printf 'PASS: uc liste dogru sirada, kendi fonlarinda temizler de gorunuyor\n'
+
+# Üç sekme, bu sırayla: portföy, takip, diğer.
+grep -qF "{ id: 'pozisyon', ad: 'Portföyümdekiler' }," "${M}" || fail "birinci sekme yok"
+grep -qF "{ id: 'takip', ad: 'Takiptekiler' }," "${M}" || fail "ikinci sekme yok"
+grep -qF "{ id: 'diger', ad: 'Diğerleri' }," "${M}" || fail "ucuncu sekme yok"
+awk "/id: 'pozisyon', ad:/{a=NR} /id: 'takip', ad:/{b=NR} /id: 'diger', ad:/{c=NR} END{exit !(a<b && b<c)}" \
+  "${M}" || fail "sekmeler yanlis sirada"
+
+# Sekme degisimi yeniden istek atmamali: tek yanit uc grubu da tasiyor.
+grep -qF "govde.replaceChildren(bolum(id))" <<<"${AV2}" || fail "sekme govdeyi yerinde degistirmiyor"
+# Yorum satirlari elenir: aciklamada gecen "reload()" sozcugu cagri degil.
+SEC_KOD="$(awk '/const sec = \(id: AlarmSekme\)/,/^  };/' "${M}" | grep -v '^\s*//')"
+grep -qE "reload\(\)|api\(" <<<"${SEC_KOD}" && fail "sekme degisimi yeniden istek atiyor"
+# Baslik da sekmeyle degismeli: govde takip listesini gosterirken baslikta
+# "Portfoyumdekiler" yazmasi olmaz.
+grep -qF "baslik.textContent = SEKME_ADI[id];" <<<"${AV2}" || fail "panel basligi sekmeyle degismiyor"
+grep -qF "ozetAlani.textContent = ozet(id);" <<<"${AV2}" || fail "panel ozeti sekmeyle degismiyor"
+# Secim modul duzeyinde: ekran yeniden kurulunca kaybolmamali.
+grep -qF "let alarmSekme: AlarmSekme = 'pozisyon';" "${M}" || fail "secili sekme saklanmiyor"
+printf 'PASS: uc sekme dogru sirada, degisim istek atmiyor, baslik takip ediyor\n'
+
+# Kutular: portfoyde renk renk, diger ikisinde toplam + alt satirda kirilim.
+for k in "'Portföyde Kırmızı'" "'Portföyde Turuncu'" "'Portföyde Sarı'" "'Takipte Alarm'" "'Diğerlerinde Alarm'"; do
+  grep -qF "metric(${k}" <<<"${AV2}" || fail "kutu yok: ${k}"
+done
+grep -qF "kirilim('takip')" <<<"${AV2}" || fail "takip kutusunda renk kirilimi yok"
+grep -qF "kirilim('diger')" <<<"${AV2}" || fail "diger kutusunda renk kirilimi yok"
+# Veri gunu kutusu kaldirildi: ekranda yer kapliyordu.
+grep -qF "'Veri Günü'" <<<"${AV2}" && fail "veri gunu kutusu hâlâ duruyor"
+printf 'PASS: bes kutu, portfoyde renk renk, digerlerinde toplam ve kirilim\n'
+
+# Ilk iki sekmede temiz fonlar da gorunur; ucuncude yalniz alarm verenler.
+grep -qF "k === 'diger' ? hepsi.filter((f) => f.score > 0) : hepsi" <<<"${AV2}" \
+  || fail "temiz fon gosterimi yanlis grupta"
+printf 'PASS: kendi fonlarinda temizler de gorunuyor, digerlerinde yalniz alarmlilar\n'

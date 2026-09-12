@@ -6247,6 +6247,20 @@ async function usersView(reload: () => void, me: Me): Promise<Node[]> {
  * bilgisi de bir bilgidir. Diğer fonlarda yalnız alarm verenler listelenir,
  * yoksa ekran 40 satır sessizlikle dolardı.
  */
+type AlarmSekme = 'pozisyon' | 'takip' | 'diger';
+
+/**
+ * Seçili sekme modül düzeyinde: ekran yeniden kurulunca seçim kaybolmamalı.
+ * Fon Hareketleri ve Piyasa ekranlarında da aynı düzen.
+ */
+let alarmSekme: AlarmSekme = 'pozisyon';
+
+const ALARM_SEKME: { id: AlarmSekme; ad: string }[] = [
+  { id: 'pozisyon', ad: 'Portföyümdekiler' },
+  { id: 'takip', ad: 'Takiptekiler' },
+  { id: 'diger', ad: 'Diğerleri' },
+];
+
 async function alarmlarView(): Promise<Node[]> {
   const d = (await api('/api/alarms')) as AlarmListesi;
   const renkAdi = (kod: string | null): string =>
@@ -6255,7 +6269,7 @@ async function alarmlarView(): Promise<Node[]> {
   const satir = (f: AlarmListeSatiri): HTMLElement => {
     const detay = iconButton('search', 'Fon detayı');
     detay.addEventListener('click', () => { void openFundModal(f.fundCode); });
-    const tr = el('tr', { class: f.score === 0 ? 'alarm-temiz' : '' }, [
+    return el('tr', { class: f.score === 0 ? 'alarm-temiz' : '' }, [
       el('td', {}, [
         el('span', { class: 'fund-code' }, [f.fundCode]),
         el('span', { class: 'fund-title' }, [f.title ?? '']),
@@ -6265,50 +6279,91 @@ async function alarmlarView(): Promise<Node[]> {
         : badge(renkAdi(f.level), f.level === null ? 'closed' : `alarm-${f.level}`)]),
       el('td', { class: 'num' }, [f.score === 0 ? el('span', { class: 'dim' }, ['—']) : String(f.score)]),
       el('td', {}, [el('div', { class: 'alarm-gerekce' },
-        f.hits.map((h) => el('span', { class: 'alarm-hit' }, [
-          `${h.label}: ${h.value}`,
-        ])))]),
-      // Detay düğmesi, tıklanabilir satır değil: projedeki her yerde fon
-      // detayı böyle açılıyor ve satıra basınca pencere açılması sürpriz olur.
+        f.hits.map((h) => el('span', { class: 'alarm-hit' }, [`${h.label}: ${h.value}`])))]),
       el('td', { class: 'actions' }, [detay]),
     ]);
-    return tr;
   };
 
-  const grup = (
-    kapsam: AlarmListeSatiri['scope'], baslik: string, aciklama: string, temizGoster: boolean,
-  ): HTMLElement => {
-    const hepsi = d.funds.filter((f) => f.scope === kapsam);
-    const gosterilen = temizGoster ? hepsi : hepsi.filter((f) => f.score > 0);
-    const alarmli = hepsi.filter((f) => f.score > 0).length;
-    return panel(
-      baslik,
-      hepsi.length === 0
-        ? aciklama
-        : `${String(alarmli)} alarm · ${String(hepsi.length)} fon · ${aciklama}`,
-      el('div', { class: 'panel-body' }, [
-        gosterilen.length === 0
-          ? el('div', { class: 'empty-state' }, [
-            hepsi.length === 0 ? 'Bu grupta fon yok.' : 'Bu gruptaki fonlarda alarm yok.',
-          ])
-          : table(['Fon', 'Durum', 'Puan', 'Gerekçe', ''], gosterilen.map(satir)),
-      ]),
-    );
+  const grupta = (k: AlarmSekme): AlarmListeSatiri[] => d.funds.filter((f) => f.scope === k);
+  const sayi = (k: AlarmSekme, renk: string): number =>
+    grupta(k).filter((f) => f.level === renk).length;
+  const alarmli = (k: AlarmSekme): number => grupta(k).filter((f) => f.score > 0).length;
+  // Renk kırılımı kutunun alt satırında: tek bir toplam "5 alarm" derken
+  // beşinin de sarı mı yoksa biri kırmızı mı olduğunu söylemiyordu.
+  const kirilim = (k: AlarmSekme): string => {
+    const p = d.levels.slice().reverse()
+      .map((l) => ({ ad: l.label, n: sayi(k, l.code) }))
+      .filter((x) => x.n > 0)
+      .map((x) => `${String(x.n)} ${x.ad.toLocaleLowerCase('tr')}`);
+    return p.length === 0 ? 'alarm yok' : p.join(' · ');
   };
 
-  const say = (kod: string): number => d.funds.filter((f) => f.level === kod).length;
-  const benim = d.funds.filter((f) => f.scope !== 'diger' && f.score > 0).length;
+  /** Sekme gövdesi. Diğerlerinde yalnız alarm verenler listelenir. */
+  const bolum = (k: AlarmSekme): HTMLElement => {
+    const hepsi = grupta(k);
+    // İlk iki sekmede temiz fonlar da yazılır: "baktım, sorun yok" bilgisi de
+    // bir bilgidir. Üçüncüde yalnız alarm verenler, yoksa ekran onlarca satır
+    // sessizlikle dolardı.
+    const gosterilen = k === 'diger' ? hepsi.filter((f) => f.score > 0) : hepsi;
+    return el('div', { class: 'panel-body' }, [
+      gosterilen.length === 0
+        ? el('div', { class: 'empty-state' }, [
+          hepsi.length === 0 ? 'Bu grupta fon yok.' : 'Bu gruptaki fonlarda alarm yok.',
+        ])
+        : table(['Fon', 'Durum', 'Puan', 'Gerekçe', ''], gosterilen.map(satir)),
+    ]);
+  };
+
+  const SEKME_ADI: Record<AlarmSekme, string> = {
+    pozisyon: 'Portföyümdekiler', takip: 'Takiptekiler', diger: 'Diğerleri',
+  };
+  const ozet = (k: AlarmSekme): string =>
+    `${String(alarmli(k))} alarm · ${String(grupta(k).length)} fon`;
+
+  const govde = el('div', {}, [bolum(alarmSekme)]);
+  const dugmeler = new Map<AlarmSekme, HTMLElement>();
+  // Panel başlığı da sekmeyle değişir. Yalnız gövdeyi değiştirmek, başlıkta
+  // "Portföyümdekiler" yazarken altta takip listesini göstermek olurdu.
+  const baslik = el('h2', {}, [SEKME_ADI[alarmSekme]]);
+  const ozetAlani = el('span', { class: 'header-meta' }, [ozet(alarmSekme)]);
+  const sec = (id: AlarmSekme): void => {
+    // Yeniden istek yok: tek yanıt üç grubu da taşıyor. reload() aynı rakamı
+    // ikinci kez indirmek ve ekranı yeniden kurmak olurdu.
+    alarmSekme = id;
+    for (const [k, b] of dugmeler) b.classList.toggle('tab-on', k === id);
+    baslik.textContent = SEKME_ADI[id];
+    ozetAlani.textContent = ozet(id);
+    govde.replaceChildren(bolum(id));
+  };
+  const sekmeler = el('div', { class: 'tabs' }, ALARM_SEKME.map((x) => {
+    const b = el('button', {
+      type: 'button', class: `tab-btn${alarmSekme === x.id ? ' tab-on' : ''}`,
+    }, [x.ad, el('span', { class: 'tab-count' }, [String(alarmli(x.id))])]);
+    b.addEventListener('click', () => { sec(x.id); });
+    dugmeler.set(x.id, b);
+    return b;
+  }));
 
   return [
-    el('div', { class: 'metric-grid' }, [
-      metric('Beni İlgilendiren', String(benim), 'Payım ve takibimdeki alarm', 'alarm'),
-      metric('Kırmızı', String(say('kirmizi')), 'Tüm fonlarda', 'alarm'),
-      metric('Turuncu', String(say('turuncu')), 'Tüm fonlarda', 'alarm'),
-      metric('Veri Günü', d.day === null ? '—' : gunAd(d.day, true), 'Son fiyat günü', 'chart'),
+    // Portföy renk renk ayrı kutularda: kendi paranın olduğu yerde "kaç
+    // kırmızı" doğrudan okunmalı. Takip ve diğerlerinde toplam yeter, renk
+    // kırılımı alt satırda.
+    el('div', { class: 'metric-grid metric-grid-5' }, [
+      metric('Portföyde Kırmızı', String(sayi('pozisyon', 'kirmizi')), 'En ağır', 'alarm'),
+      metric('Portföyde Turuncu', String(sayi('pozisyon', 'turuncu')), 'Orta', 'alarm'),
+      metric('Portföyde Sarı', String(sayi('pozisyon', 'sari')), 'Hafif', 'alarm'),
+      metric('Takipte Alarm', String(alarmli('takip')), kirilim('takip'), 'watchlist'),
+      metric('Diğerlerinde Alarm', String(alarmli('diger')), kirilim('diger'), 'fund'),
     ]),
-    grup('pozisyon', 'Payım Olan Fonlar', 'açık pozisyon', true),
-    grup('takip', 'Takip Ettiklerim', 'takip listem', true),
-    grup('diger', 'Diğer Fonlar', 'yalnız alarm verenler', false),
+    // panel() başlığı metin olarak alıyor; burada başlık sekmeyle değiştiği
+    // için düğümler elde tutuluyor ve aynı yapı elle kuruluyor.
+    el('section', { class: 'panel' }, [
+      el('div', { class: 'panel-heading' }, [
+        el('div', { class: 'panel-heading-text' }, [baslik, ozetAlani]),
+        sekmeler,
+      ]),
+      govde,
+    ]),
   ];
 }
 

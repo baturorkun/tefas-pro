@@ -127,12 +127,20 @@ Gerekçesiz renk kara kutudur ve kimse güvenmez.
 
 ## Kullanıcı ekranı: üç liste
 
-Alarmı GÖRMEK herkesin hakkı; kuralı DÜZENLEMEK admin işi. Ekran üç listeye
+Alarmı GÖRMEK herkesin hakkı; kuralı DÜZENLEMEK admin işi. Ekran üç sekmeye
 ayrılır, çünkü kullanıcı önce parası olan fonu görmeli:
 
-    1. Payım Olan Fonlar     acik pozisyon
-    2. Takip Ettiklerim      takip listesi
-    3. Diğer Fonlar          yalniz alarm verenler
+    1. Portföyümdekiler   acik pozisyon
+    2. Takiptekiler       takip listesi
+    3. Diğerleri          yalniz alarm verenler
+
+Sekme değişimi yeniden istek atmaz: tek yanıt üç grubu da taşıyor. Panel
+başlığı ve özeti de sekmeyle değişir; yalnız gövdeyi değiştirmek, başlıkta
+"Portföyümdekiler" yazarken altta takip listesini göstermek olurdu.
+
+Kutular kendi paranın olduğu yeri ayrıcalıklı kılar: portföyde renkler ayrı
+ayrı sayılır, takip ve diğerlerinde toplam yeter ve renk kırılımı alt satırda
+durur. Veri günü kutusu yok; ekranda yer kaplıyordu.
 
 Puan kullanıcıya göre değişmez; değişen yalnız sıralama. Aksi hâlde aynı fon
 iki kişide iki renk olurdu. Bir fon hem portföyde hem takip listesindeyse
@@ -157,9 +165,12 @@ sessizlikle dolardı.
 - Fon satırında renk, detayında gerekçe listesi görünüyor.
 - Alarm fona ait; kullanıcı pozisyonu PUANA girmiyor.
 - Alarm ekranı admin olmayan kullanıcıya da açık; kural düzenleme uçları değil.
-- Ekran üç listeye ayrılıyor: payım olan, takip, diğer — bu sırayla.
-- Bir fon yalnız bir listede görünüyor; pozisyon takibi eziyor.
-- İlk iki listede temiz fonlar da görünüyor, üçüncüde yalnız alarm verenler.
+- Ekran üç sekmeye ayrılıyor: portföyümdekiler, takiptekiler, diğerleri.
+- Sekme değişimi yeniden istek atmıyor; başlık ve özet sekmeyi takip ediyor.
+- Kutular: portföyde kırmızı, turuncu, sarı ayrı; takip ve diğerlerinde
+  toplam alarm ve alt satırda renk kırılımı.
+- Bir fon yalnız bir sekmede görünüyor; pozisyon takibi eziyor.
+- İlk iki sekmede temiz fonlar da görünüyor, üçüncüde yalnız alarm verenler.
 
 ## Kapsam dışı
 
