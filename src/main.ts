@@ -5727,6 +5727,8 @@ async function portfolioView(me: Me): Promise<Node[]> {
 
   const bekleyenToplam = bekleyen.count + bekleyen.sellCount;
   const veriGunu = h.dayDate ?? rows[0]?.asOfDate ?? null;
+  const enBuyuk = rows.reduce<PortfolioRow | undefined>(
+    (m, r) => (m === undefined || Number(r.value) > Number(m.value) ? r : m), undefined);
 
   // PDF: tarayıcının yazdırması. Projeye bağımlılık girmiyor ve sunucuda PDF
   // üreten bir şey yok; "PDF olarak kaydet" tarayıcının kendi penceresinde.
@@ -5742,9 +5744,10 @@ async function portfolioView(me: Me): Promise<Node[]> {
       el('strong', {}, ['TEFAS-Pro · Portföyüm']),
       el('span', {}, [`${me.fullName} · ${veriGunu === null ? '—' : gunAd(veriGunu)}`]),
     ]),
-    // Sekiz kutu dört+dört, bekleyen çıkınca dokuz kutu beş+dört: iki satır,
-    // tek başına bir sıraya düşen kutu yok.
-    el('div', { class: bekleyenToplam === 0 ? 'metric-grid metric-grid-8' : 'metric-grid metric-grid-9' }, [
+    // Kutu sayısı SABİT on, beş+beş. Bekleyen kutusu sıfırken gizlenince
+    // ızgara sekiz ile dokuz arasında biçim değiştiriyor, dokuzda bir yer boş
+    // kalıyordu. Sabit sayı: boşluk yok, sıçrama yok, kağıtta da aynı.
+    el('div', { class: 'metric-grid metric-grid-10' }, [
       metric('Maliyet', money(String(cost)), `${String(rows.length)} Fon`, 'money'),
       metric('Bugünkü Değer', money(String(value)), rows[0]?.asOfDate ?? '—', 'chart'),
       // "Açık": yanındaki Toplam Kazanç kapananları da içeriyor; ikisi aynı
@@ -5778,13 +5781,21 @@ async function portfolioView(me: Me): Promise<Node[]> {
         h.weightedDays === null ? '—' : `${String(h.weightedDays)}g`,
         h.firstBuyDate === null ? 'açık lot yok' : `ilk alım ${gunAd(h.firstBuyDate, true)}`,
         'transactions'),
-      // Yalnız bekleyen alım varken çizilir; sıfırken boş bir kutu şeridi
-      // kalabalıklaştırırdı. Tutar YOK: fiyat açıklanmadı.
-      ...(bekleyenToplam === 0 ? [] : [metric(
-        'Bekleyen İşlem', String(bekleyenToplam),
-        [`${String(bekleyen.count)} alım`, `${String(bekleyen.sellCount)} satış`]
-          .filter((t) => !t.startsWith('0 ')).join(' · '),
-        'transactions', 'işlem')]),
+      // En büyük pozisyon: yoğunlaşma tek bakışta. Tabloyu taramadan hangi
+      // fonun portföyün yüzde kaçı olduğu görünmüyordu.
+      metric('En Büyük Pozisyon', enBuyuk === undefined ? '—' : enBuyuk.fundCode,
+        enBuyuk === undefined || value === 0
+          ? 'pozisyon yok'
+          : `${pct((Number(enBuyuk.value) / value) * 100, 1)} · ${money(enBuyuk.value)}`,
+        'portfolio'),
+      // Sıfırken de duruyor: kutu sayısı sabit kalsın diye. Tutar YOK: fiyat
+      // açıklanmadı.
+      metric('Bekleyen İşlem', String(bekleyenToplam),
+        bekleyenToplam === 0
+          ? 'işlem yok'
+          : [`${String(bekleyen.count)} alım`, `${String(bekleyen.sellCount)} satış`]
+            .filter((t) => !t.startsWith('0 ')).join(' · '),
+        'transactions', 'işlem'),
     ]),
     panel(
       'Portföyüm',

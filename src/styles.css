@@ -175,13 +175,12 @@ body {
    ikinci sıraya düşüyordu. */
 .metric-grid-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 @media (max-width: 1200px) { .metric-grid-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-/* Portföyüm: sekiz kutu dört+dört, dokuz kutu beş+dört — iki satır. Üç sütun
-   dokuz kutuyu üç satıra yayıyor ve kutular aşırı genişliyordu. Dar ekranda
-   dokuz kutu üçe düşer; beş sütun 1200px altında okunmuyor. */
-.metric-grid-8 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.metric-grid-9 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-@media (max-width: 1200px) {
-  .metric-grid-9 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Portföyüm: on kutu beş+beş, sayı sabit. Sekiz/dokuz arasında değişen ızgara
+   dokuzda bir yer boş bırakıyordu; üç sütun kutuları aşırı genişletiyordu.
+   Dar ekranda beş sütun okunmuyor, ikiye düşer. */
+.metric-grid-10 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1100px) {
+  .metric-grid-10 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .metric-card {
@@ -1249,10 +1248,10 @@ textarea:focus  { outline: none; border-color: var(--accent);
      sekiz kutu dört satır oluyor, son satır ilk sayfaya sığmayıp ikinci
      sayfaya kayıyor ve bir kutu eksik görünüyordu. Ölçüldü. Bu blok dosyanın
      sonunda: aynı özgüllükteki ekran kurallarını sırayla eziyor. */
-  .metric-grid, .metric-grid-5, .metric-grid-7, .metric-grid-8 {
+  .metric-grid, .metric-grid-5, .metric-grid-7 {
     grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; break-after: avoid;
   }
-  .metric-grid-9 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .metric-grid-10 { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; break-after: avoid; }
   .panel-heading { break-after: avoid; }
   .table-wrap { overflow: visible; }
   table { font-size: .8rem; }
