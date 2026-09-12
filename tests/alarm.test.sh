@@ -216,3 +216,41 @@ grep -qF "el('td', { class: 'num' }, [String(say(l.code))])" <<<"${AV}" \
   || fail "renk basina fon sayisi hesaplanmiyor"
 grep -qF "'Şu An'" "${M}" && fail "anlasilmayan Su An basligi duruyor"
 printf 'PASS: renk esikleri tablosunda renk basina uyan fon sayisi var\n'
+
+# ─── Kişi başına düşen pay adedi (RQ-0066) ───
+MIG2="${PROJECT_ROOT}/db/migrations/045_per_investor_rule.sql"
+grep -qF "'kisi_basi_dusus'" "${MIG2}" || fail "yeni olcut kisit listesinde yok"
+# Iki esik iki olcutte kullaniliyor.
+grep -qF "(kind IN ('balina_cikis', 'kisi_basi_dusus')) = (threshold2 IS NOT NULL)" "${MIG2}" \
+  || fail "ikinci esik kisiti yeni olcutu kapsamiyor"
+# balina silinmiyor, kapatiliyor: kayitli alarm gerekceleri o satira bagli.
+grep -qF "UPDATE alarm_rule SET is_active = false" "${MIG2}" || fail "balina kurali pasife alinmiyor"
+grep -qE "DELETE FROM alarm_rule" "${MIG2}" && fail "balina kurali siliniyor; gecmis gerekceler kirilir"
+printf 'PASS: yeni olcut eklendi, balina silinmeden pasife alindi\n'
+
+# PARA degil PAY: para olcutu fiyattan kirleniyor. Olculdu — PBR'de kisi basi
+# para %27,6 duserken kisi basi PAY %22,1 artmis; GPG'nin dususu tamamen
+# fiyattan; TLY'de para hicbir sey gormezken pay gercek cikisi yakaliyor.
+KB="$(awk '/Kişi başına düşen PAY ADEDI/,/AS kisi_basi,/' "${A}")"
+[ -n "${KB}" ] || fail "kisi basi olcutu bulunamadi"
+grep -qF "array_agg(pay ORDER BY trade_date" <<<"${KB}" || fail "olcut pay adedini kullanmiyor"
+grep -qF "array_agg(aum ORDER BY trade_date" <<<"${KB}" && fail "olcut hâlâ paraya bakiyor"
+printf 'PASS: olcut pay adedinden, fiyattan bagimsiz\n'
+
+# Iki sartli: seyrelme alarm degil.
+grep -qF "WHEN 'kisi_basi_dusus'  THEN m.kisi_basi <= r.threshold AND m.yat_degisim < r.threshold2" "${A}" \
+  || fail "kural iki sartli degil; seyrelme alarm sayilir"
+# Pencerenin ucunda veri yoksa olcut NULL kalir.
+grep -qF "(array_agg(pay ORDER BY trade_date))[1] > 0" <<<"${KB}" || fail "eksik pay verisi ayirt edilmiyor"
+printf 'PASS: seyrelme eleniyor, eksik veride kural atesmiyor\n'
+
+# Ekranda cumle olarak okunuyor.
+grep -qF "kisi_basi_dusus: ['Son ', { alan: 'windowDays' }, ' günde kişi başına düşen pay adedi '" "${M}" \
+  || fail "yeni kuralin cumle sablonu yok"
+printf 'PASS: yeni kural ekranda cumle olarak\n'
+
+# Kural listesi once AILEYE gore sirali: yeni kural eklenince sira numarasi
+# bosluga dustugu icin operasyon kurali akis kurallarinin arasina giriyordu.
+grep -qF "ORDER BY f.sort, r.sort, r.id" "${A}" || fail "kural listesi aileye gore sirali degil"
+grep -qF "JOIN alarm_family f ON f.code = r.family" "${A}" || fail "siralama aile tablosunu okumuyor"
+printf 'PASS: kurallar aile aile sirali, operasyon sonda\n'

@@ -45,7 +45,7 @@ f AS (
 -- Fon başına son veri günleri, en yeniden geriye numaralı.
 g AS (
   SELECT d.fund_code, d.trade_date, d.daily_return_pct r, d.nav_per_share nav,
-         d.net_flow nf, d.investor_count yat, d.aum,
+         d.net_flow nf, d.investor_count yat, d.aum, d.shares_active pay,
          row_number() OVER (PARTITION BY d.fund_code ORDER BY d.trade_date DESC) rn
     FROM fact_fund_daily d JOIN f USING (fund_code)
    WHERE d.daily_return_pct IS NOT NULL AND d.trade_date <= (SELECT d FROM ref)),
@@ -71,6 +71,26 @@ m0 AS (
     -- Net çıkış: pencere akışı, güncel büyüklüğe oranla.
     (SELECT CASE WHEN max(aum) > 0 THEN round((sum(nf) / max(aum)) * 100, 4) END
        FROM g WHERE g.fund_code = f.fund_code AND rn <= p.w AND nf IS NOT NULL AND aum IS NOT NULL) AS cikis_oran,
+    -- Kişi başına düşen PAY ADEDI = dolaşımdaki pay / yatırımcı sayısı.
+    -- Düşmesi, çıkanların kalanlardan büyük olduğu anlamına gelir.
+    --
+    -- Neden para değil pay: para ölçütü fiyattan kirleniyor. Fon değer
+    -- kaybedince kimse çıkmasa bile kişi başı tutar düşüyor. Ölçüldü —
+    -- PBR'de kişi başı para %27,6 düşerken kişi başı PAY %22,1 ARTMIŞ:
+    -- çıkanlar ortalamadan küçükmüş, para ölçütü tersini söylüyordu. GPG'nin
+    -- %4,9'luk düşüşü tamamen fiyattan (payda %0,0). Ters yönde de aynı:
+    -- TLY'de para %0,5 artarken pay %2,7 düşmüş, yani gerçek çıkış fiyat
+    -- kazancının altında gizlenmiş.
+    (SELECT CASE WHEN count(*) >= 2
+                  AND (array_agg(pay ORDER BY trade_date))[1] > 0
+                  AND (array_agg(yat ORDER BY trade_date))[1] > 0
+                  AND (array_agg(yat ORDER BY trade_date DESC))[1] > 0
+             THEN round(((((array_agg(pay ORDER BY trade_date DESC))[1]
+                          / (array_agg(yat ORDER BY trade_date DESC))[1])
+                        / ((array_agg(pay ORDER BY trade_date))[1]
+                          / (array_agg(yat ORDER BY trade_date))[1])) - 1) * 100, 4) END
+       FROM g WHERE g.fund_code = f.fund_code AND rn <= p.w
+         AND yat IS NOT NULL AND pay IS NOT NULL) AS kisi_basi,
     -- Fiyatsız iş günü: evrenin açık olduğu ama bu fonun veri vermediği gün.
     (SELECT count(*) FROM gunler
       WHERE gunler.trade_date > coalesce((SELECT max(trade_date) FROM g
@@ -98,6 +118,7 @@ vurus AS (
       WHEN 'yatirimci_azalma' THEN m.yat_degisim
       WHEN 'net_cikis'        THEN m.cikis_oran
       WHEN 'balina_cikis'     THEN m.cikis_oran
+      WHEN 'kisi_basi_dusus'  THEN m.kisi_basi
       WHEN 'veri_yok'         THEN m.veri_yok_gun::numeric
     END AS deger
   FROM m JOIN alarm_rule r ON r.window_days = m.w AND r.is_active
@@ -105,6 +126,10 @@ vurus AS (
     WHEN 'ardisik_eksi'     THEN m.ardisik >= r.threshold
     WHEN 'veri_yok'         THEN m.veri_yok_gun >= r.threshold
     WHEN 'balina_cikis'     THEN m.cikis_oran <= r.threshold AND m.yat_degisim >= r.threshold2
+    -- İkinci şart seyrelmeyi dışarıda tutuyor: AFS'te kişi başı %2,9 düştü
+    -- ama yatırımcı sayısı ARTTI, yani kimse kaçmıyor, küçük yatırımcı
+    -- giriyor ve ortalamayı aşağı çekiyor.
+    WHEN 'kisi_basi_dusus'  THEN m.kisi_basi <= r.threshold AND m.yat_degisim < r.threshold2
     WHEN 'birikimli_getiri' THEN m.birikimli <= r.threshold
     WHEN 'gruba_gore'       THEN m.gruba_gore <= r.threshold
     WHEN 'zirveden_dusus'   THEN m.zirveden <= r.threshold
@@ -185,11 +210,15 @@ export interface AlarmKural {
 }
 
 export async function alarmKurallari(pool: pg.Pool): Promise<AlarmKural[]> {
+  // Sıra önce AİLEYE göre: yeni kural eklenince sıra numarası boşluğa
+  // düştüğü için operasyon kuralı akış kurallarının arasına giriyordu.
+  // Aile sırası tablodan geliyor, kural sırası aile içinde.
   const r = await pool.query<AlarmKural>(
-    `SELECT id, kind, family, label, window_days AS "windowDays",
-            threshold::text, threshold2::text, points,
-            is_active AS "isActive", sort
-       FROM alarm_rule ORDER BY sort, id`,
+    `SELECT r.id, r.kind, r.family, r.label, r.window_days AS "windowDays",
+            r.threshold::text, r.threshold2::text, r.points,
+            r.is_active AS "isActive", r.sort
+       FROM alarm_rule r JOIN alarm_family f ON f.code = r.family
+      ORDER BY f.sort, r.sort, r.id`,
   );
   return r.rows;
 }
