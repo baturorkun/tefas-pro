@@ -12,7 +12,7 @@ grep -qE "INSERT INTO app_session" "${SRC}" && fail "oturum kopyalanmamalı"
 
 # Kaynak korunmalı: transfer taşır, clone kopyalar.
 grep -q "DELETE FROM user_watchlist" "${SRC}" || fail "transfer hâlâ taşımalı"
-awk '/export async function clone/,/^}/' "${SRC}" | grep -qE "DELETE|UPDATE .* SET user_id" \
+grep -qE "DELETE|UPDATE .* SET user_id" <<<"$(awk '/export async function clone/,/^}/' "${SRC}")" \
   && fail "clone kaynağa dokunmamalı"
 printf 'PASS: clone kaynağı korur, oturum kopyalamaz\n'
 
@@ -25,8 +25,8 @@ grep -q "bayraklar.includes('--yes')" "${SRC}" || fail "drop onay istemeli"
 grep -q "son yönetici; silinemez" "${SRC}" || fail "son yönetici korunmalı"
 # Sıra foreign key'e göre: işlemler kendi aralarında bağlı, referans önce
 # boşaltılmalı yoksa bölünmüş parçayı silmek kardeşine takılır.
-awk '/export async function drop/,/^}/' "${SRC}" \
-  | grep -q "SET split_from_id = NULL" || fail "silmeden önce bölünme referansı boşaltılmalı"
+grep -q "SET split_from_id = NULL" <<<"$(awk '/export async function drop/,/^}/' "${SRC}")" \
+  || fail "silmeden önce bölünme referansı boşaltılmalı"
 printf 'PASS: drop onay istiyor, son yöneticiyi ve sırayı koruyor\n'
 
 if [ -z "${DATABASE_URL:-}" ] || ! command -v psql >/dev/null 2>&1 \

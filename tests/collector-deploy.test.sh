@@ -55,8 +55,7 @@ printf 'PASS: slot temizliği collector image'"'"'ını da siliyor\n'
 # 2026-09-07'de iki deploy'da ölçüldü, log'da "Terminate orphan process:
 # (conmon)" satırı var. Biri production'ı yatırdı ve podman "Up (unhealthy)"
 # diye kayıtlı ama gerçekte çalışmayan bir container bıraktı.
-awk '/- name: Replace slot container/,/run: \|/' "${WF}" \
-  | grep -q "RUNNER_TRACKING_ID: ''" \
+grep -q "RUNNER_TRACKING_ID: ''" <<<"$(awk '/- name: Replace slot container/,/run: \|/' "${WF}")" \
   || fail "container adımı runner'ın orphan temizliğinden muaf değil"
 printf 'PASS: container conmon süreci deploy sonunda öldürülmüyor\n'
 

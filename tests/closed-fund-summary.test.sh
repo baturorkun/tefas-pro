@@ -20,9 +20,9 @@ printf 'PASS: iki kırılım tek yanıttan, sekme değişimi istek atmıyor\n'
 
 # Fon toplamı işlem toplamıyla aynı değişkenlerden gelmeli. Ayrı hesaplanırsa
 # iki tablo farklı rakam gösterir ve hangisinin doğru olduğu anlaşılmaz.
-awk '/const fonFoot = /,/\]\);/' <<<"${CV}" | grep -q "num(String(buy))" \
+grep -q "num(String(buy))" <<<"$(awk '/const fonFoot = /,/\]\);/' <<<"${CV}")" \
   || fail "fon toplamı işlem toplamından ayrı hesaplanıyor"
-awk '/const fonFoot = /,/\]\);/' <<<"${CV}" | grep -q "signed(String(gain)" \
+grep -q "signed(String(gain)" <<<"$(awk '/const fonFoot = /,/\]\);/' <<<"${CV}")" \
   || fail "fon K/Z toplamı işlem toplamından ayrı hesaplanıyor"
 printf 'PASS: fon toplamı işlem toplamıyla aynı kaynaktan\n'
 
@@ -41,13 +41,13 @@ grep -q "iconButton('transactions'" <<<"${CV}" || fail "satır sonunda işlem ik
 
 # Pencere ile İşlemler sekmesi aynı tabloyu çizmeli: iki yerde ayrı
 # kurulursa sütunlar zamanla birbirinden ayrılır.
-awk '/const fonPenceresi = /,/^  };/' <<<"${CV}" | grep -q "ISLEM_BASLIK" \
+grep -q "ISLEM_BASLIK" <<<"$(awk '/const fonPenceresi = /,/^  };/' <<<"${CV}")" \
   || fail "pencere ortak tablo tanımını kullanmıyor"
-awk '/const islemTablosu = /,/^  };/' <<<"${CV}" | grep -q "ISLEM_BASLIK" \
+grep -q "ISLEM_BASLIK" <<<"$(awk '/const islemTablosu = /,/^  };/' <<<"${CV}")" \
   || fail "işlem sekmesi ortak tablo tanımını kullanmıyor"
-awk '/const fonPenceresi = /,/^  };/' <<<"${CV}" | grep -q "islemSatiri" \
+grep -q "islemSatiri" <<<"$(awk '/const fonPenceresi = /,/^  };/' <<<"${CV}")" \
   || fail "pencere ortak satır kurucusunu kullanmıyor"
-awk '/const fonPenceresi = /,/^  };/' <<<"${CV}" | grep -q "comboFilter" \
+grep -q "comboFilter" <<<"$(awk '/const fonPenceresi = /,/^  };/' <<<"${CV}")" \
   && fail "pencerede filtre var; tek fonun penceresinde gereksiz"
 
 # Filtre satırı Fon Hareketleri'ndeki desenle aynı; iki filtre AND ile birleşir.
@@ -57,10 +57,10 @@ grep -q "kapananFiltre.platform === '' || r.platform === kapananFiltre.platform"
 
 # İşlem listesi alış tarihine göre. Satış sıralaması aynı fonun bacaklarını
 # giriş sırasının tersine diziyordu.
-awk '/FROM analytics.closed_position/,/\[userId\]/' "${PROJECT_ROOT}/src/server/repository.ts" \
-  | grep -q "ORDER BY buy_date DESC" || fail "kapanan liste alış tarihine göre sıralı değil"
+grep -q "ORDER BY buy_date DESC" <<<"$(awk '/FROM analytics.closed_position/,/\[userId\]/' "${PROJECT_ROOT}/src/server/repository.ts")" \
+  || fail "kapanan liste alış tarihine göre sıralı değil"
 # Varsayılan sekme fon; 53 satırlık liste bir ekrana sığmıyor.
-awk '/function readKapananSekme/,/^}/' "${M}" | grep -q "=== 'tx' ? 'tx' : 'fund'" \
+grep -q "=== 'tx' ? 'tx' : 'fund'" <<<"$(awk '/function readKapananSekme/,/^}/' "${M}")" \
   || fail "varsayılan sekme fon değil"
 grep -q "KAPANAN_SEKME_KEY = 'tefas.closed.section'" "${M}" || fail "seçim saklanmıyor"
 printf 'PASS: fon satırı işlemleri pencerede açıyor, sıralamalar ve varsayılan sekme yerinde\n'
@@ -70,9 +70,9 @@ printf 'PASS: fon satırı işlemleri pencerede açıyor, sıralamalar ve varsay
 # sütunlu bir tabloda başlığı kaybetmek okumayı bitirir. table-wrap zaten
 # overflow-x taşıyor; sticky'nin tutunacağı kutu da o.
 C="${PROJECT_ROOT}/src/styles.css"
-awk '/\.modal-xwide \.modal-body/' "${C}" | grep -q "max-height: none" \
+grep -q "max-height: none" <<<"$(awk '/\.modal-xwide \.modal-body/' "${C}")" \
   || fail "kaydırma hâlâ modal-body'de; başlık kayıp gider"
-awk '/\.modal-xwide \.table-wrap/' "${C}" | grep -q "max-height" \
+grep -q "max-height" <<<"$(awk '/\.modal-xwide \.table-wrap/' "${C}")" \
   || fail "tablo çerçevesinin yükseklik sınırı yok"
 grep -q "\.modal-xwide thead th { position: sticky; top: 0" "${C}" \
   || fail "sütun başlıkları yapışkan değil"

@@ -36,7 +36,7 @@ printf 'PASS: tahmin etiketli, fiyatın günüyle birlikte, fiyatsız fonda yok\
 grep -q "const yalnizBekleyen" <<<"${PV}" || fail "yalnız bekleyen alımı olan fon listelenmiyor"
 grep -q "class: 'pending-row'" <<<"${PV}" || fail "bekleyen satırın kendi sınıfı yok"
 # Toplamlar rows üzerinden: bekleyen satır toplama girerse rakamlar bozulur.
-awk '/const foot = el/,/\]\);/' <<<"${PV}" | grep -q "String(rows.length)" \
+grep -q "String(rows.length)" <<<"$(awk '/const foot = el/,/\]\);/' <<<"${PV}")" \
   || fail "toplam satırı bekleyenleri de sayıyor olabilir"
 printf 'PASS: bekleyen alım satır oluyor ama toplamlara girmiyor\n'
 
@@ -49,7 +49,7 @@ grep -q "btn.addEventListener('click'" <<<"${PV}" || fail "işaret tıklamayla a
 printf 'PASS: iki işaret ayrı, imleçle de tıklamayla da açılıyor\n'
 
 # Aynı bilgi fon detayında da var ve orada da ayrı bir uç yok.
-awk '/^async function openFundModal/,/^}/' "${M}" | grep -q "pending-note" \
+grep -q "pending-note" <<<"$(awk '/^async function openFundModal/,/^}/' "${M}")" \
   || fail "fon detayında bekleyen işlem notu yok"
 # grep -F: desende tırnak ve eğik çizgi var, regex olarak yorumlanmasın.
 grep -Fq "(await api('/api/portfolio/pending')) as BekleyenAlim" "${M}" \

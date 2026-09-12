@@ -9,10 +9,10 @@ fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 R="${PROJECT_ROOT}/src/server/repository.ts"
 
 # Hisse kırılımını okuyan iki yol var; ikisinde de aynı kural olmalı.
-awk '/^export async function fundDetail/,/^}/' "${R}" \
-  | grep -q "h.weight_pct > 0" || fail "fon detayı çıkılmış pozisyonu gösteriyor"
-awk '/^export async function stockAllocation/,/^}/' "${R}" \
-  | grep -q "h.weight_pct > 0" || fail "hisse listesi çıkılmış pozisyonu gösteriyor"
+grep -q "h.weight_pct > 0" <<<"$(awk '/^export async function fundDetail/,/^}/' "${R}")" \
+  || fail "fon detayı çıkılmış pozisyonu gösteriyor"
+grep -q "h.weight_pct > 0" <<<"$(awk '/^export async function stockAllocation/,/^}/' "${R}")" \
+  || fail "hisse listesi çıkılmış pozisyonu gösteriyor"
 printf 'PASS: iki okuma yolu da sıfır ağırlığı dışarıda bırakıyor\n'
 
 # Asistan kendi sorgusunu yazmıyor, aynı iki fonksiyonu tool olarak çağırıyor.
@@ -26,6 +26,6 @@ printf 'PASS: asistan ortak okuma yollarını kullanıyor\n'
 # Satır silinmiyor: "fon bundan çıktı" gerçek bilgi ve weight_change taşıyor.
 grep -q "weight_pct > 0" "${PROJECT_ROOT}/src/collector.ts" \
   && fail "collector sıfır ağırlıklı satırı yazmayı bırakmış"
-awk '/^export async function fundDetail/,/^}/' "${R}" \
-  | grep -q "h.weight_change" || fail "çıkış bilgisi taşınmıyor"
+grep -q "h.weight_change" <<<"$(awk '/^export async function fundDetail/,/^}/' "${R}")" \
+  || fail "çıkış bilgisi taşınmıyor"
 printf 'PASS: çıkış satırı saklanıyor, yalnız güncel varlık sayılmıyor\n'

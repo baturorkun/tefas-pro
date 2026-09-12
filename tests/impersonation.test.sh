@@ -46,8 +46,8 @@ grep -qF "!hedef.isActive" "${I}" || fail "pasif hesaba gecis acik"
 
 # Geçişi bitirmek her oturumun hakkı: yetkisi 'super' olmayan hedefe geçmiş
 # bir oturum da X'e basabilmeli.
-awk "/path === '\/api\/impersonate' && method === 'DELETE'/,/^      }/" "${I}" \
-  | grep -qF "ctx.actor === null" || fail "gecisi bitirme yolu gecis hâlini kontrol etmiyor"
+grep -qF "ctx.actor === null" <<<"$(awk "/path === '\/api\/impersonate' && method === 'DELETE'/,/^      }/" "${I}")" \
+  || fail "gecisi bitirme yolu gecis hâlini kontrol etmiyor"
 printf 'PASS: gecis uclari yetkiyi giris yapan uzerinden karariyor\n'
 
 # Yönetim ekranları superuser'a da açık: geçiş yapacağı liste orada.

@@ -91,7 +91,7 @@ grep -q "return this.tekTur(system, contents, tools);" "${G}" \
 grep -q "console.warn('gemini boş tur" "${G}" || fail "boş tur günlüğe yazılmıyor"
 # Günlüğe yanıtın tamamı yazılmamalı: kullanıcının portföy verisi ve sorusu
 # oradan sızardı.
-awk '/^function ozetle/,/^}/' "${G}" | grep -q "JSON.stringify(raw" \
+grep -q "JSON.stringify(raw" <<<"$(awk '/^function ozetle/,/^}/' "${G}")" \
   && fail "boş tur günlüğüne yanıtın tamamı yazılıyor"
 printf 'PASS: boş tur yeniden deneniyor ve sebebi günlükte\n'
 
@@ -137,8 +137,8 @@ grep -q "const o = OLCU\[olcu as keyof typeof OLCU\]" "${R}" \
 grep -q "Bilinmeyen gruplama" "${R}" || fail "tanınmayan boyut hata vermiyor"
 grep -q "Bilinmeyen ölçü" "${R}" || fail "tanınmayan ölçü hata vermiyor"
 # Filtreler parametreli: fon kodu ve tarih doğrudan metne gömülmemeli.
-awk '/export async function islemSayimi/,/^}/' "${R}" \
-  | grep -qE '\$\{filtre\.' && fail "filtre değeri sorguya gömülüyor"
+grep -qE '\$\{filtre\.' <<<"$(awk '/export async function islemSayimi/,/^}/' "${R}")" \
+  && fail "filtre değeri sorguya gömülüyor"
 printf 'PASS: serbest SQL yok; boyut ve ölçü sabit, filtre parametreli\n'
 
 # Getiri karşılaştırmasında süre söylenmeli. Alımdan beri toplam getiri
@@ -147,7 +147,7 @@ printf 'PASS: serbest SQL yok; boyut ve ölçü sabit, filtre parametreli\n'
 # fonun son 1 ayı %17,67 ve o pencerede DOH %35,23 ile önde.
 grep -q "GETİRİ KARŞILAŞTIRIRKEN süreyi söyle" "${A}" || fail "süre kuralı yok"
 grep -q "return1m/return3m" "${A}" || fail "aynı-pencere getirisi anlatılmıyor"
-awk "/name: 'fon_listesi'/,/parameters/" "${A}" | grep -q "İKİ FARKLI GETİRİ" \
+grep -q "İKİ FARKLI GETİRİ" <<<"$(awk "/name: 'fon_listesi'/,/parameters/" "${A}")" \
   || fail "tool açıklaması iki getiriyi ayırmıyor"
 # Yıllıklandırma yasak: 9 günlük %4, yıllığa çevrilince %397 çıkıyor.
 grep -q "yıllığa ÇEVİRME" "${A}" || fail "yıllıklandırma yasağı yok"
@@ -190,7 +190,7 @@ M="${PROJECT_ROOT}/db/migrations/036_assistant_conversation.sql"
 grep -q "tool_names" "${M}" || fail "tool adları saklanmıyor"
 grep -qiE "functionResponse|tool_result|result +jsonb" "${M}" \
   && fail "migration tool sonucu saklıyor"
-awk '/export async function konusmayaYaz/,/^}/' "${R}" | grep -qi "functionResponse" \
+grep -qi "functionResponse" <<<"$(awk '/export async function konusmayaYaz/,/^}/' "${R}")" \
   && fail "konuşmaya tool sonucu yazılıyor"
 # Hesap silinince konuşmaları da gitmeli.
 grep -q "REFERENCES app_user(id) ON DELETE CASCADE" "${M}" \
@@ -203,7 +203,7 @@ printf 'PASS: yalnız metin saklanıyor; hesap silinince konuşmalar da gidiyor\
 # Kimlik ayrı bir sorguya bırakılsaydı, unutulduğunda sessizce başkasının
 # konuşması okunurdu.
 for f in konusmaMesajlari konusmayaYaz konusmaSil; do
-  awk "/export async function ${f}/,/^}/" "${R}" | grep -q 'user_id = \$' \
+  grep -q 'user_id = \$' <<<"$(awk "/export async function ${f}/,/^}/" "${R}")" \
     || fail "${f} kullanıcı kontrolü yapmıyor"
 done
 printf 'PASS: konuşmalar yalnız sahibine açık\n'
