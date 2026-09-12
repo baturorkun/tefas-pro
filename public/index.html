@@ -11,6 +11,10 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+  <!-- Süren istek çubuğu. Uygulamanın dışında duruyor: ekran yeniden
+       çizilirken de yerinde kalmalı, yoksa asıl uzun bekleme anında
+       kayboluyor. -->
+  <div id="yukleme" aria-hidden="true"></div>
   <main id="app"></main>
   <script type="module" src="/app.js"></script>
 </body>

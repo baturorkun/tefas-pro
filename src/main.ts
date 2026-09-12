@@ -332,11 +332,57 @@ const root = document.getElementById('app');
 
 // ─── Yardımcılar ────────────────────────────────────────────────────────────
 
+/**
+ * Süren istek sayacı ve üstteki ilerleme çubuğu.
+ *
+ * Sayaç `api()` içinde tutuluyor: bütün ağ istekleri oradan geçiyor ve
+ * gösterge her ekranı ayrı ayrı düzenlemeden çalışıyor.
+ *
+ * Çubuk GECİKMELİ açılıyor. Anında açılsaydı 40 ms süren bir istekte açılıp
+ * kapanır ve düzeltmeye çalıştığımız göz kırpmanın aynısını üretirdi. Eşiğin
+ * altında kalan istek hiç iz bırakmıyor; zaten kullanıcı da beklemiyor.
+ */
+const YUKLEME_GECIKME_MS = 180;
+let acikIstek = 0;
+let yuklemeZamani: ReturnType<typeof setTimeout> | null = null;
+
+function yuklemeCubugu(): HTMLElement | null {
+  return document.getElementById('yukleme');
+}
+
+function yuklemeBasladi(): void {
+  acikIstek += 1;
+  if (acikIstek > 1 || yuklemeZamani !== null) return;
+  yuklemeZamani = setTimeout(() => {
+    yuklemeZamani = null;
+    // Sayaç bu arada sıfırlanmış olabilir: istek eşikten önce bitmiştir.
+    if (acikIstek > 0) yuklemeCubugu()?.classList.add('acik');
+  }, YUKLEME_GECIKME_MS);
+}
+
+function yuklemeBitti(): void {
+  acikIstek = Math.max(0, acikIstek - 1);
+  if (acikIstek > 0) return;
+  if (yuklemeZamani !== null) {
+    clearTimeout(yuklemeZamani);
+    yuklemeZamani = null;
+  }
+  yuklemeCubugu()?.classList.remove('acik');
+}
+
 async function api(path: string, init?: RequestInit): Promise<unknown> {
-  const res = await fetch(path, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-  });
+  yuklemeBasladi();
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    });
+  } finally {
+    // Sayaç yanıt gelir gelmez düşüyor, gövde ayrıştırılmadan önce: bekleme
+    // ağda, JSON.parse'ta değil.
+    yuklemeBitti();
+  }
   const body: unknown = res.status === 204 ? null : await res.json();
   if (!res.ok) {
     const message =
@@ -3817,23 +3863,6 @@ async function openFundModal(fundCode: string): Promise<void> {
   const toplamAgirlik = d.stocks.reduce((t, x) => t + Number(x.weightPct), 0);
   // Fonun günlük varlık kırılımındaki hisse payı. Kalem toplamıyla aynı şey
   // değil: biri günlük, diğeri ay sonu açıklaması.
-  let close: () => void = () => {};
-  // Sekme değişince pencere yeniden kurulur: içerik zaten elde, yeni istek
-  // atılmıyor.
-  const fonSekmeBtn = (id: FonSekme, etiket: string, sayi?: number): HTMLElement => {
-    const b = el('button', {
-      type: 'button', class: `tab-btn${fonSekme === id ? ' tab-on' : ''}`,
-    }, [etiket, ...(sayi === undefined ? [] : [
-      el('span', { class: 'tab-count' }, [String(sayi)]),
-    ])]);
-    b.addEventListener('click', () => {
-      fonSekme = id;
-      close();
-      void openFundModal(kod);
-    });
-    return b;
-  };
-
   // Kırılım ağırlığa göre sıralı geliyor; ilk satır en ağırı.
   const enAgirVarlik = d.assets[0];
   const enAgir = d.stocks[0];
@@ -3859,30 +3888,30 @@ async function openFundModal(fundCode: string): Promise<void> {
 
   // ── Sekmeler ──────────────────────────────────────────────────────────
   //
+  // Pencere BİR kez açılıyor; sekme değişince yalnız sekme paneli yerinde
+  // değişiyor. Önce her tıklamada pencere kapatılıp `openFundModal` baştan
+  // çağrılıyordu: fon detayı yeniden çekiliyor, pencere göz kırpıyordu ve
+  // kaydırma konumu sıfırlanıyordu. Oysa değişen yalnız hangi tablonun
+  // çizileceği; veri zaten elde.
+  //
   // Günlük sekmesi ayrı bir istek atıyor: seri fon detayının geri kalanından
-  // bağımsız ve her açılışta çekmek gereksiz. Yalnız o sekme seçiliyken
-  // isteniyor.
-  let gunler: FundDayRow[] = [];
-  if (fonSekme === 'daily') {
-    try {
-      gunler = (await api(`/api/funds/${encodeURIComponent(kod)}/daily?days=30`)) as FundDayRow[];
-    } catch {
-      gunler = [];
+  // bağımsız ve her açılışta çekmek gereksiz. Yalnız o sekme seçildiğinde ve
+  // yalnız BİR kez isteniyor; sekmeler arasında gidip gelmek tekrar çekmiyor.
+  let gunlerSakla: FundDayRow[] | null = null;
+  const gunlerGetir = async (): Promise<FundDayRow[]> => {
+    if (gunlerSakla === null) {
+      try {
+        gunlerSakla = (await api(`/api/funds/${encodeURIComponent(kod)}/daily?days=30`)) as FundDayRow[];
+      } catch {
+        gunlerSakla = [];
+      }
     }
-  }
+    return gunlerSakla;
+  };
 
   const SEKME_BASLIK: Record<FonSekme, string> = {
     daily: 'Günlük', assets: 'Varlık Türü', stock: 'Hisseler', sector: 'Sektör',
   };
-
-  const sekmeler: HTMLElement[] = [
-    fonSekmeBtn('daily', 'Günlük'),
-    ...(d.assets.length === 0 ? [] : [fonSekmeBtn('assets', 'Varlık Türü', d.assets.length)]),
-    ...(d.stocks.length === 0 ? [] : [
-      fonSekmeBtn('stock', 'Hisse', d.stocks.length),
-      fonSekmeBtn('sector', 'Sektör', sektorler.length),
-    ]),
-  ];
 
   // Seçili sekme verisi olmayan bir sekmeyse (fon değiştirildi, kırılım yok)
   // Günlük'e düşülüyor: o her fonda var.
@@ -3898,50 +3927,95 @@ async function openFundModal(fundCode: string): Promise<void> {
     + 'aradaki günlerde alıp satmış olabilir.',
   ]);
 
-  const gunSatir = gunler.map((g) => el('tr', {}, [
-    el('td', { class: 'num' }, [gunAd(g.date)]),
-    el('td', {}, [g.fundPct === null ? el('span', { class: 'num' }, ['—']) : signed(g.fundPct)]),
-    // Fonda olunmayan gün BOŞ, sıfır değil: sıfır "o gün kazanmadım" demek,
-    // oysa doğrusu "o gün fonda değildim".
-    el('td', {}, [g.gain === null
-      ? el('span', { class: 'num dim' }, ['—'])
-      : signed(g.gain, ' ₺')]),
-    el('td', { class: 'num dim' }, [g.value === null ? '—' : money(g.value)]),
-  ]));
+  // Sekme panelinin yaşadığı kutu. `sekmeCiz` her çağrıda içini değiştiriyor,
+  // kutunun kendisi ve etrafındaki pencere yerinde kalıyor.
+  const sekmeKutu = el('div', { class: 'fund-tabs' }, []);
 
-  const sekmeAlt =
-    fonSekme === 'daily' ? `son ${String(gunler.length)} iş günü`
-      : fonSekme === 'assets'
-        ? (d.assetsAsOf === null ? 'tarih yok' : `${gunAd(d.assetsAsOf)} · günlük`)
-        : fonSekme === 'sector'
-          ? `${String(sektorler.length)} sektör · hisselerden türetildi`
-          : `${String(d.stocks.length)} hisse · ${gunAd(d.stocksAsOf)} açıklaması · aylık`;
+  const fonSekmeBtn = (id: FonSekme, etiket: string, sayi?: number): HTMLElement => {
+    const b = el('button', {
+      type: 'button', class: `tab-btn${fonSekme === id ? ' tab-on' : ''}`,
+    }, [etiket, ...(sayi === undefined ? [] : [
+      el('span', { class: 'tab-count' }, [String(sayi)]),
+    ])]);
+    b.addEventListener('click', () => {
+      if (fonSekme === id) return;
+      fonSekme = id;
+      void sekmeCiz();
+    });
+    return b;
+  };
 
-  const sekmeGovde: Node[] =
-    fonSekme === 'daily'
-      ? (gunler.length === 0
-        ? [el('div', { class: 'empty-state' }, ['Bu fon için günlük seri yok.'])]
-        : [
-          table(['Tarih', 'Fonun Günlük %', 'Benim K/Z ₺', 'Pozisyon ₺'], gunSatir),
-          el('p', { class: 'panel-note' }, [
-            'Yüzde fonun kendi hareketi, herkes için aynı. TL senin o günkü '
-            + 'pozisyonundan ve nakit akışından arındırılmış: alım yaptığın gün '
-            + 'giren para kazanç sayılmıyor. Fonda olmadığın günlerde TL boş.',
-          ]),
-        ])
-      : fonSekme === 'assets'
-        ? [table(['Varlık Türü', 'Ağırlık'], varlikSatir)]
-        : fonSekme === 'sector'
-          ? [table(['Sektör', 'Kapsam', 'Ağırlık'], sektorler.map((g) => el('tr', {}, [
-            el('td', {}, [g.key]),
-            el('td', { class: 'num dim' }, [`${String(g.count)} hisse`]),
-            el('td', { class: 'weight-cell' }, [
-              el('span', { class: 'num' }, [pct(g.weight, 2)]),
-              bar(String(g.weight)),
+  async function sekmeCiz(): Promise<void> {
+    const gunler = fonSekme === 'daily' ? await gunlerGetir() : [];
+
+    const sekmeler: HTMLElement[] = [
+      fonSekmeBtn('daily', 'Günlük'),
+      ...(d.assets.length === 0 ? [] : [fonSekmeBtn('assets', 'Varlık Türü', d.assets.length)]),
+      ...(d.stocks.length === 0 ? [] : [
+        fonSekmeBtn('stock', 'Hisse', d.stocks.length),
+        fonSekmeBtn('sector', 'Sektör', sektorler.length),
+      ]),
+    ];
+
+    const gunSatir = gunler.map((g) => el('tr', {}, [
+      el('td', { class: 'num' }, [gunAd(g.date)]),
+      el('td', {}, [g.fundPct === null ? el('span', { class: 'num' }, ['—']) : signed(g.fundPct)]),
+      // Fonda olunmayan gün BOŞ, sıfır değil: sıfır "o gün kazanmadım" demek,
+      // oysa doğrusu "o gün fonda değildim".
+      el('td', {}, [g.gain === null
+        ? el('span', { class: 'num dim' }, ['—'])
+        : signed(g.gain, ' ₺')]),
+      el('td', { class: 'num dim' }, [g.value === null ? '—' : money(g.value)]),
+    ]));
+
+    const sekmeAlt =
+      fonSekme === 'daily' ? `son ${String(gunler.length)} iş günü`
+        : fonSekme === 'assets'
+          ? (d.assetsAsOf === null ? 'tarih yok' : `${gunAd(d.assetsAsOf)} · günlük`)
+          : fonSekme === 'sector'
+            ? `${String(sektorler.length)} sektör · hisselerden türetildi`
+            : `${String(d.stocks.length)} hisse · ${gunAd(d.stocksAsOf)} açıklaması · aylık`;
+
+    const sekmeGovde: Node[] =
+      fonSekme === 'daily'
+        ? (gunler.length === 0
+          ? [el('div', { class: 'empty-state' }, ['Bu fon için günlük seri yok.'])]
+          : [
+            table(['Tarih', 'Fonun Günlük %', 'Benim K/Z ₺', 'Pozisyon ₺'], gunSatir),
+            el('p', { class: 'panel-note' }, [
+              'Yüzde fonun kendi hareketi, herkes için aynı. TL senin o günkü '
+              + 'pozisyonundan ve nakit akışından arındırılmış: alım yaptığın gün '
+              + 'giren para kazanç sayılmıyor. Fonda olmadığın günlerde TL boş.',
             ]),
-          ]))), agirlikNotu]
-          : [table(['Hisse', 'Ağırlık', 'Önceki Ay', 'Fark', '1 Hafta', '1 Ay'], rows),
-            agirlikNotu];
+          ])
+        : fonSekme === 'assets'
+          ? [table(['Varlık Türü', 'Ağırlık'], varlikSatir)]
+          : fonSekme === 'sector'
+            ? [table(['Sektör', 'Kapsam', 'Ağırlık'], sektorler.map((g) => el('tr', {}, [
+              el('td', {}, [g.key]),
+              el('td', { class: 'num dim' }, [`${String(g.count)} hisse`]),
+              el('td', { class: 'weight-cell' }, [
+                el('span', { class: 'num' }, [pct(g.weight, 2)]),
+                bar(String(g.weight)),
+              ]),
+            ]))), agirlikNotu]
+            : [table(['Hisse', 'Ağırlık', 'Önceki Ay', 'Fark', '1 Hafta', '1 Ay'], rows),
+              agirlikNotu];
+
+    // Tek sekme şeridi. Önce Varlık Türü ayrı bir panel, Hisseler/Sektör ayrı
+    // ve kendi içinde sekmeliydi: aynı pencerede iki farklı düzen kuralı vardı
+    // ve pencere alt alta iki tabloyla uzuyordu.
+    //
+    // Sekme yalnız VERİSİ OLANA göre çıkıyor. Para piyasası fonunda hisse
+    // kırılımı yok; boş bir sekme açıp "veri yok" yazmak, kullanıcıyı
+    // tıklatıp hiçbir şey göstermemek olurdu.
+    sekmeKutu.replaceChildren(panel(
+      SEKME_BASLIK[fonSekme],
+      sekmeAlt,
+      el('div', { class: 'panel-body' }, sekmeGovde),
+      el('div', { class: 'tabs' }, sekmeler),
+    ));
+  }
 
   // Bekleyen işlemler burada da duruyor: kullanıcı detaya girmeden de
   // görebilmeli ama girince de kaybetmemeli. Ayrı uç değil, Portföyüm'ün
@@ -3994,22 +4068,13 @@ async function openFundModal(fundCode: string): Promise<void> {
           : `${pct(Number(enAgir.weightPct), 2)} · ${enAgir.company ?? 'yabancı borsa'}`,
         'money'),
     ]),
-    // Tek sekme şeridi. Önce Varlık Türü ayrı bir panel, Hisseler/Sektör ayrı
-    // ve kendi içinde sekmeliydi: aynı pencerede iki farklı düzen kuralı vardı
-    // ve pencere alt alta iki tabloyla uzuyordu.
-    //
-    // Sekme yalnız VERİSİ OLANA göre çıkıyor. Para piyasası fonunda hisse
-    // kırılımı yok; boş bir sekme açıp "veri yok" yazmak, kullanıcıyı
-    // tıklatıp hiçbir şey göstermemek olurdu.
-    panel(
-      SEKME_BASLIK[fonSekme],
-      sekmeAlt,
-      el('div', { class: 'panel-body' }, sekmeGovde),
-      el('div', { class: 'tabs' }, sekmeler),
-    ),
+    sekmeKutu,
   ]);
 
-  close = openModal(d.fundCode, d.title ?? null, govde, [], 'wide');
+  // İlk sekme pencere açılmadan çiziliyor: boş bir kutuyla açılıp sonra
+  // dolması, düzelttiğimiz göz kırpmanın bir başka biçimi olurdu.
+  await sekmeCiz();
+  openModal(d.fundCode, d.title ?? null, govde, [], 'wide');
 }
 
 /**
