@@ -144,9 +144,15 @@ printf 'PASS: bes kutu, portfoyde renk renk, digerlerinde toplam ve kirilim\n'
 
 # Yalniz alarm verenler listelenir. Temiz fonlari da yazmak ekrani 30 satir
 # sessizlikle dolduruyor ve alarm veren satir aralarinda kayboluyordu.
-grep -qF "const gosterilen = hepsi.filter((f) => f.score > 0);" <<<"${AV2}" \
-  || fail "temiz fonlar da listeleniyor"
-grep -qF "badge('Temiz'" <<<"${AV2}" && fail "temiz rozeti hâlâ var"
+# Olcut PUAN degil RENK: puani 1-19 arasinda kalan fon esigi asmamistir ve
+# listeye alininca rozeti bos kaliyordu. Olculdu: 7 fon bu aralikta.
+grep -qF "const gosterilen = hepsi.filter((f) => f.level !== null);" <<<"${AV2}" \
+  || fail "esik alti fonlar da listeleniyor"
+grep -qF "grupta(k).filter((f) => f.level !== null).length" <<<"${AV2}" \
+  || fail "sekme sayaci listeyle ayni olcutu kullanmiyor"
+# "Temiz" belirsiz bir kelimeydi: hem alarm vermeyen fonu hem eşik altında
+# kalanı anlatıyordu. Hiçbir ekranda etiket olarak kullanılmaz.
+grep -qF "'Temiz'" "${M}" && fail "temiz etiketi hâlâ var"
 grep -qF "alarm-temiz" "${M}" && fail "temiz satir bicimi hâlâ kullaniliyor"
 grep -qF "alarm-temiz" "${C}" && fail "temiz satir stili olu kod"
 # Gerekcesiz renk kara kutudur: hangi kural hangi rakamla atesledi yazmali.

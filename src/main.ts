@@ -6263,8 +6263,9 @@ const ALARM_SEKME: { id: AlarmSekme; ad: string }[] = [
 
 async function alarmlarView(): Promise<Node[]> {
   const d = (await api('/api/alarms')) as AlarmListesi;
-  const renkAdi = (kod: string | null): string =>
-    d.levels.find((l) => l.code === kod)?.label ?? 'Temiz';
+  // Renk yoksa satır da yok; bu yüzden geri düşülecek bir etiket gerekmiyor.
+  const renkAdi = (kod: string): string =>
+    d.levels.find((l) => l.code === kod)?.label ?? kod;
 
   const satir = (f: AlarmListeSatiri): HTMLElement => {
     const detay = iconButton('search', 'Fon detayı');
@@ -6274,7 +6275,7 @@ async function alarmlarView(): Promise<Node[]> {
         el('span', { class: 'fund-code' }, [f.fundCode]),
         el('span', { class: 'fund-title' }, [f.title ?? '']),
       ]),
-      el('td', {}, [badge(renkAdi(f.level), f.level === null ? 'closed' : `alarm-${f.level}`)]),
+      el('td', {}, [badge(renkAdi(f.level ?? ''), `alarm-${f.level ?? ''}`)]),
       el('td', { class: 'num' }, [String(f.score)]),
       el('td', {}, [el('div', { class: 'alarm-gerekce' },
         f.hits.map((h) => el('span', { class: 'alarm-hit' }, [`${h.label}: ${h.value}`])))]),
@@ -6285,7 +6286,10 @@ async function alarmlarView(): Promise<Node[]> {
   const grupta = (k: AlarmSekme): AlarmListeSatiri[] => d.funds.filter((f) => f.scope === k);
   const sayi = (k: AlarmSekme, renk: string): number =>
     grupta(k).filter((f) => f.level === renk).length;
-  const alarmli = (k: AlarmSekme): number => grupta(k).filter((f) => f.score > 0).length;
+  // Alarm = renk almış fon. Puanı eşiğin altında kalan fon (1-19) alarm
+  // değildir; listeye alınınca rozeti boş kalıyor ve "bu niye burada"
+  // sorusunu doğuruyordu.
+  const alarmli = (k: AlarmSekme): number => grupta(k).filter((f) => f.level !== null).length;
   // Renk kırılımı kutunun alt satırında: tek bir toplam "5 alarm" derken
   // beşinin de sarı mı yoksa biri kırmızı mı olduğunu söylemiyordu.
   const kirilim = (k: AlarmSekme): string => {
@@ -6299,10 +6303,9 @@ async function alarmlarView(): Promise<Node[]> {
   /** Sekme gövdesi. Diğerlerinde yalnız alarm verenler listelenir. */
   const bolum = (k: AlarmSekme): HTMLElement => {
     const hepsi = grupta(k);
-    // Yalnız alarm verenler. Temiz fonları da yazmak ekranı 30 satır
-    // sessizlikle dolduruyordu ve alarm veren satır aralarında kayboluyordu;
-    // bu ekranın işi sorunları göstermek, envanter saymak değil.
-    const gosterilen = hepsi.filter((f) => f.score > 0);
+    // Yalnız renk almış fonlar. Alarmsızları yazmak ekranı 30 satır sessizlikle
+    // dolduruyordu; eşik altındakileri yazmak da renksiz satır üretiyordu.
+    const gosterilen = hepsi.filter((f) => f.level !== null);
     return el('div', { class: 'panel-body' }, [
       gosterilen.length === 0
         ? el('div', { class: 'empty-state' }, [
@@ -6460,7 +6463,7 @@ async function alarmView(reload: () => void): Promise<Node[]> {
       metric('Kırmızı', String(say('kirmizi')), 'En ağır', 'alarm'),
       metric('Turuncu', String(say('turuncu')), 'Orta', 'alarm'),
       metric('Sarı', String(say('sari')), 'Hafif', 'alarm'),
-      metric('Temiz', String(say(null)), 'Alarm yok', 'flag'),
+      metric('Alarmsız', String(say(null)), 'Renk almayan fon', 'flag'),
       metric('Veri Günü', d.day === null ? '—' : gunAd(d.day, true), 'Son fiyat günü', 'chart'),
     ]),
     panel(
