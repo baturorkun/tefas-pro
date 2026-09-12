@@ -69,6 +69,18 @@ Kağıtta sütun sayısı artık ekranla aynı: sekiz kutu 4+4, dokuz kutu 3+3+3
 
 - Yazdırmada kutu ızgarası ekranla aynı dizilimde; boş yer ve kayan kutu yok.
 
+## Aynı RQ'da: Portföyüm ve Fon Hareketleri kutuları
+
+Basit arayüz düzeltmeleri, birlikte gitti:
+
+- Portföyüm'de kutu sayısı sabit on, beş+beş. Bekleyen kutusu sıfırken
+  gizlenince ızgara sekiz/dokuz arasında biçim değiştiriyor ve dokuzda bir
+  yer boş kalıyordu. Onuncu kutu En Büyük Pozisyon: hangi fon, portföyün
+  yüzde kaçı.
+- Günlük Getiri ilk kutu: ekrana gelen ilk soru "bugün ne oldu".
+- Fon Hareketleri'nde Bekleyen İşlem kutusu, Portföyüm'le aynı uçtan; dört
+  kutu beş oldu, aynı satırda.
+
 ## Kapsam dışı
 
 - Bundle'a derleme zamanında sürüm gömmek: derleme `tsc`, bundler yok ve
