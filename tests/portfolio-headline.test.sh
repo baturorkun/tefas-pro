@@ -68,7 +68,8 @@ printf 'PASS: yazdirma gorunumu gezinmesiz, acik zeminli, tablo sayfaya sigiyor\
 # Sekiz kutu dört+dört, dokuz kutu üç+üç+üç: tek başına kalan kutu yok.
 grep -qF "'metric-grid metric-grid-8' : 'metric-grid metric-grid-9'" <<<"${PV}" || fail "izgara 8/9 degil"
 grep -qF ".metric-grid-8 { grid-template-columns: repeat(4" "${C}" || fail "8 kutu 4'lu dizilmiyor"
-grep -qF ".metric-grid-9 { grid-template-columns: repeat(3" "${C}" || fail "9 kutu 3'lu dizilmiyor"
+# Dokuz kutu iki satır (5+4): üç sütun üç satıra yayıp kutuları aşırı genişletiyordu.
+grep -qF ".metric-grid-9 { grid-template-columns: repeat(5" "${C}" || fail "9 kutu 5+4 dizilmiyor"
 printf 'PASS: kutu izgarasi yalniz kutu kalmayacak sekilde\n'
 
 # ─── Ağırlıklı süre ───
@@ -103,7 +104,9 @@ printf 'PASS: yazdirmada panel bolunebilir, kutular yalniz kalmiyor\n'
 # satır ikinci sayfaya kayıyor, bir kutu eksik görünüyordu.
 grep -qF ".metric-grid, .metric-grid-5, .metric-grid-7, .metric-grid-8 {" <<<"${PR}" || fail "yazdirmada izgara sabitlenmemis"
 grep -qE "grid-template-columns: repeat\(4, minmax\(0, 1fr\)\); gap: 6px" <<<"${PR}" || fail "yazdirmada 4 sutun degil"
-grep -qF ".metric-grid-9 { grid-template-columns: repeat(3" <<<"${PR}" || fail "9 kutu kagitta 3x3 degil"
+grep -qF ".metric-grid-9 { grid-template-columns: repeat(5" <<<"${PR}" || fail "9 kutu kagitta 5+4 degil"
+# Yatay A4: 11 sütunlu tablo dikeyde sıkışıyordu.
+grep -qF "@page { size: A4 landscape;" <<<"${PR}" || fail "kagit yatay degil"
 grep -qF ".metric-value { font-size: 1.05rem; }" <<<"${PR}" || fail "kart kagida sigacak kadar kucultulmemis"
 # Print bloğu ekran kırılma noktalarından SONRA: eşit özgüllükte sıra kazanır.
 awk '/@media \(max-width: 520px\)/{a=NR} /^@media print/{b=NR} END{exit !(a && b && a<b)}' "${C}" \

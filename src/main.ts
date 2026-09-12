@@ -5742,8 +5742,8 @@ async function portfolioView(me: Me): Promise<Node[]> {
       el('strong', {}, ['TEFAS-Pro · Portföyüm']),
       el('span', {}, [`${me.fullName} · ${veriGunu === null ? '—' : gunAd(veriGunu)}`]),
     ]),
-    // Sekiz kutu dört+dört, bekleyen çıkınca dokuz kutu üç+üç+üç: tek başına
-    // bir sıraya düşen kutu kalmıyor.
+    // Sekiz kutu dört+dört, bekleyen çıkınca dokuz kutu beş+dört: iki satır,
+    // tek başına bir sıraya düşen kutu yok.
     el('div', { class: bekleyenToplam === 0 ? 'metric-grid metric-grid-8' : 'metric-grid metric-grid-9' }, [
       metric('Maliyet', money(String(cost)), `${String(rows.length)} Fon`, 'money'),
       metric('Bugünkü Değer', money(String(value)), rows[0]?.asOfDate ?? '—', 'chart'),
