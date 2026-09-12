@@ -165,3 +165,13 @@ grep -qF "'Alarm Veren Fonlar'" <<<"${AV}" && fail "ayar ekraninda fon listesi d
 # Dagilim kutulari kaliyor: esigi sonucunu gormeden secmek tahmindir.
 grep -qF "metric('Kırmızı'" <<<"${AV}" || fail "ayar ekraninda dagilim onizlemesi yok"
 printf 'PASS: ayar ekraninda liste yok, dagilim onizlemesi var\n'
+
+# Menu sirasi: Fon Hareketleri, hemen altinda Alarmlar, onun altinda Piyasa.
+awk "/id: 'transactions', label:/{a=NR} /id: 'alarms', label:/{b=NR} /id: 'market', label:/{c=NR} END{exit !(a && b && c && b==a+1 && c==b+1)}" \
+  "${M}" || fail "menu sirasi yanlis: islemler, alarmlar, piyasa arka arkaya olmali"
+printf 'PASS: menude alarmlar fon hareketlerinin hemen altinda\n'
+
+# Renk esikleri tablosunda sayi sutunu yok: ayni dagilim ustteki kutularda.
+grep -qF "table(['Renk', 'En Az Puan'], kademeSatir)" <<<"${AV}" || fail "renk esikleri tablosu degismedi"
+grep -qF "'Şu An'" "${M}" && fail "renk esikleri tablosunda sayi sutunu duruyor"
+printf 'PASS: renk esikleri tablosunda tekrar eden sayi sutunu yok\n'

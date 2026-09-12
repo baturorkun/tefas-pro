@@ -6451,11 +6451,12 @@ async function alarmView(reload: () => void): Promise<Node[]> {
     ]);
   });
 
+  // Sayı sütunu yok: aynı dağılım üstteki kutularda zaten duruyor ve tabloda
+  // ikinci kez yazmak hangisinin güncel olduğu sorusunu doğuruyordu.
   const kademeSatir = d.levels.map((l) => el('tr', {}, [
     el('td', {}, [badge(l.label, `alarm-${l.code}`)]),
     el('td', { class: 'num' }, [sayiAlani(String(l.minScore), '4.5rem',
       `/api/admin/alarm/levels/${l.code}`, 'minScore', `${l.label} eşiği değişti.`)]),
-    el('td', { class: 'num' }, [String(d.funds.filter((x) => x.level === l.code).length)]),
   ]));
 
   return [
@@ -6492,7 +6493,7 @@ async function alarmView(reload: () => void): Promise<Node[]> {
       ]),
     ),
     panel('Renk Eşikleri', 'Toplam puandan renge', el('div', { class: 'panel-body' }, [
-      table(['Renk', 'En Az Puan', 'Şu An'], kademeSatir),
+      table(['Renk', 'En Az Puan'], kademeSatir),
     ])),
   ];
 }
@@ -6507,14 +6508,14 @@ const VIEWS: {
   { id: 'dashboard', label: 'Panel', adminOnly: false, crumb: 'Genel' },
   { id: 'portfolio', label: 'Portföyüm', adminOnly: false, crumb: 'Genel' },
   { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
+  { id: 'alarms', label: 'Alarmlar', adminOnly: false, crumb: 'Genel' },
+  { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },
   { id: 'allocation', label: 'Dağılım', adminOnly: false, crumb: 'Genel' },
   { id: 'stocks', label: 'Hisseler', adminOnly: false, crumb: 'Genel' },
   { id: 'chat', label: 'Asistan', adminOnly: false, crumb: 'Genel' },
   { id: 'closed', label: 'Kapananlar', adminOnly: false, crumb: 'Genel' },
   { id: 'cash', label: 'Nakit', adminOnly: false, crumb: 'Genel' },
   { id: 'periods', label: 'Dönemsel Getiri', adminOnly: false, crumb: 'Genel' },
-  { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },
-  { id: 'alarms', label: 'Alarmlar', adminOnly: false, crumb: 'Genel' },
   { id: 'watchlist', label: 'Takip Listem', adminOnly: false, crumb: 'Genel' },
   { id: 'prefs', label: 'Tercihlerim', adminOnly: false, crumb: 'Genel' },
   // Aşağıdakiler sol menünün ana listesinde ÇIKMAZ; en alttaki kullanıcı
