@@ -59,6 +59,16 @@ yeniden çizilirken de yerinde kalmalı.
 - Şerit `#app` dışında; ekran yeniden kurulunca kaybolmuyor.
 - Sürüm alınamazsa ne rozet ne şerit hata üretiyor.
 
+## Aynı RQ'da: PDF'te kutu ızgarası
+
+Basit bir arayüz düzeltmesi, ayrı RQ hak etmiyor. A4 dikey tarayıcıda
+~794px genişlik sayılıyor ve ekranın dar-ekran kuralı (900px → 2 sütun)
+yazdırmada da devreye giriyordu: dokuz kutu beş satır oluyor, son satır ilk
+sayfaya sığmayıp ikinci sayfaya kayıyor ve bir kutu eksik görünüyordu.
+Kağıtta sütun sayısı artık ekranla aynı: sekiz kutu 4+4, dokuz kutu 3+3+3.
+
+- Yazdırmada kutu ızgarası ekranla aynı dizilimde; boş yer ve kayan kutu yok.
+
 ## Kapsam dışı
 
 - Bundle'a derleme zamanında sürüm gömmek: derleme `tsc`, bundler yok ve
