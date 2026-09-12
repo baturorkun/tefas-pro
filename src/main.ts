@@ -81,6 +81,8 @@ interface AlarmKural {
 interface AlarmFonu {
   fundCode: string; title: string | null; score: number; level: string | null;
   hits: { ruleId: number; label: string; family: string; value: string; points: number }[];
+  /** Eşiğine uyan bütün kurallar; `hits` yalnız puan verenler. */
+  matched: number[];
 }
 interface AlarmListeSatiri extends AlarmFonu {
   scope: 'pozisyon' | 'takip' | 'diger';
@@ -6415,8 +6417,12 @@ async function alarmView(reload: () => void): Promise<Node[]> {
       void kaydet(`/api/admin/alarm/rules/${String(r.id)}`, { isActive: aktif.checked },
         `${r.label} ${aktif.checked ? 'açıldı' : 'kapatıldı'}.`);
     });
-    // Kaç fon ateşliyor: eşiğin doğru olup olmadığını söyleyen tek sayı.
-    const atesleyen = d.funds.filter((f) => f.hits.some((h) => h.ruleId === r.id)).length;
+    // Eşiğe kaç fon uyuyor: eşiği ayarlarken bakılacak sayı bu. `hits` yalnız
+    // puan verenleri taşıyor ve alt kademe üst kademeye yenildiği için orada
+    // görünmüyor — "3 gün"e 4 fon uyuyor ama ikisi "5 gün"ü de aştığı için
+    // puanı üst kademeden alıyor.
+    const uyan = d.funds.filter((f) => f.matched.includes(r.id)).length;
+    const puanVeren = d.funds.filter((f) => f.hits.some((h) => h.ruleId === r.id)).length;
     return el('tr', { class: r.isActive ? '' : 'alarm-pasif' }, [
       el('td', {}, [
         el('span', { class: 'fund-code' }, [r.label]),
@@ -6433,7 +6439,15 @@ async function alarmView(reload: () => void): Promise<Node[]> {
           'threshold2', `${r.label}: ikinci eşik değişti.`)]),
       el('td', { class: 'num' }, [sayiAlani(String(r.points), '4.5rem',
         `/api/admin/alarm/rules/${String(r.id)}`, 'points', `${r.label}: puan değişti.`)]),
-      el('td', { class: 'num' }, [atesleyen === 0 ? el('span', { class: 'dim' }, ['0']) : String(atesleyen)]),
+      el('td', { class: 'num' }, [uyan === 0
+        ? el('span', { class: 'dim' }, ['0'])
+        : el('span', {}, [
+          String(uyan),
+          // Alt kademe üst kademeye yenildiyse fark yazılır, yoksa sessiz.
+          ...(puanVeren === uyan
+            ? []
+            : [el('span', { class: 'dim' }, [` (${String(puanVeren)} puan)`])]),
+        ])]),
       el('td', {}, [el('label', { class: 'switch-field alarm-switch' }, [
         aktif, el('span', { class: 'switch-track' }, []),
       ])]),
@@ -6474,10 +6488,12 @@ async function alarmView(reload: () => void): Promise<Node[]> {
         durum.node,
         el('p', { class: 'settings-note' }, [
           'Ölçüt kod tarafında ve sabittir; pencere, eşik ve puan buradan değişir. '
-          + 'Aynı ölçütün birden fazla kademesi olabilir, ama bir fon o ölçütten '
-          + 'yalnız en yüksek kademenin puanını alır.',
+          + '"Uyan Fon" o eşiğe şu an kaç fonun uyduğunu söyler. Aynı ölçütün '
+          + 'birden fazla kademesi olabilir ve bir fon o ölçütten yalnız en '
+          + 'yüksek kademenin puanını alır; alt kademe uyduğu hâlde puan '
+          + 'vermiyorsa parantez içinde kaç fona puan verdiği yazar.',
         ]),
-        table(['Kural', 'Aile', 'Pencere', 'Eşik', '2. Eşik', 'Puan', 'Ateşleyen', 'Etkin'], kuralSatir),
+        table(['Kural', 'Aile', 'Pencere', 'Eşik', '2. Eşik', 'Puan', 'Uyan Fon', 'Etkin'], kuralSatir),
       ]),
     ),
     panel(

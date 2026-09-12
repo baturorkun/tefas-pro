@@ -18,6 +18,13 @@ export interface AlarmSatiri {
   score: number;
   level: string | null;
   hits: { ruleId: number; label: string; family: string; value: string; points: number }[];
+  /**
+   * Eşiğine uyan bütün kurallar — puan veren kademe süzülmeden önce.
+   * `hits` yalnız puan verenleri taşıyor; eşik ayarlarken görülmesi gereken
+   * ise eşiğe kaç fonun uyduğu. "3 gün" kuralına 4 fon uyuyor ama ikisi aynı
+   * zamanda "5 gün"ü de aştığı için puanı üst kademeden alıyor.
+   */
+  matched: number[];
 }
 
 /**
@@ -124,7 +131,9 @@ SELECT f.fund_code AS "fundCode", f.title,
                   'ruleId', k.rule_id, 'label', k.label, 'family', k.family,
                   'value', round(k.deger, 2)::text, 'points', k.points)
                   ORDER BY k.points DESC)
-                 FROM kademe k WHERE k.fund_code = f.fund_code), '[]'::json) AS hits
+                 FROM kademe k WHERE k.fund_code = f.fund_code), '[]'::json) AS hits,
+       coalesce((SELECT json_agg(v.rule_id ORDER BY v.rule_id)
+                   FROM vurus v WHERE v.fund_code = f.fund_code), '[]'::json) AS matched
   FROM f LEFT JOIN toplam t USING (fund_code)
  ORDER BY coalesce(t.score, 0) DESC, f.fund_code
 `;

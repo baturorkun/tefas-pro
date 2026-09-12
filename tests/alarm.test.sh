@@ -73,9 +73,14 @@ AV="$(awk '/^async function alarmView/,/^}/' "${M}")"
 grep -qF "id: 'alarm'" "${M}" || fail "alarm ekrani menude degil"
 grep -qF "adminOnly: true" <<<"$(grep -F "id: 'alarm'" "${M}")" || fail "alarm ekrani admin disina acik"
 # Esigin dogrulugunu soyleyen tek sayi: kac fon atesliyor.
-grep -qF "'Ateşleyen'" <<<"${AV}" || fail "kural basina atesleyen fon sayisi yok"
-grep -qF "d.funds.filter((f) => f.hits.some((h) => h.ruleId === r.id)).length" <<<"${AV}" \
-  || fail "atesleyen sayisi hesaplanmiyor"
+# Esigi ayarlarken bakilacak sayi "esige uyan fon"dur, "puan veren" degil:
+# alt kademe ust kademeye yeniliyor ve puan vermiyor. Olculdu: "3 gun"e 4 fon
+# uyuyor, ikisi "5 gun"u de astigi icin puani ust kademeden aliyor.
+grep -qF "'Uyan Fon'" <<<"${AV}" || fail "kural basina uyan fon sayisi yok"
+grep -qF "d.funds.filter((f) => f.matched.includes(r.id)).length" <<<"${AV}" \
+  || fail "uyan fon sayisi ham eslesmeden gelmiyor"
+grep -qF "matched: number[];" "${M}" || fail "ham eslesme istemciye tasinmiyor"
+grep -qF "FROM vurus v WHERE v.fund_code = f.fund_code" "${A}" || fail "ham eslesme sunucuda uretilmiyor"
 # Aile tavani ekranda ham puanla birlikte: tavanin ne kestigi gorunmeli.
 grep -qF "'Ham Puan'" <<<"${AV}" || fail "aile ham puani gosterilmiyor"
 printf 'PASS: ekran kurallari, tavanlari, esikleri ve gerekceyi gosteriyor\n'
