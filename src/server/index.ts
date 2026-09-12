@@ -64,6 +64,7 @@ import {
   changeOwnPassword,
   fifoBlocker,
   findSessionContext,
+  portfolioHeadline,
   findUserById,
   setImpersonation,
   clearImpersonation,
@@ -644,6 +645,15 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         return;
       }
 
+      // Portföyüm'ün başlık rakamları. Panel'in kullandığı fonksiyonun aynısı,
+      // ayrı bir hesap değil: aynı kullanıcı iki ekranda iki farklı "kâr"
+      // görüyordu ve hangisinin doğru olduğu sorulacaktı. /api/dashboard'un
+      // tamamını çekmek yerine yalnız bu parça; o uç grafik ve sıralama
+      // taşıyor.
+      if (path === '/api/portfolio/headline' && method === 'GET') {
+        sendJson(res, 200, await portfolioHeadline(pool, user.id));
+        return;
+      }
       if (path === '/api/portfolio' && method === 'GET') {
         sendJson(res, 200, await portfolioSummary(pool, user.id));
         return;

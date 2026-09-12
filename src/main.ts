@@ -118,6 +118,21 @@ interface PortfolioRow {
   assets: { assetClass: string; weightPct: string; asOfDate: string }[];
 }
 
+/** /api/portfolio/headline — Panel'in de okuduğu portfolioHeadline sonucu. */
+interface PortfolioHeadline {
+  value: string;
+  openGain: string;
+  realizedGain: string;
+  totalGain: string;
+  netCapital: string;
+  totalPct: string | null;
+  dayGain: string | null;
+  dayPct: string | null;
+  dayDate: string | null;
+  weightedDays: number | null;
+  firstBuyDate: string | null;
+}
+
 interface PositionSummary {
   cost: string;
   value: string;
@@ -498,12 +513,14 @@ function bugunISO(): string {
     + `-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function gunAd(iso: string | null): string {
+function gunAd(iso: string | null, yilHep = false): string {
   if (iso === null || iso.length < 10) return '—';
   const [y, a, g] = [iso.slice(0, 4), Number(iso.slice(5, 7)), Number(iso.slice(8, 10))];
   const ay = AY_ADLARI[a - 1] ?? iso.slice(5, 7);
   const buYil = String(new Date().getFullYear());
-  return `${String(g)} ${ay}${y === buYil ? '' : ` ${y}`}`;
+  // Listelerde bu yıl atlanır, göz yorulmasın diye. Tek başına duran bir
+  // tarihte ("ilk alım 18 Mart") yıl yoksa hangi yıl olduğu bilinmiyor.
+  return `${String(g)} ${ay}${!yilHep && y === buYil ? '' : ` ${y}`}`;
 }
 
 /**
@@ -614,6 +631,9 @@ const ICON_PATHS: Record<string, string[]> = {
   add: ['M12 5v14M5 12h14'],
   logout: ['M15 17l5-5-5-5', 'M20 12H9', 'M12 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6'],
   close: ['M6 6l12 12M18 6 6 18'],
+  // Yazıcı: Portföyüm'ün PDF düğmesi. Çıktı tarayıcının yazdırmasından.
+  print: ['M6 9V3h12v6', 'M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2',
+          'M6 14h12v7H6z'],
   // Kullanıcı geçişi: bir kişi ve yön değiştiren ok.
   impersonate: ['M13 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20',
                 'M7.5 10.5a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5z',
@@ -5513,10 +5533,14 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
  * Fon başına açık pozisyon. Salt okunur: bu türetilmiş bir görünüm, düzenlenecek
  * satırı yok. Düzenleme "Fon Hareketleri"nde, işlem başına.
  */
-async function portfolioView(): Promise<Node[]> {
-  const [rows, bekleyen] = await Promise.all([
+async function portfolioView(me: Me): Promise<Node[]> {
+  // Başlık rakamları Panel'le aynı uçtan. Burada yeniden hesaplanmıyor: aynı
+  // kullanıcı iki ekranda iki farklı "kâr" görüyordu ve hangisinin doğru
+  // olduğu sorulacaktı.
+  const [rows, bekleyen, h] = await Promise.all([
     api('/api/portfolio') as Promise<PortfolioRow[]>,
     api('/api/portfolio/pending') as Promise<BekleyenAlim>,
+    api('/api/portfolio/headline') as Promise<PortfolioHeadline>,
   ]);
   const sum = (f: (r: PortfolioRow) => number): number => rows.reduce((a, r) => a + f(r), 0);
   const cost = sum((r) => Number(r.cost));
@@ -5689,7 +5713,11 @@ async function portfolioView(): Promise<Node[]> {
 
   const foot = el('tr', { class: 'total-row' }, [
     el('td', {}, [`TOPLAM (${String(rows.length)})`]),
-    el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []), el('td', {}, []),
+    el('td', {}, []), el('td', {}, []), el('td', {}, []),
+    // Süre: maliyet ağırlıklı, sunucudan. Satırlar fonun en eski lotunu
+    // gösteriyor; toplam satırı lot lot ağırlıklandırılmış hâli.
+    el('td', { class: 'num' }, [h.weightedDays === null ? '' : `${String(h.weightedDays)}g`]),
+    el('td', {}, []),
     el('td', { class: 'num' }, [num(String(cost), 0)]),
     el('td', { class: 'num' }, [num(String(value), 0)]),
     el('td', {}, [signed(String(gain), ' ₺')]),
@@ -5698,19 +5726,60 @@ async function portfolioView(): Promise<Node[]> {
   ]);
 
   const bekleyenToplam = bekleyen.count + bekleyen.sellCount;
+  const veriGunu = h.dayDate ?? rows[0]?.asOfDate ?? null;
+
+  // PDF: tarayıcının yazdırması. Projeye bağımlılık girmiyor ve sunucuda PDF
+  // üreten bir şey yok; "PDF olarak kaydet" tarayıcının kendi penceresinde.
+  // Yazdırma görünümü @media print ile ayrı: kenar çubuğu, düğmeler ve üst
+  // şerit basılmıyor, zemin açık.
+  const pdfBtn = el('button', { class: 'btn-ghost', type: 'button' }, [icon('print'), 'PDF']);
+  pdfBtn.addEventListener('click', () => { window.print(); });
+
   return [
-    // Beşinci kutu çıkınca dörtlü ızgarada tek başına ikinci sıraya düşüyor
-    // ve yanında koca bir boşluk kalıyordu.
-    el('div', { class: bekleyenToplam === 0 ? 'metric-grid' : 'metric-grid metric-grid-5' }, [
+    // Yalnız kağıtta: çıktıyı alan kişi ekranı hiç görmemiş olacak, kimin
+    // portföyü ve hangi gün olduğu başta yazmalı.
+    el('div', { class: 'print-only print-head' }, [
+      el('strong', {}, ['TEFAS-Pro · Portföyüm']),
+      el('span', {}, [`${me.fullName} · ${veriGunu === null ? '—' : gunAd(veriGunu)}`]),
+    ]),
+    // Sekiz kutu dört+dört, bekleyen çıkınca dokuz kutu üç+üç+üç: tek başına
+    // bir sıraya düşen kutu kalmıyor.
+    el('div', { class: bekleyenToplam === 0 ? 'metric-grid metric-grid-8' : 'metric-grid metric-grid-9' }, [
       metric('Maliyet', money(String(cost)), `${String(rows.length)} Fon`, 'money'),
       metric('Bugünkü Değer', money(String(value)), rows[0]?.asOfDate ?? '—', 'chart'),
-      metric('Kâr / Zarar', money(String(gain)),
+      // "Açık": yanındaki Toplam Kazanç kapananları da içeriyor; ikisi aynı
+      // sözcükle yazılsaydı iki farklı rakam aynı şey sanılırdı.
+      metric('Açık Kâr / Zarar', money(String(gain)),
         cost === 0 ? '—' : pct(((value / cost) - 1) * 100)),
-      metric('Kârda', String(winners), `${String(rows.length - winners)} Zararda`, 'flag'),
+      // Panel'deki kutunun aynısı: etiket, biçim ve gün. Rakam son ölçülebilir
+      // güne ait; hafta sonu bakan kullanıcı hangi günü gördüğünü bilmeli.
+      metric('Günlük Getiri',
+        h.dayGain === null ? '—' : money(h.dayGain),
+        h.dayPct === null
+          ? 'Ölçülebilir gün yok'
+          : `${pct(Number(h.dayPct))}${h.dayDate === null ? '' : ` · ${gunAd(h.dayDate)}`}`,
+        'chart'),
+      // Üçlü yan yana okunsun: Açık + Gerçekleşen = Toplam. Gerçekleşen
+      // önce yalnız Toplam'ın alt satırında "kapanan dahil" diye geçiyordu;
+      // kutu olunca kazancın nereden geldiği bakmadan görünüyor.
+      metric('Gerçekleşen Kazanç', money(h.realizedGain), 'kapanan pozisyonlardan', 'money'),
+      // Yüzdenin paydası net sermaye (maliyet − gerçekleşen): kazanılıp
+      // yeniden yatırılan para yeni sermaye değil. Payda yazılmazsa yüzde
+      // neye göre olduğu bilinmeden okunuyordu.
+      metric('Toplam Kazanç', money(h.totalGain),
+        h.totalPct === null ? '—' : `${pct(Number(h.totalPct))} · net sermaye ${money(h.netCapital)}`,
+        'money'),
+      // Ana sayı ZARARDAKİLER: bakılması gereken onlar. Kârdakiler alt satırda.
+      // Önce tersiydi ve göz önce iyi haberi görüyordu.
+      metric('Zararda', String(rows.length - winners), `${String(winners)} Kârda`, 'flag'),
+      // Portföyün yaşı: maliyet ağırlıklı işlem günü ve en eski alış. Tablo
+      // ayağındaki Süre ile aynı alan; "ne kadar zamanda" sorusunu cevaplıyor.
+      metric('Ağırlıklı Süre',
+        h.weightedDays === null ? '—' : `${String(h.weightedDays)}g`,
+        h.firstBuyDate === null ? 'açık lot yok' : `ilk alım ${gunAd(h.firstBuyDate, true)}`,
+        'transactions'),
       // Yalnız bekleyen alım varken çizilir; sıfırken boş bir kutu şeridi
       // kalabalıklaştırırdı. Tutar YOK: fiyat açıklanmadı.
-      // Tek kutu, iki sayı: alım ve satış için ayrı kutu şeridi altıya
-      // çıkarıyordu ve dörtlü ızgarada ikisi ortada asılı kalıyordu.
       ...(bekleyenToplam === 0 ? [] : [metric(
         'Bekleyen İşlem', String(bekleyenToplam),
         [`${String(bekleyen.count)} alım`, `${String(bekleyen.sellCount)} satış`]
@@ -5730,6 +5799,7 @@ async function portfolioView(): Promise<Node[]> {
         // dursaydı tablodakiler hakkında bir uyarı gibi okunurdu.
         ...bekleyenAlimNotu(bekleyen),
       ]),
+      pdfBtn,
     ),
   ];
 }
@@ -6241,7 +6311,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
   let bodyNodes: Node[];
   try {
     if (current.id === 'dashboard') bodyNodes = await dashboardView(reload);
-    else if (current.id === 'portfolio') bodyNodes = await portfolioView();
+    else if (current.id === 'portfolio') bodyNodes = await portfolioView(me);
     else if (current.id === 'allocation') bodyNodes = await allocationView();
     else if (current.id === 'stocks') bodyNodes = await stocksView();
     else if (current.id === 'chat') bodyNodes = await chatView(reload);

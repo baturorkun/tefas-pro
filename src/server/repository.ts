@@ -1003,6 +1003,16 @@ export interface PortfolioHeadline {
   dayPct: string | null;
   /** Kazancın ait olduğu gün. */
   dayDate: string | null;
+  /**
+   * Açık lotların maliyet ağırlıklı işlem günü sayısı: Σ(gün × maliyet) / Σmaliyet.
+   * Birim tablodaki "Süre" ile aynı — alış gününden sonraki fiyat günü,
+   * takvim günü değil. Lot başına: fon satırındaki "Süre" en eski lotun günü
+   * ve sonradan eklenen lotları görmüyor; onu maliyetle ağırlıklandırmak
+   * kaba olurdu.
+   */
+  weightedDays: number | null;
+  /** Açık lotların en eski alış günü: portföyün en başı. */
+  firstBuyDate: string | null;
 }
 
 /**
@@ -1045,6 +1055,32 @@ export async function portfolioHeadline(
   const dayGain = son?.gain === undefined || son.gain === null ? null : Number(son.gain);
   const prev = Number(son?.prev ?? 0);
 
+  // Lot maliyeti = adet × nav_buy; nav_buy bugünkü NAV'ın alış gününe geri
+  // yürütülmüş hâli. Zincir position_return'dekiyle aynı; burada da o formül.
+  // Simüle (takip listesi) lotlar dışarıda: parası yok, ağırlığı da yok.
+  const g = await pool.query<{ wd: string | null; first: string | null }>(
+    `WITH son AS (SELECT max(trade_date) AS d FROM fact_fund_daily WHERE daily_return_pct IS NOT NULL),
+     lot AS (
+       SELECT l.units,
+              l.start_date,
+              (SELECT count(*) FROM fact_fund_daily d
+                WHERE d.fund_code = l.fund_code AND d.daily_return_pct IS NOT NULL
+                  AND d.trade_date > l.start_date AND d.trade_date <= (SELECT d FROM son)) AS days,
+              nav.nav_per_share / coalesce((SELECT exp(sum(ln(1 + d.daily_return_pct / 100)))
+                                              FROM fact_fund_daily d
+                                             WHERE d.fund_code = l.fund_code AND d.daily_return_pct IS NOT NULL
+                                               AND d.trade_date > l.start_date), 1) AS nav_buy
+         FROM analytics.position_leg l
+         JOIN analytics.fund_latest nav USING (fund_code)
+        WHERE l.user_id = $1 AND l.is_open AND NOT l.simulated AND l.units IS NOT NULL)
+     SELECT CASE WHEN sum(units * nav_buy) > 0
+                 THEN round(sum(days * units * nav_buy) / sum(units * nav_buy))::text END AS wd,
+            to_char(min(start_date), 'YYYY-MM-DD') AS first
+       FROM lot`,
+    [userId],
+  );
+  const wd = g.rows[0]?.wd ?? null;
+
   const openGain = value - cost;
   const totalGain = openGain + realized;
   const netCapital = cost - realized;
@@ -1059,6 +1095,8 @@ export async function portfolioHeadline(
     dayGain: dayGain === null ? null : dayGain.toFixed(2),
     dayPct: dayGain === null || prev === 0 ? null : ((dayGain / prev) * 100).toFixed(6),
     dayDate: son?.d ?? null,
+    weightedDays: wd === null ? null : Number(wd),
+    firstBuyDate: g.rows[0]?.first ?? null,
   };
 }
 
