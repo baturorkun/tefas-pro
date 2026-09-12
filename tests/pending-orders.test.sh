@@ -82,3 +82,12 @@ grep -Fq "if (b.orderAmount === null || b.navPerShare === null) return null;" "$
 grep -Fq "if (b.units === null || b.navPerShare === null) return null;" "${M}" \
   || fail "fiyatsiz kayitta tutar uyduruluyor"
 printf 'PASS: bilinen yazılıyor, bilinmeyen tahmin ediliyor, fiyatsızda tire\n'
+
+# Fon Hareketleri'nde de aynı kutu, aynı uçtan: iki ekran iki farklı bekleyen
+# sayısı göstermesin. Beş kutu tek satır.
+TV="$(awk '/^async function transactionsView/,/^}/' "${M}")"
+grep -qF "api('/api/portfolio/pending')" <<<"${TV}" || fail "Fon Hareketleri bekleyeni ortak uctan okumuyor"
+grep -qF "metric('Bekleyen İşlem', String(bekleyenToplam)," <<<"${TV}" || fail "Fon Hareketleri'nde bekleyen kutusu yok"
+grep -qF "el('div', { class: 'metric-grid metric-grid-5' }, [" <<<"${TV}" || fail "besinci kutu ayni satira sigmiyor"
+grep -qE "bekleyenToplam *= *rows\.filter|sellDate.*bekleyen" <<<"${TV}" && fail "Fon Hareketleri bekleyeni kendi sayiyor"
+printf 'PASS: Fon Hareketleri bekleyen kutusu Portföyüm ile ayni kaynaktan, tek satirda\n'

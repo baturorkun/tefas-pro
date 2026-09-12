@@ -29,6 +29,9 @@ printf 'PASS: gunluk getiri ve toplam kazanc Panel ile ayni fonksiyondan\n'
 
 # ─── Etiketler ayrışıyor ───
 grep -qF "'Günlük Getiri'" <<<"${PV}" || fail "Günlük Getiri kutusu yok"
+# Günlük Getiri en başta: ekrana gelen ilk soru "bugün ne oldu".
+awk "/'Günlük Getiri'/{a=NR} /metric\('Maliyet'/{b=NR} END{exit !(a && b && a<b)}" <<<"${PV}" \
+  || fail "Günlük Getiri ilk kutu degil"
 grep -qF "'Toplam Kazanç'" <<<"${PV}" || fail "Toplam Kazanç kutusu yok"
 grep -qF "'Açık Kâr / Zarar'" <<<"${PV}" || fail "acik kazanc 'Açık' diye adlandirilmamis"
 # Zarardakiler ana sayı, kârdakiler alt satır: bakılması gereken zarardakiler.
@@ -65,10 +68,13 @@ grep -qF "thead { display: table-header-group; }" <<<"${PR}" || fail "tablo basl
 grep -qF ".print-only { display: none; }" "${C}" || fail "cikti basligi ekranda gorunuyor"
 printf 'PASS: yazdirma gorunumu gezinmesiz, acik zeminli, tablo sayfaya sigiyor\n'
 
-# Sekiz kutu dört+dört, dokuz kutu üç+üç+üç: tek başına kalan kutu yok.
-grep -qF "'metric-grid metric-grid-8' : 'metric-grid metric-grid-9'" <<<"${PV}" || fail "izgara 8/9 degil"
-grep -qF ".metric-grid-8 { grid-template-columns: repeat(4" "${C}" || fail "8 kutu 4'lu dizilmiyor"
-grep -qF ".metric-grid-9 { grid-template-columns: repeat(3" "${C}" || fail "9 kutu 3'lu dizilmiyor"
+# On kutu beş+beş, sayı sabit: sekiz/dokuz arasında değişen ızgara dokuzda
+# bir yer boş bırakıyordu. Bekleyen kutusu sıfırken de duruyor.
+grep -qF "el('div', { class: 'metric-grid metric-grid-10' }, [" <<<"${PV}" || fail "izgara sabit 10 degil"
+grep -qF "metric('Bekleyen İşlem', String(bekleyenToplam)," <<<"${PV}" || fail "bekleyen kutusu yok"
+grep -qF "? 'işlem yok'" <<<"${PV}" || fail "bekleyen sifirken kutu gizleniyor; sayi degisir"
+grep -qF "metric('En Büyük Pozisyon'" <<<"${PV}" || fail "en buyuk pozisyon kutusu yok"
+grep -qF ".metric-grid-10 { grid-template-columns: repeat(5" "${C}" || fail "10 kutu 5+5 dizilmiyor"
 printf 'PASS: kutu izgarasi yalniz kutu kalmayacak sekilde\n'
 
 # ─── Ağırlıklı süre ───
@@ -93,7 +99,21 @@ printf 'PASS: agirlikli sure sunucuda lot bazinda, kutu ve ayak ayni alani okuyo
 
 # Yazdırmada bölünmezlik panelde değil: tablo paneli tek parça sayılınca ilk
 # sayfanın kalanına sığmıyor ve bütünüyle ikinci sayfaya atılıyordu.
-grep -qF ".metric-card { break-inside: avoid; }" <<<"${PR}" || fail "kart bolunebiliyor"
+grep -qF ".metric-card { break-inside: avoid;" <<<"${PR}" || fail "kart bolunebiliyor"
 grep -qE "\.metric-card, \.panel \{[^}]*break-inside" <<<"${PR}" \
   && fail "panel bolunmez sayiliyor; tablo ikinci sayfaya atilir"
 printf 'PASS: yazdirmada panel bolunebilir, kutular yalniz kalmiyor\n'
+
+# Kağıtta sütun sayısı sabit: A4 dikey ~794px sayılıyor ve ekranın dar-ekran
+# kuralı ızgarayı iki sütuna düşürüyordu; sekiz kutu dört satır olup son
+# satır ikinci sayfaya kayıyor, bir kutu eksik görünüyordu.
+grep -qF ".metric-grid, .metric-grid-5, .metric-grid-7 {" <<<"${PR}" || fail "yazdirmada izgara sabitlenmemis"
+grep -qE "grid-template-columns: repeat\(4, minmax\(0, 1fr\)\); gap: 6px" <<<"${PR}" || fail "yazdirmada 4 sutun degil"
+grep -qF ".metric-grid-10 { grid-template-columns: repeat(5" <<<"${PR}" || fail "10 kutu kagitta 5+5 degil"
+# Yatay A4: 11 sütunlu tablo dikeyde sıkışıyordu.
+grep -qF "@page { size: A4 landscape;" <<<"${PR}" || fail "kagit yatay degil"
+grep -qF ".metric-value { font-size: 1.05rem; }" <<<"${PR}" || fail "kart kagida sigacak kadar kucultulmemis"
+# Print bloğu ekran kırılma noktalarından SONRA: eşit özgüllükte sıra kazanır.
+awk '/@media \(max-width: 520px\)/{a=NR} /^@media print/{b=NR} END{exit !(a && b && a<b)}' "${C}" \
+  || fail "print blogu dar-ekran kurallarindan once; onlar kazanir"
+printf 'PASS: kagitta 4 sutun sabit, son satir sayfaya sigiyor\n'

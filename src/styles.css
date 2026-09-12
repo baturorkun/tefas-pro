@@ -175,11 +175,12 @@ body {
    ikinci sıraya düşüyordu. */
 .metric-grid-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 @media (max-width: 1200px) { .metric-grid-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-/* Portföyüm: sekiz kutu dört+dört, dokuz kutu üç+üç+üç. */
-.metric-grid-8 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.metric-grid-9 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-@media (max-width: 1200px) {
-  .metric-grid-8 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Portföyüm: on kutu beş+beş, sayı sabit. Sekiz/dokuz arasında değişen ızgara
+   dokuzda bir yer boş bırakıyordu; üç sütun kutuları aşırı genişletiyordu.
+   Dar ekranda beş sütun okunmuyor, ikiye düşer. */
+.metric-grid-10 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1100px) {
+  .metric-grid-10 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .metric-card {
@@ -323,6 +324,26 @@ td.actions { text-align: right; }
 @media (prefers-reduced-motion: reduce) {
   #yukleme.acik { animation: none; transform: scaleX(1); opacity: .6; }
 }
+
+/* ─── Yeni sürüm şeridi ────────────────────────────────────────────────── */
+/* Üstte sabit, yükleme çubuğunun hemen altında. Kendiliğinden yenileme yok:
+   yarım doldurulmuş bir formu silmek eski sürümde kalmaktan kötü. */
+#surum-uyari {
+  position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 90;
+  display: flex; align-items: center; gap: .75rem;
+  margin-top: 8px; padding: .45rem .9rem;
+  border: 1px solid var(--accent); border-radius: var(--radius-pill);
+  background: var(--bg-raised); color: var(--text-strong); font-size: .82rem;
+  box-shadow: 0 6px 24px #0008;
+}
+#surum-uyari[hidden] { display: none; }
+#surum-uyari .surum-yenile {
+  padding: .25rem .7rem; border: 0; border-radius: var(--radius-pill);
+  background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 600;
+  cursor: pointer;
+}
+#surum-uyari .surum-yenile:hover { filter: brightness(1.08); }
+@media print { #surum-uyari { display: none !important; } }
 
 /* ─── Rozet ────────────────────────────────────────────────────────────── */
 
@@ -1218,13 +1239,26 @@ textarea:focus  { outline: none; border-color: var(--accent);
   /* Bölünmezlik kartta ve satırda, PANELDE DEĞİL: tablo paneli tek parça
      sayılınca ilk sayfanın kalanına sığmıyor ve tarayıcı bütün paneli ikinci
      sayfaya atıyordu — kutular ilk sayfada yalnız kalıyordu. Ölçüldü. */
-  .metric-card { break-inside: avoid; }
-  .metric-grid { gap: 8px; break-after: avoid; }
+  .metric-card { break-inside: avoid; padding: .55rem .7rem; }
+  .metric-value { font-size: 1.05rem; }
+  .metric-label { font-size: .68rem; }
+  .metric-foot  { font-size: .68rem; }
+  /* Sütun sayısı kağıtta SABİT. A4 dikey ~794px genişlik sayılıyor ve ekranın
+     dar-ekran kuralları (900px → 2 sütun) yazdırmada da devreye giriyordu:
+     sekiz kutu dört satır oluyor, son satır ilk sayfaya sığmayıp ikinci
+     sayfaya kayıyor ve bir kutu eksik görünüyordu. Ölçüldü. Bu blok dosyanın
+     sonunda: aynı özgüllükteki ekran kurallarını sırayla eziyor. */
+  .metric-grid, .metric-grid-5, .metric-grid-7 {
+    grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; break-after: avoid;
+  }
+  .metric-grid-10 { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; break-after: avoid; }
   .panel-heading { break-after: avoid; }
   .table-wrap { overflow: visible; }
   table { font-size: .8rem; }
   tr { break-inside: avoid; }
   thead { display: table-header-group; }
   a { color: inherit; text-decoration: none; }
-  @page { margin: 12mm; }
+  /* Yatay: pozisyon tablosu 11 sütun, dikey A4'te sıkışıp küçülüyordu. Yatayda
+     kutular ekranla aynı dizilimde (5+4) üstte tek blok, tablo nefes alıyor. */
+  @page { size: A4 landscape; margin: 10mm 12mm; }
 }

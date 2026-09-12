@@ -5234,7 +5234,14 @@ async function periodsView(): Promise<Node[]> {
 const txFiltre = { fundCode: '', platform: '' };
 
 async function transactionsView(reload: () => void): Promise<Node[]> {
-  const rows = (await api('/api/transactions')) as Transaction[];
+  // Bekleyen sayısı Portföyüm'le aynı uçtan: iki ekran iki farklı sayı
+  // göstermesin. Burada listeden saymak mümkündü ama satış tarihi kuralı
+  // (bugünden ileri) tek yerde, sunucuda dursun.
+  const [rows, bekleyen] = await Promise.all([
+    api('/api/transactions') as Promise<Transaction[]>,
+    api('/api/portfolio/pending') as Promise<BekleyenAlim>,
+  ]);
+  const bekleyenToplam = bekleyen.count + bekleyen.sellCount;
   // Pasif kayıt açık pozisyon değil: adedi yok, hiçbir hesaba girmiyor.
   const open = rows.filter((t) => t.sellDate === null && t.units !== null);
   const pasif = rows.filter((t) => t.units === null);
@@ -5479,7 +5486,8 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
   });
 
   return [
-    el('div', { class: 'metric-grid' }, [
+    // Beş kutu tek satır: Bekleyen İşlem Portföyüm'deki kutunun aynısı.
+    el('div', { class: 'metric-grid metric-grid-5' }, [
       metric('Açık Pozisyon', String(open.length),
         pasif.length === 0
           ? `${String(rows.length)} İşlem Kaydı`
@@ -5488,6 +5496,12 @@ async function transactionsView(reload: () => void): Promise<Node[]> {
       metric('Platform', String(platforms.size), 'Banka / Aracı', 'money'),
       metric('Son İşlem', last === undefined ? '—' : gunAd(last),
         sonOlay === undefined ? '—' : sonOlay.tur, 'transactions'),
+      metric('Bekleyen İşlem', String(bekleyenToplam),
+        bekleyenToplam === 0
+          ? 'işlem yok'
+          : [`${String(bekleyen.count)} alım`, `${String(bekleyen.sellCount)} satış`]
+            .filter((t) => !t.startsWith('0 ')).join(' · '),
+        'transactions', 'işlem'),
     ]),
     panel(
       'Fon Hareketleri',
@@ -5727,6 +5741,8 @@ async function portfolioView(me: Me): Promise<Node[]> {
 
   const bekleyenToplam = bekleyen.count + bekleyen.sellCount;
   const veriGunu = h.dayDate ?? rows[0]?.asOfDate ?? null;
+  const enBuyuk = rows.reduce<PortfolioRow | undefined>(
+    (m, r) => (m === undefined || Number(r.value) > Number(m.value) ? r : m), undefined);
 
   // PDF: tarayıcının yazdırması. Projeye bağımlılık girmiyor ve sunucuda PDF
   // üreten bir şey yok; "PDF olarak kaydet" tarayıcının kendi penceresinde.
@@ -5742,16 +5758,12 @@ async function portfolioView(me: Me): Promise<Node[]> {
       el('strong', {}, ['TEFAS-Pro · Portföyüm']),
       el('span', {}, [`${me.fullName} · ${veriGunu === null ? '—' : gunAd(veriGunu)}`]),
     ]),
-    // Sekiz kutu dört+dört, bekleyen çıkınca dokuz kutu üç+üç+üç: tek başına
-    // bir sıraya düşen kutu kalmıyor.
-    el('div', { class: bekleyenToplam === 0 ? 'metric-grid metric-grid-8' : 'metric-grid metric-grid-9' }, [
-      metric('Maliyet', money(String(cost)), `${String(rows.length)} Fon`, 'money'),
-      metric('Bugünkü Değer', money(String(value)), rows[0]?.asOfDate ?? '—', 'chart'),
-      // "Açık": yanındaki Toplam Kazanç kapananları da içeriyor; ikisi aynı
-      // sözcükle yazılsaydı iki farklı rakam aynı şey sanılırdı.
-      metric('Açık Kâr / Zarar', money(String(gain)),
-        cost === 0 ? '—' : pct(((value / cost) - 1) * 100)),
-      // Panel'deki kutunun aynısı: etiket, biçim ve gün. Rakam son ölçülebilir
+    // Kutu sayısı SABİT on, beş+beş. Bekleyen kutusu sıfırken gizlenince
+    // ızgara sekiz ile dokuz arasında biçim değiştiriyor, dokuzda bir yer boş
+    // kalıyordu. Sabit sayı: boşluk yok, sıçrama yok, kağıtta da aynı.
+    el('div', { class: 'metric-grid metric-grid-10' }, [
+      // EN BAŞTA: ekrana gelen ilk soru "bugün ne oldu". Panel'deki kutunun
+      // aynısı: etiket, biçim ve gün. Rakam son ölçülebilir
       // güne ait; hafta sonu bakan kullanıcı hangi günü gördüğünü bilmeli.
       metric('Günlük Getiri',
         h.dayGain === null ? '—' : money(h.dayGain),
@@ -5759,6 +5771,12 @@ async function portfolioView(me: Me): Promise<Node[]> {
           ? 'Ölçülebilir gün yok'
           : `${pct(Number(h.dayPct))}${h.dayDate === null ? '' : ` · ${gunAd(h.dayDate)}`}`,
         'chart'),
+      metric('Maliyet', money(String(cost)), `${String(rows.length)} Fon`, 'money'),
+      metric('Bugünkü Değer', money(String(value)), rows[0]?.asOfDate ?? '—', 'chart'),
+      // "Açık": yanındaki Toplam Kazanç kapananları da içeriyor; ikisi aynı
+      // sözcükle yazılsaydı iki farklı rakam aynı şey sanılırdı.
+      metric('Açık Kâr / Zarar', money(String(gain)),
+        cost === 0 ? '—' : pct(((value / cost) - 1) * 100)),
       // Üçlü yan yana okunsun: Açık + Gerçekleşen = Toplam. Gerçekleşen
       // önce yalnız Toplam'ın alt satırında "kapanan dahil" diye geçiyordu;
       // kutu olunca kazancın nereden geldiği bakmadan görünüyor.
@@ -5778,13 +5796,21 @@ async function portfolioView(me: Me): Promise<Node[]> {
         h.weightedDays === null ? '—' : `${String(h.weightedDays)}g`,
         h.firstBuyDate === null ? 'açık lot yok' : `ilk alım ${gunAd(h.firstBuyDate, true)}`,
         'transactions'),
-      // Yalnız bekleyen alım varken çizilir; sıfırken boş bir kutu şeridi
-      // kalabalıklaştırırdı. Tutar YOK: fiyat açıklanmadı.
-      ...(bekleyenToplam === 0 ? [] : [metric(
-        'Bekleyen İşlem', String(bekleyenToplam),
-        [`${String(bekleyen.count)} alım`, `${String(bekleyen.sellCount)} satış`]
-          .filter((t) => !t.startsWith('0 ')).join(' · '),
-        'transactions', 'işlem')]),
+      // En büyük pozisyon: yoğunlaşma tek bakışta. Tabloyu taramadan hangi
+      // fonun portföyün yüzde kaçı olduğu görünmüyordu.
+      metric('En Büyük Pozisyon', enBuyuk === undefined ? '—' : enBuyuk.fundCode,
+        enBuyuk === undefined || value === 0
+          ? 'pozisyon yok'
+          : `${pct((Number(enBuyuk.value) / value) * 100, 1)} · ${money(enBuyuk.value)}`,
+        'portfolio'),
+      // Sıfırken de duruyor: kutu sayısı sabit kalsın diye. Tutar YOK: fiyat
+      // açıklanmadı.
+      metric('Bekleyen İşlem', String(bekleyenToplam),
+        bekleyenToplam === 0
+          ? 'işlem yok'
+          : [`${String(bekleyen.count)} alım`, `${String(bekleyen.sellCount)} satış`]
+            .filter((t) => !t.startsWith('0 ')).join(' · '),
+        'transactions', 'işlem'),
     ]),
     panel(
       'Portföyüm',
@@ -6166,6 +6192,57 @@ const VIEWS: {
  * bilemez, kendi başına uydurmamalı. Alınamazsa rozet sessizce boş kalır —
  * sürüm gösterilememesi ekranı bozmamalı.
  */
+/**
+ * Sayfanın doğduğu sürüm.
+ *
+ * Uygulama tek sayfa: ekranlar arasında gezerken app.js bir daha çekilmiyor.
+ * Deploy'dan önce açılmış bir sekme yeni kodu hiç görmüyor; üstelik rozet
+ * her ekranda /api/runtime'ı taze çekip SUNUCUNUN sürümünü yazdığı için eski
+ * kodu çalıştıran sekme yeni sürüm numarası gösteriyordu. Ölçüldü: RQ-0062
+ * main'e girdi, sekmede PDF düğmesi yoktu, rozet "v0.62" diyordu.
+ *
+ * İlk okuma saklanır; rozet onu gösterir. Sonraki okumalar yalnız
+ * karşılaştırma içindir.
+ */
+let yukluSurum: string | null = null;
+
+async function sunucuSurumu(): Promise<string | null> {
+  try {
+    const rt = (await api('/api/runtime')) as { version?: string };
+    return rt.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sunucu sürümü sayfanınkinden ayrıştıysa şeridi açar. Her ekran kurulumunda
+ * ve sekme yeniden görünür olduğunda çağrılır.
+ *
+ * Kendiliğinden yenileme YOK: yarım doldurulmuş bir işlem formunu silmek,
+ * eski sürümde kalmaktan kötü. Düğme kullanıcının.
+ */
+async function surumKontrol(): Promise<void> {
+  const simdiki = await sunucuSurumu();
+  if (simdiki === null) return;
+  if (yukluSurum === null) { yukluSurum = simdiki; return; }
+  if (simdiki === yukluSurum) return;
+  const serit = document.getElementById('surum-uyari');
+  if (serit === null || !serit.hidden) return;
+  const yenile = el('button', { class: 'surum-yenile', type: 'button' }, ['Yenile']);
+  yenile.addEventListener('click', () => { location.reload(); });
+  serit.replaceChildren(
+    el('span', {}, [`Yeni sürüm var (${simdiki}), bu sekme ${yukluSurum} çalıştırıyor.`]),
+    yenile,
+  );
+  serit.hidden = false;
+}
+
+// Arka plandaki sekme deploy'u kaçırır; öne gelince bir kez daha bakılır.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') void surumKontrol();
+});
+
 function versionBadge(): HTMLElement {
   const value = el('strong', { class: 'version-value' }, ['—']);
   const box = el('div', { class: 'version-badge' }, [
@@ -6173,13 +6250,10 @@ function versionBadge(): HTMLElement {
     value,
   ]);
   void (async () => {
-    try {
-      const rt = (await api('/api/runtime')) as { version?: string };
-      // Sürüm gelmezse rozet boş bir kutu olarak kalmasın.
-      value.textContent = rt.version ?? '—';
-    } catch {
-      value.textContent = '—';
-    }
+    await surumKontrol();
+    // Rozet YÜKLÜ sürümü yazar, sunucunun o anki sürümünü değil; yoksa eski
+    // kodu çalıştıran sekme güncel görünür. Sürüm gelmezse boş kutu kalmasın.
+    value.textContent = yukluSurum ?? '—';
   })();
   return box;
 }
