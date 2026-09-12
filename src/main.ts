@@ -2088,6 +2088,50 @@ interface SystemFundRow {
  *
  * Bankalar panelinin deseni: aynı ekranda iki farklı ekle/sil biçimi olmasın.
  */
+/**
+ * Yeniden çizimden sonra gösterilecek mesaj.
+ *
+ * `reload()` paneli baştan kuruyor ve durum satırını da götürüyor: fon
+ * eklendiğinde ekranda hiçbir onay kalmıyordu. Mesaj modül düzeyinde bekler,
+ * yeni durum satırı onu bir kez okur ve siler.
+ */
+let bekleyenDurum: { metin: string; tur: DurumTuru } | null = null;
+
+type DurumTuru = 'bilgi' | 'uyari' | 'hata';
+
+/**
+ * Panel üstündeki durum satırı.
+ *
+ * Düğüm eklemenin HEMEN ALTINDA durur. Önce tablodan sonra geliyordu ve
+ * 19 satırlık sistem fonu listesinde "AAK zaten listede" ekranın dışında
+ * kalıyordu: kullanıcı tıklamasının işleyip işlemediğini göremiyordu.
+ *
+ * Renk türden gelir; hepsi soluk gri yazılınca hata da bilgi gibi okunuyordu.
+ */
+interface DurumSatiri {
+  node: HTMLElement;
+  /** Mesajı hemen yazar. */
+  yaz: (metin: string, tur?: DurumTuru) => void;
+  /** Mesajı `reload()` sonrasına bırakır. */
+  sonra: (metin: string, tur?: DurumTuru) => void;
+}
+
+function durumSatiri(): DurumSatiri {
+  const node = el('p', { class: 'status panel-status', hidden: 'hidden' }, []);
+  const yaz = (metin: string, tur: DurumTuru = 'bilgi'): void => {
+    node.textContent = metin;
+    node.className = 'status panel-status'
+      + (tur === 'hata' ? ' status-error' : tur === 'uyari' ? ' status-warn' : '');
+    node.hidden = metin === '';
+  };
+  if (bekleyenDurum !== null) {
+    yaz(bekleyenDurum.metin, bekleyenDurum.tur);
+    bekleyenDurum = null;
+  }
+  // `sonra`: mesajı reload'ın ötesine taşır.
+  return { node, yaz, sonra: (metin, tur = 'bilgi') => { bekleyenDurum = { metin, tur }; } };
+}
+
 function systemFundPanel(funds: SystemFundRow[], reload: () => void): HTMLElement {
   const input = el('input', {
     placeholder: 'Fon kodu', maxlength: '16', spellcheck: 'false',
@@ -2095,31 +2139,34 @@ function systemFundPanel(funds: SystemFundRow[], reload: () => void): HTMLElemen
   const note = el('input', {
     placeholder: 'Neden (isteğe bağlı)', maxlength: '200',
   }) as HTMLInputElement;
-  const status = el('span', { class: 'status' });
+  const durum = durumSatiri();
   const add = el('button', { class: 'btn-primary' }, [icon('add'), 'Ekle']);
 
   const ekle = (): void => {
     const fundCode = input.value.trim().toUpperCase();
     if (fundCode === '') {
-      status.textContent = 'Fon kodu boş olamaz.';
+      durum.yaz('Fon kodu boş olamaz.', 'hata');
       return;
     }
     void (async () => {
       try {
-        status.textContent = 'Ekleniyor…';
+        durum.yaz('Ekleniyor…');
         const r = (await api('/api/admin/funds', {
           method: 'POST',
           body: JSON.stringify({ fundCode, note: note.value }),
         })) as { added: boolean };
         if (!r.added) {
-          status.textContent = `${fundCode} zaten listede.`;
+          durum.yaz(`${fundCode} zaten listede.`, 'uyari');
           return;
         }
         input.value = '';
         note.value = '';
+        // Mesaj reload'ın ötesine taşınır: liste alfabetik ve 19 satır, yeni
+        // satırın nereye düştüğü gözle bulunmuyordu.
+        durum.sonra(`${fundCode} sistem listesine eklendi.`);
         reload();
       } catch (err) {
-        status.textContent = err instanceof Error ? err.message : 'Eklenemedi.';
+        durum.yaz(err instanceof Error ? err.message : 'Eklenemedi.', 'hata');
       }
     })();
   };
@@ -2152,9 +2199,10 @@ function systemFundPanel(funds: SystemFundRow[], reload: () => void): HTMLElemen
         if (!ok) return;
         try {
           await api(`/api/admin/funds/${encodeURIComponent(f.fundCode)}`, { method: 'DELETE' });
+          durum.sonra(`${f.fundCode} listeden çıkarıldı.`);
           reload();
         } catch (err) {
-          status.textContent = err instanceof Error ? err.message : 'Çıkarılamadı.';
+          durum.yaz(err instanceof Error ? err.message : 'Çıkarılamadı.', 'hata');
         }
       })();
     });
@@ -2189,33 +2237,36 @@ function systemFundPanel(funds: SystemFundRow[], reload: () => void): HTMLElemen
         + 'kullanıcıya bağlı değildir: ekleyen hesap silinse bile kayıt durur.',
       ]),
       el('div', { class: 'settings-actions settings-add' }, [input, note, add]),
+      durum.node,
       funds.length === 0
         ? el('div', { class: 'empty-state' }, ['Sistem listesinde fon yok.'])
         : table(['Fon', 'Not', 'Kullanıcılar', 'Eklendi', 'Ekleyen', ''], rows),
-      status,
     ]),
   );
 }
 
 function bankPanel(banks: BankRow[], reload: () => void): HTMLElement {
   const input = el('input', { placeholder: 'Banka adı', maxlength: '60' }) as HTMLInputElement;
-  const status = el('span', { class: 'status' });
+  const durum = durumSatiri();
   const add = el('button', { class: 'btn-primary' }, [icon('add'), 'Ekle']);
 
   const ekle = (): void => {
     const name = input.value.trim();
     if (name === '') {
-      status.textContent = 'Banka adı boş olamaz.';
+      durum.yaz('Banka adı boş olamaz.', 'hata');
       return;
     }
     void (async () => {
       try {
-        status.textContent = 'Ekleniyor…';
+        durum.yaz('Ekleniyor…');
         await api('/api/admin/banks', { method: 'POST', body: JSON.stringify({ name }) });
         input.value = '';
+        // Mesaj reload'ın ötesine taşınır: panel baştan kuruluyor ve durum
+        // satırını da götürüyor.
+        durum.sonra(`${name} eklendi.`);
         reload();
       } catch (err) {
-        status.textContent = err instanceof Error ? err.message : 'Eklenemedi.';
+        durum.yaz(err instanceof Error ? err.message : 'Eklenemedi.', 'hata');
       }
     })();
   };
@@ -2231,7 +2282,7 @@ function bankPanel(banks: BankRow[], reload: () => void): HTMLElement {
         // Kullanımdaki banka silme penceresi bile açılmadan reddedilir:
         // onaylatıp sonra "olmaz" demek kullanıcıyı boşuna yürütürdü.
         if (b.usage > 0) {
-          status.textContent = `"${b.name}" ${String(b.usage)} işlemde kullanılıyor, silinemez.`;
+          durum.yaz(`"${b.name}" ${String(b.usage)} işlemde kullanılıyor, silinemez.`, 'uyari');
           return;
         }
         const ok = await confirmDelete({
@@ -2242,9 +2293,10 @@ function bankPanel(banks: BankRow[], reload: () => void): HTMLElement {
         if (!ok) return;
         try {
           await api(`/api/admin/banks/${encodeURIComponent(b.name)}`, { method: 'DELETE' });
+          durum.sonra(`${b.name} silindi.`);
           reload();
         } catch (err) {
-          status.textContent = err instanceof Error ? err.message : 'Silinemedi.';
+          durum.yaz(err instanceof Error ? err.message : 'Silinemedi.', 'hata');
         }
       })();
     });
@@ -2265,10 +2317,10 @@ function bankPanel(banks: BankRow[], reload: () => void): HTMLElement {
     `${String(banks.length)} tanım · işlem formu bu listeden seçer`,
     el('div', { class: 'panel-body' }, [
       el('div', { class: 'settings-actions settings-add' }, [input, add]),
+      durum.node,
       banks.length === 0
         ? el('div', { class: 'empty-state' }, ['Tanımlı banka yok.'])
         : table(['Banka', 'İşlem', 'Durum', ''], rows),
-      status,
     ]),
   );
 }
