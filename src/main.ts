@@ -5929,7 +5929,7 @@ async function usersView(reload: () => void, me: Me): Promise<Node[]> {
 
   // Geçiş yalnız superuser'da ve yalnız superuser olmayan aktif hesaplara.
   // Kendi satırında da yok: oraya zaten dönülüyor.
-  const gecisVar = me.type === 'super' && me.actor === null;
+  const gecisVar = me.type === 'super' && (me.actor ?? null) === null;
   const durum = el('p', { class: 'error', hidden: 'hidden' }, []);
 
   const body = rows.map((u) => {
@@ -6199,10 +6199,14 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
 
   // Geçiş şeridi: superuser hangi hesaba baktığını her ekranda görmeli,
   // yoksa yanlış hesapta işlem girmesi an meselesi. X asıl hesaba döndürüyor.
-  const gecisSeridi = me.actor === null ? null : (() => {
+  // `?? null`: alanı göndermeyen bir yanıt geçiş varmış gibi okunmamalı.
+  // Ölçüldü — giriş yanıtı alanı taşımıyordu, şerit kurulurken çöküyor ve
+  // ekran boş kalıyordu; sayfa yenilenince açılıyordu.
+  const aktorBilgi = me.actor ?? null;
+  const gecisSeridi = aktorBilgi === null ? null : (() => {
     const dur = el('button', {
       class: 'impersonate-stop', type: 'button',
-      title: `${me.actor.fullName} hesabına dön`, 'aria-label': 'Geçişi bitir',
+      title: `${aktorBilgi.fullName} hesabına dön`, 'aria-label': 'Geçişi bitir',
     }, [icon('close', 14)]) as HTMLButtonElement;
     const metin = el('span', { class: 'impersonate-text' }, [
       el('strong', {}, [gorunenAd]), ' olarak görüntülüyorsunuz',

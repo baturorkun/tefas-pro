@@ -412,6 +412,10 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
             telegram: found.telegram,
             type: found.type,
             mustChangePassword: found.mustChangePassword,
+            // Taze giriş hiçbir zaman geçiş değildir. Alan yine de yazılıyor:
+            // eksik bırakıldığında `undefined` geliyordu ve arayüz `=== null`
+            // ile baktığı için geçiş varmış gibi davranıp çöküyordu.
+            actor: null,
           },
           {
             'Set-Cookie': sessionCookie(COOKIE_NAME, sid, {
