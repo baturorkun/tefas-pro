@@ -207,7 +207,12 @@ awk "/id: 'transactions', label:/{a=NR} /id: 'alarms', label:/{b=NR} /id: 'marke
   "${M}" || fail "menu sirasi yanlis: islemler, alarmlar, piyasa arka arkaya olmali"
 printf 'PASS: menude alarmlar fon hareketlerinin hemen altinda\n'
 
-# Renk esikleri tablosunda sayi sutunu yok: ayni dagilim ustteki kutularda.
-grep -qF "table(['Renk', 'En Az Puan'], kademeSatir)" <<<"${AV}" || fail "renk esikleri tablosu degismedi"
-grep -qF "'Şu An'" "${M}" && fail "renk esikleri tablosunda sayi sutunu duruyor"
-printf 'PASS: renk esikleri tablosunda tekrar eden sayi sutunu yok\n'
+# Renk esikleri tablosunda her rengin yanina o renkteki fon sayisi: esigi
+# kaydirinca sayinin nasil degistigi kutulara bakmadan gorulsun. Baslik kural
+# tablosuyla ayni dil ("Uyan Fon"); "Su An" anlasilmiyordu.
+grep -qF "table(['Renk', 'En Az Puan', 'Uyan Fon'], kademeSatir)" <<<"${AV}" \
+  || fail "renk esikleri tablosunda uyan fon sutunu yok"
+grep -qF "el('td', { class: 'num' }, [String(say(l.code))])" <<<"${AV}" \
+  || fail "renk basina fon sayisi hesaplanmiyor"
+grep -qF "'Şu An'" "${M}" && fail "anlasilmayan Su An basligi duruyor"
+printf 'PASS: renk esikleri tablosunda renk basina uyan fon sayisi var\n'

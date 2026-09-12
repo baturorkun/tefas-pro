@@ -161,10 +161,11 @@ Sekme özeti kaç fon içinde kaç alarm olduğunu söyler.
 - Görece kural şemsiye türü içinde karşılaştırıyor; grubu 3 fondan azsa
   çalışmıyor.
 - Pencerenin ucunda veri yoksa kural ateşlemiyor ve "veri yok" diyor.
-- Fon başına günlük puan ve ateşleyen kurallar kaydediliyor.
+- Fon başına günlük puan ve ateşleyen kurallar için tablo ve kayıt fonksiyonu
+  var; zamanlanmış koşum ayrı RQ.
 - Admin ekranından kural, puan, tavan ve renk eşikleri düzenlenebiliyor.
 - Admin ekranı o anki dağılımı gösteriyor.
-- Admin ekranı seçilen ayarın geçmişte kaç alarm üreteceğini gösteriyor.
+- (ayrı RQ) Admin ekranı seçilen ayarın geçmişte kaç alarm üreteceğini gösteriyor.
 - Ayar ekranında fon listesi yok; dağılım önizlemesi ve kural başına
   ateşleyen fon sayısı var.
 - Alarm fona ait; kullanıcı pozisyonu PUANA girmiyor.
@@ -175,6 +176,21 @@ Sekme özeti kaç fon içinde kaç alarm olduğunu söyler.
   toplam alarm ve alt satırda renk kırılımı.
 - Bir fon yalnız bir sekmede görünüyor; pozisyon takibi eziyor.
 - Her sekmede yalnız alarm veren fonlar listeleniyor.
+
+## Bu RQ'da teslim edilen ve sonraya kalan
+
+Teslim: şema (kural, aile, kademe, sonuç tabloları), tek SQL'de hesap,
+kademe ve aile tavanı, şemsiye türü içinde görece kural, admin ayar ekranı
+(cümle biçiminde kurallar, canlı dağılım, kural başına uyan fon), kullanıcı
+ekranı (üç sekme, yalnız alarm verenler, gerekçe).
+
+Sonraya kalan, ayrı RQ:
+
+- Günlük koşum: `alarmKaydet` var ama collector çağırmıyor; ekranlar canlı
+  hesaplıyor, "üç gündür kırmızı" henüz söylenemiyor.
+- Geriye dönük test düğmesi: hesap 72 fon için ~3,5 s, yüzlerce günü tek
+  seferde hesaplayan sürüm gerekiyor.
+- Fon satırlarında renk işareti (Portföyüm, Takip Listem).
 
 ## Kapsam dışı
 

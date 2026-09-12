@@ -6431,13 +6431,18 @@ async function alarmView(reload: () => void): Promise<Node[]> {
       { alan: 'threshold', ters: true }, ' puan geride'],
     zirveden_dusus: ['Son ', { alan: 'windowDays' }, ' günün zirvesinden ',
       { alan: 'threshold', ters: true }, '% aşağıda'],
-    yatirimci_azalma: ['Son ', { alan: 'windowDays' }, ' günde yatırımcı sayısı ',
+    // Özne başta: "yatırımcı" sözcüğü cümlenin ortasında kalınca kural
+    // taranırken gözden kaçıyordu ("yatırımcı sayısıyla ilgili kural yok").
+    yatirimci_azalma: ['Yatırımcı sayısı son ', { alan: 'windowDays' }, ' günde ',
       { alan: 'threshold', ters: true }, '% azaldı'],
     net_cikis: ['Son ', { alan: 'windowDays' }, ' günde fon büyüklüğünün ',
       { alan: 'threshold', ters: true }, "%'i çıktı"],
-    balina_cikis: ['Son ', { alan: 'windowDays' }, ' günde büyüklüğün ',
-      { alan: 'threshold', ters: true }, "%'i çıktı ama yatırımcı sayısı ",
-      { alan: 'threshold2', ters: true }, "%'den fazla azalmadı"],
+    // Kullanıcının tarifiyle: "çok az yatırımcı çıkmış ama para çok çıkmış".
+    // Önceki cümle aynı şeyi "azalmadı" diye tersten söylüyordu ve kural
+    // olarak tanınmıyordu.
+    balina_cikis: ['Büyük yatırımcı çıkışı: son ', { alan: 'windowDays' },
+      ' günde yatırımcıların en fazla ', { alan: 'threshold2', ters: true },
+      "%'i çıktı ama paranın ", { alan: 'threshold', ters: true }, "%'si çıktı"],
     veri_yok: [{ alan: 'threshold' }, ' iş günüdür fiyat gelmiyor'],
   };
 
@@ -6508,12 +6513,14 @@ async function alarmView(reload: () => void): Promise<Node[]> {
     ]);
   });
 
-  // Sayı sütunu yok: aynı dağılım üstteki kutularda zaten duruyor ve tabloda
-  // ikinci kez yazmak hangisinin güncel olduğu sorusunu doğuruyordu.
+  // Her rengin yanında şu an o renkte kaç fon olduğu: eşiği kaydırınca sayının
+  // nasıl değiştiği burada, kutulara bakmadan görülsün. Kural tablosundaki
+  // "Uyan Fon" ile aynı dil.
   const kademeSatir = d.levels.map((l) => el('tr', {}, [
     el('td', {}, [badge(l.label, `alarm-${l.code}`)]),
     el('td', { class: 'num' }, [sayiAlani(String(l.minScore), '4.5rem',
       `/api/admin/alarm/levels/${l.code}`, 'minScore', `${l.label} eşiği değişti.`)]),
+    el('td', { class: 'num' }, [String(say(l.code))]),
   ]));
 
   return [
@@ -6553,7 +6560,7 @@ async function alarmView(reload: () => void): Promise<Node[]> {
       ]),
     ),
     panel('Renk Eşikleri', 'Toplam puandan renge', el('div', { class: 'panel-body' }, [
-      table(['Renk', 'En Az Puan'], kademeSatir),
+      table(['Renk', 'En Az Puan', 'Uyan Fon'], kademeSatir),
     ])),
   ];
 }
