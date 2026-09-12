@@ -107,6 +107,10 @@ import {
   writeSetting,
   writeUserSetting,
 } from './repository.js';
+import {
+  alarmAyarlari, alarmHesapla, alarmSonGun,
+  alarmKuralGuncelle, alarmAileGuncelle, alarmKademeGuncelle, alarmListesi,
+} from './alarm.js';
 
 const COOKIE_NAME = 'tefas_session';
 const PORT = Number(process.env.PORT ?? 8282);
@@ -650,6 +654,19 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
       // görüyordu ve hangisinin doğru olduğu sorulacaktı. /api/dashboard'un
       // tamamını çekmek yerine yalnız bu parça; o uç grafik ve sıralama
       // taşıyor.
+      // Alarmlar herkese açık: kural düzenlemek admin işi, alarmı GÖRMEK
+      // değil. Fon başına puan herkes için aynı; kullanıcıya göre değişen
+      // yalnız hangi grupta listelendiği.
+      if (path === '/api/alarms' && method === 'GET') {
+        const gun = await alarmSonGun(pool);
+        sendJson(res, 200, {
+          day: gun,
+          levels: (await alarmAyarlari(pool)).levels,
+          funds: gun === null ? [] : await alarmListesi(pool, user.id, gun),
+        });
+        return;
+      }
+
       if (path === '/api/portfolio/headline' && method === 'GET') {
         sendJson(res, 200, await portfolioHeadline(pool, user.id));
         return;
@@ -1108,6 +1125,54 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
             return;
           }
           sendJson(res, 200, await listBanks(pool));
+          return;
+        }
+
+        // ─── Alarm ───
+        // Ayarlar ve o anki dağılım BİRLİKTE dönüyor: eşiği değiştirirken
+        // sonucunu görmeden seçmek tahmindir. Ölçüldü — çıkış eşiği %2 olunca
+        // 72 fonun 23'ü ateşliyor, %10'da 5'i.
+        if (path === '/api/admin/alarm' && method === 'GET') {
+          const gun = await alarmSonGun(pool);
+          const [ayar, satirlar] = await Promise.all([
+            alarmAyarlari(pool),
+            gun === null ? Promise.resolve([]) : alarmHesapla(pool, gun),
+          ]);
+          sendJson(res, 200, { ...ayar, day: gun, funds: satirlar });
+          return;
+        }
+
+        const alarmRuleId = matchPath('/api/admin/alarm/rules/:id', path);
+        if (alarmRuleId !== null && method === 'PATCH') {
+          const body = asRecord(await readJson(req));
+          const sayi = (k: string): number | undefined =>
+            body[k] === undefined ? undefined : Number(body[k]);
+          await alarmKuralGuncelle(pool, Number(alarmRuleId), {
+            ...(sayi('windowDays') === undefined ? {} : { windowDays: sayi('windowDays')! }),
+            ...(sayi('threshold') === undefined ? {} : { threshold: sayi('threshold')! }),
+            ...(body['threshold2'] === undefined
+              ? {}
+              : { threshold2: body['threshold2'] === null ? null : Number(body['threshold2']) }),
+            ...(sayi('points') === undefined ? {} : { points: sayi('points')! }),
+            ...(body['isActive'] === undefined ? {} : { isActive: body['isActive'] === true }),
+          }, user.id);
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+
+        const alarmAileCode = matchPath('/api/admin/alarm/families/:id', path);
+        if (alarmAileCode !== null && method === 'PATCH') {
+          const body = asRecord(await readJson(req));
+          await alarmAileGuncelle(pool, alarmAileCode, Number(body['cap']));
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+
+        const alarmKademeCode = matchPath('/api/admin/alarm/levels/:id', path);
+        if (alarmKademeCode !== null && method === 'PATCH') {
+          const body = asRecord(await readJson(req));
+          await alarmKademeGuncelle(pool, alarmKademeCode, Number(body['minScore']));
+          sendJson(res, 200, { ok: true });
           return;
         }
 

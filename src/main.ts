@@ -73,6 +73,34 @@ interface UserRow {
   isActive: boolean;
 }
 
+interface AlarmKural {
+  id: number; kind: string; family: string; label: string;
+  windowDays: number; threshold: string; threshold2: string | null;
+  points: number; isActive: boolean; sort: number;
+}
+interface AlarmFonu {
+  fundCode: string; title: string | null; score: number; level: string | null;
+  hits: { ruleId: number; label: string; family: string; value: string; points: number }[];
+  /** Eşiğine uyan bütün kurallar; `hits` yalnız puan verenler. */
+  matched: number[];
+}
+interface AlarmListeSatiri extends AlarmFonu {
+  scope: 'pozisyon' | 'takip' | 'diger';
+}
+interface AlarmListesi {
+  day: string | null;
+  levels: { code: string; label: string; minScore: number; sort: number }[];
+  funds: AlarmListeSatiri[];
+}
+
+interface AlarmVerisi {
+  families: { code: string; label: string; cap: number; sort: number }[];
+  levels: { code: string; label: string; minScore: number; sort: number }[];
+  rules: AlarmKural[];
+  day: string | null;
+  funds: AlarmFonu[];
+}
+
 interface RankEntry {
   fundCode: string;
   title: string | null;
@@ -341,7 +369,7 @@ interface PerformanceSeries {
 type ViewId =
   | 'dashboard' | 'portfolio' | 'closed' | 'cash' | 'periods' | 'market'
   | 'allocation' | 'stocks' | 'chat' | 'transactions' | 'watchlist' | 'prefs'
-  | 'profile' | 'users' | 'banks' | 'sysfunds' | 'runs' | 'settings';
+  | 'profile' | 'users' | 'banks' | 'sysfunds' | 'runs' | 'settings' | 'alarm' | 'alarms';
 
 const root = document.getElementById('app');
 
@@ -631,6 +659,10 @@ const ICON_PATHS: Record<string, string[]> = {
   add: ['M12 5v14M5 12h14'],
   logout: ['M15 17l5-5-5-5', 'M20 12H9', 'M12 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6'],
   close: ['M6 6l12 12M18 6 6 18'],
+  // Uyarı üçgeni: kullanıcının alarm ekranı ve admin kural ekranı. İki view
+  // id'si var (alarms, alarm) ve menü ikonu id'den okunuyor.
+  alarms: ['M12 3 2 20h20z', 'M12 10v5', 'M12 17.5v.5'],
+  alarm: ['M12 3 2 20h20z', 'M12 10v5', 'M12 17.5v.5'],
   // Yazıcı: Portföyüm'ün PDF düğmesi. Çıktı tarayıcının yazdırmasından.
   print: ['M6 9V3h12v6', 'M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2',
           'M6 14h12v7H6z'],
@@ -6206,6 +6238,333 @@ async function usersView(reload: () => void, me: Me): Promise<Node[]> {
 }
 
 
+/**
+ * Kullanıcının alarm ekranı.
+ *
+ * Üç liste: payın olan fonlar, izlediklerin, diğerleri. Alarm fona ait ve
+ * herkes için aynı; değişen yalnız sıralama. Puanı kullanıcıya göre
+ * değiştirmek aynı fonun iki kişide iki renk olması demekti.
+ *
+ * Kendi fonlarında temiz olanlar da yazılır: "bu fonlara baktım, sorun yok"
+ * bilgisi de bir bilgidir. Diğer fonlarda yalnız alarm verenler listelenir,
+ * yoksa ekran 40 satır sessizlikle dolardı.
+ */
+type AlarmSekme = 'pozisyon' | 'takip' | 'diger';
+
+/**
+ * Seçili sekme modül düzeyinde: ekran yeniden kurulunca seçim kaybolmamalı.
+ * Fon Hareketleri ve Piyasa ekranlarında da aynı düzen.
+ */
+let alarmSekme: AlarmSekme = 'pozisyon';
+
+const ALARM_SEKME: { id: AlarmSekme; ad: string }[] = [
+  { id: 'pozisyon', ad: 'Portföyümdekiler' },
+  { id: 'takip', ad: 'Takiptekiler' },
+  { id: 'diger', ad: 'Diğerleri' },
+];
+
+async function alarmlarView(): Promise<Node[]> {
+  const d = (await api('/api/alarms')) as AlarmListesi;
+  // Renk yoksa satır da yok; bu yüzden geri düşülecek bir etiket gerekmiyor.
+  const renkAdi = (kod: string): string =>
+    d.levels.find((l) => l.code === kod)?.label ?? kod;
+
+  const satir = (f: AlarmListeSatiri): HTMLElement => {
+    const detay = iconButton('search', 'Fon detayı');
+    detay.addEventListener('click', () => { void openFundModal(f.fundCode); });
+    return el('tr', {}, [
+      el('td', {}, [
+        el('span', { class: 'fund-code' }, [f.fundCode]),
+        el('span', { class: 'fund-title' }, [f.title ?? '']),
+      ]),
+      el('td', {}, [badge(renkAdi(f.level ?? ''), `alarm-${f.level ?? ''}`)]),
+      el('td', { class: 'num' }, [String(f.score)]),
+      el('td', {}, [el('div', { class: 'alarm-gerekce' },
+        f.hits.map((h) => el('span', { class: 'alarm-hit' }, [`${h.label}: ${h.value}`])))]),
+      el('td', { class: 'actions' }, [detay]),
+    ]);
+  };
+
+  const grupta = (k: AlarmSekme): AlarmListeSatiri[] => d.funds.filter((f) => f.scope === k);
+  const sayi = (k: AlarmSekme, renk: string): number =>
+    grupta(k).filter((f) => f.level === renk).length;
+  // Alarm = renk almış fon. Puanı eşiğin altında kalan fon (1-19) alarm
+  // değildir; listeye alınınca rozeti boş kalıyor ve "bu niye burada"
+  // sorusunu doğuruyordu.
+  const alarmli = (k: AlarmSekme): number => grupta(k).filter((f) => f.level !== null).length;
+  // Renk kırılımı kutunun alt satırında: tek bir toplam "5 alarm" derken
+  // beşinin de sarı mı yoksa biri kırmızı mı olduğunu söylemiyordu.
+  const kirilim = (k: AlarmSekme): string => {
+    const p = d.levels.slice().reverse()
+      .map((l) => ({ ad: l.label, n: sayi(k, l.code) }))
+      .filter((x) => x.n > 0)
+      .map((x) => `${String(x.n)} ${x.ad.toLocaleLowerCase('tr')}`);
+    return p.length === 0 ? 'alarm yok' : p.join(' · ');
+  };
+
+  /** Sekme gövdesi. Diğerlerinde yalnız alarm verenler listelenir. */
+  const bolum = (k: AlarmSekme): HTMLElement => {
+    const hepsi = grupta(k);
+    // Yalnız renk almış fonlar. Alarmsızları yazmak ekranı 30 satır sessizlikle
+    // dolduruyordu; eşik altındakileri yazmak da renksiz satır üretiyordu.
+    const gosterilen = hepsi.filter((f) => f.level !== null);
+    return el('div', { class: 'panel-body' }, [
+      gosterilen.length === 0
+        ? el('div', { class: 'empty-state' }, [
+          hepsi.length === 0 ? 'Bu grupta fon yok.' : 'Bu gruptaki fonlarda alarm yok.',
+        ])
+        : table(['Fon', 'Durum', 'Puan', 'Gerekçe', ''], gosterilen.map(satir)),
+    ]);
+  };
+
+  const SEKME_ADI: Record<AlarmSekme, string> = {
+    pozisyon: 'Portföyümdekiler', takip: 'Takiptekiler', diger: 'Diğerleri',
+  };
+  const ozet = (k: AlarmSekme): string =>
+    `${String(alarmli(k))} alarm · ${String(grupta(k).length)} fon içinde`;
+
+  const govde = el('div', {}, [bolum(alarmSekme)]);
+  const dugmeler = new Map<AlarmSekme, HTMLElement>();
+  // Panel başlığı da sekmeyle değişir. Yalnız gövdeyi değiştirmek, başlıkta
+  // "Portföyümdekiler" yazarken altta takip listesini göstermek olurdu.
+  const baslik = el('h2', {}, [SEKME_ADI[alarmSekme]]);
+  const ozetAlani = el('span', { class: 'header-meta' }, [ozet(alarmSekme)]);
+  const sec = (id: AlarmSekme): void => {
+    // Yeniden istek yok: tek yanıt üç grubu da taşıyor. reload() aynı rakamı
+    // ikinci kez indirmek ve ekranı yeniden kurmak olurdu.
+    alarmSekme = id;
+    for (const [k, b] of dugmeler) b.classList.toggle('tab-on', k === id);
+    baslik.textContent = SEKME_ADI[id];
+    ozetAlani.textContent = ozet(id);
+    govde.replaceChildren(bolum(id));
+  };
+  const sekmeler = el('div', { class: 'tabs' }, ALARM_SEKME.map((x) => {
+    const b = el('button', {
+      type: 'button', class: `tab-btn${alarmSekme === x.id ? ' tab-on' : ''}`,
+    }, [x.ad, el('span', { class: 'tab-count' }, [String(alarmli(x.id))])]);
+    b.addEventListener('click', () => { sec(x.id); });
+    dugmeler.set(x.id, b);
+    return b;
+  }));
+
+  return [
+    // Portföy renk renk ayrı kutularda: kendi paranın olduğu yerde "kaç
+    // kırmızı" doğrudan okunmalı. Takip ve diğerlerinde toplam yeter, renk
+    // kırılımı alt satırda.
+    el('div', { class: 'metric-grid metric-grid-5' }, [
+      metric('Portföyde Kırmızı', String(sayi('pozisyon', 'kirmizi')), 'En ağır', 'alarm'),
+      metric('Portföyde Turuncu', String(sayi('pozisyon', 'turuncu')), 'Orta', 'alarm'),
+      metric('Portföyde Sarı', String(sayi('pozisyon', 'sari')), 'Hafif', 'alarm'),
+      metric('Takipte Alarm', String(alarmli('takip')), kirilim('takip'), 'watchlist'),
+      metric('Diğerlerinde Alarm', String(alarmli('diger')), kirilim('diger'), 'fund'),
+    ]),
+    // panel() başlığı metin olarak alıyor; burada başlık sekmeyle değiştiği
+    // için düğümler elde tutuluyor ve aynı yapı elle kuruluyor.
+    el('section', { class: 'panel' }, [
+      el('div', { class: 'panel-heading' }, [
+        el('div', { class: 'panel-heading-text' }, [baslik, ozetAlani]),
+        sekmeler,
+      ]),
+      govde,
+    ]),
+  ];
+}
+
+/**
+ * Alarm kuralları ekranı.
+ *
+ * Eşiği değiştirirken sonucunu görmeden seçmek tahmindir: ölçüldü, çıkış
+ * eşiği %2 olunca 72 fonun 23'ü ateşliyor, %10'da 5'i. O yüzden kural listesi
+ * ile o anki dağılım aynı ekranda ve her kayıttan sonra dağılım tazeleniyor.
+ */
+async function alarmView(reload: () => void): Promise<Node[]> {
+  const d = (await api('/api/admin/alarm')) as AlarmVerisi;
+  const durum = durumSatiri();
+
+  // Dağılım kalıyor: eşiği sonucunu görmeden seçmek tahmindir. Fon listesi
+  // kalktı — burası ayar ekranı, alarmların kendisi Alarmlar ekranında.
+  const say = (kod: string | null): number => d.funds.filter((f) => f.level === kod).length;
+
+  const kaydet = async (yol: string, govde: unknown, mesaj: string): Promise<void> => {
+    try {
+      await api(yol, { method: 'PATCH', body: JSON.stringify(govde) });
+      durum.sonra(mesaj);
+      reload();
+    } catch (err) {
+      durum.yaz(err instanceof Error ? err.message : 'Kaydedilemedi.', 'hata');
+    }
+  };
+
+  // Sayı alanı: değişince kaydeder. Ayrı bir "Kaydet" düğmesi her satırda bir
+  // düğme daha demekti ve tablo okunmaz hale geliyordu.
+  const sayiAlani = (
+    deger: string, genislik: string, yol: string, alan: string, mesaj: string,
+  ): HTMLInputElement => {
+    const i = el('input', {
+      type: 'number', step: 'any', value: deger, class: 'alarm-sayi', style: `width:${genislik}`,
+    }) as HTMLInputElement;
+    i.addEventListener('change', () => {
+      if (i.value.trim() === '') return;
+      void kaydet(yol, { [alan]: Number(i.value) }, mesaj);
+    });
+    return i;
+  };
+
+  /**
+   * Kuralın cümle biçimi.
+   *
+   * Önce sütunlu bir tablo vardı: "Pencere" ve "Eşik". Aynı başlık her satırda
+   * başka bir şey anlatıyordu — birinde gün sayısı, ötekinde yüzde, üçüncüde
+   * puan farkı — ve iki kuralda pencere hiç kullanılmadığı hâlde 1 yazıyordu.
+   * Kural cümle olarak yazılınca hangi sayının ne olduğu okunuyor.
+   *
+   * `ters` işaretli alanlar ekranda pozitif gösterilir: eşik veritabanında -2
+   * ama cümlede "%2 veya daha fazla kaybetti" diye okunuyor. Kaybı eksi sayıyla
+   * yazmak, "-2'den küçük" ile "%2 düştü" arasında sürekli çeviri gerektiriyordu.
+   */
+  type Parca = string | { alan: 'windowDays' | 'threshold' | 'threshold2'; ters?: boolean };
+  const SABLON: Record<string, Parca[]> = {
+    ardisik_eksi: [{ alan: 'threshold' }, ' gün üst üste eksi getiri'],
+    birikimli_getiri: ['Son ', { alan: 'windowDays' }, ' günde toplam ',
+      { alan: 'threshold', ters: true }, '% veya daha fazla kaybetti'],
+    gruba_gore: ['Son ', { alan: 'windowDays' }, ' günde kendi şemsiye türünün ortancasından ',
+      { alan: 'threshold', ters: true }, ' puan geride'],
+    zirveden_dusus: ['Son ', { alan: 'windowDays' }, ' günün zirvesinden ',
+      { alan: 'threshold', ters: true }, '% aşağıda'],
+    // Özne başta: "yatırımcı" sözcüğü cümlenin ortasında kalınca kural
+    // taranırken gözden kaçıyordu ("yatırımcı sayısıyla ilgili kural yok").
+    yatirimci_azalma: ['Yatırımcı sayısı son ', { alan: 'windowDays' }, ' günde ',
+      { alan: 'threshold', ters: true }, '% azaldı'],
+    net_cikis: ['Son ', { alan: 'windowDays' }, ' günde fon büyüklüğünün ',
+      { alan: 'threshold', ters: true }, "%'i çıktı"],
+    // Kullanıcının tarifiyle: "çok az yatırımcı çıkmış ama para çok çıkmış".
+    // Önceki cümle aynı şeyi "azalmadı" diye tersten söylüyordu ve kural
+    // olarak tanınmıyordu.
+    balina_cikis: ['Büyük yatırımcı çıkışı: son ', { alan: 'windowDays' },
+      ' günde yatırımcıların en fazla ', { alan: 'threshold2', ters: true },
+      "%'i çıktı ama paranın ", { alan: 'threshold', ters: true }, "%'si çıktı"],
+    veri_yok: [{ alan: 'threshold' }, ' iş günüdür fiyat gelmiyor'],
+  };
+
+  const cumle = (r: AlarmKural): Node[] => (SABLON[r.kind] ?? [r.label]).map((parca) => {
+    if (typeof parca === 'string') return document.createTextNode(parca);
+    const ham = parca.alan === 'windowDays' ? String(r.windowDays)
+      : parca.alan === 'threshold' ? r.threshold : (r.threshold2 ?? '0');
+    const gosterilen = parca.ters === true ? String(Math.abs(Number(ham))) : ham;
+    const i = el('input', {
+      type: 'number', step: 'any', value: gosterilen, class: 'alarm-sayi alarm-kutu',
+    }) as HTMLInputElement;
+    i.addEventListener('change', () => {
+      if (i.value.trim() === '') return;
+      const n = Math.abs(Number(i.value)) * (parca.ters === true ? -1 : 1);
+      void kaydet(`/api/admin/alarm/rules/${String(r.id)}`, { [parca.alan]: n },
+        'Kural güncellendi.');
+    });
+    return i;
+  });
+
+  const kuralSatir = d.rules.map((r) => {
+    const aktif = el('input', { type: 'checkbox' }) as HTMLInputElement;
+    aktif.checked = r.isActive;
+    aktif.addEventListener('change', () => {
+      void kaydet(`/api/admin/alarm/rules/${String(r.id)}`, { isActive: aktif.checked },
+        aktif.checked ? 'Kural açıldı.' : 'Kural kapatıldı.');
+    });
+    // Eşiğe kaç fon uyuyor: eşiği ayarlarken bakılacak sayı bu. `hits` yalnız
+    // puan verenleri taşıyor ve alt kademe üst kademeye yenildiği için orada
+    // görünmüyor — "3 gün"e 4 fon uyuyor ama ikisi "5 gün"ü de aştığı için
+    // puanı üst kademeden alıyor.
+    // Eşiğe kaç fon uyuyor: eşiği ayarlarken bakılacak tek sayı. Kademe
+    // süzgecinden sonra kaçına puan verdiği burada yazılmıyor — "4 (2 puan)"
+    // diye yazılıyordu ve okuyan anlamıyordu; o ayrıntı motorun içinde kalsın.
+    const uyan = d.funds.filter((f) => f.matched.includes(r.id)).length;
+    return el('tr', { class: r.isActive ? '' : 'alarm-pasif' }, [
+      // Aile ilk sütunda, rozet olarak: cümlenin altında küçük yazıyken
+      // görünmüyordu ve hangi kuralın hangi aileden olduğu okunmuyordu.
+      el('td', {}, [badge(d.families.find((f) => f.code === r.family)?.label ?? r.family, r.family)]),
+      el('td', {}, [el('div', { class: 'alarm-cumle' }, cumle(r))]),
+      el('td', { class: 'num' }, [sayiAlani(String(r.points), '4.5rem',
+        `/api/admin/alarm/rules/${String(r.id)}`, 'points', 'Puan değişti.')]),
+      el('td', { class: 'num' }, [uyan === 0 ? el('span', { class: 'dim' }, ['0']) : String(uyan)]),
+      el('td', {}, [el('label', { class: 'switch-field alarm-switch' }, [
+        aktif, el('span', { class: 'switch-track' }, []),
+      ])]),
+    ]);
+  });
+
+  const aileSatir = d.families.map((f) => {
+    // Bir fon aynı ölçütten yalnız EN YÜKSEK kademeyi alır, o yüzden ailenin
+    // ulaşılabilir en yüksek puanı bütün kuralların toplamı değil, ölçüt
+    // başına en yüksek puanların toplamıdır. Getiri ailesinde kuralların
+    // toplamı 150 ama bir fonun alabileceği en çok 100.
+    const enYuksek = [...new Set(d.rules.filter((r) => r.family === f.code && r.isActive)
+      .map((r) => r.kind))]
+      .reduce((t, kind) => t + Math.max(...d.rules
+        .filter((r) => r.family === f.code && r.isActive && r.kind === kind)
+        .map((r) => r.points)), 0);
+    return el('tr', {}, [
+      el('td', {}, [badge(f.label, f.code)]),
+      el('td', { class: 'num dim' }, [String(enYuksek)]),
+      el('td', { class: 'num' }, [sayiAlani(String(f.cap), '4.5rem',
+        `/api/admin/alarm/families/${f.code}`, 'cap', `${f.label} tavanı değişti.`)]),
+      // Tavan en yüksekten büyükse hiçbir şey kesmiyor demektir; sessiz
+      // kalırsa ayarın işe yaramadığı fark edilmez.
+      el('td', { class: 'dim' }, [f.cap >= enYuksek ? 'tavan etkisiz' : '']),
+    ]);
+  });
+
+  // Her rengin yanında şu an o renkte kaç fon olduğu: eşiği kaydırınca sayının
+  // nasıl değiştiği burada, kutulara bakmadan görülsün. Kural tablosundaki
+  // "Uyan Fon" ile aynı dil.
+  const kademeSatir = d.levels.map((l) => el('tr', {}, [
+    el('td', {}, [badge(l.label, `alarm-${l.code}`)]),
+    el('td', { class: 'num' }, [sayiAlani(String(l.minScore), '4.5rem',
+      `/api/admin/alarm/levels/${l.code}`, 'minScore', `${l.label} eşiği değişti.`)]),
+    el('td', { class: 'num' }, [String(say(l.code))]),
+  ]));
+
+  return [
+    el('div', { class: 'metric-grid metric-grid-5' }, [
+      metric('Kırmızı', String(say('kirmizi')), 'En ağır', 'alarm'),
+      metric('Turuncu', String(say('turuncu')), 'Orta', 'alarm'),
+      metric('Sarı', String(say('sari')), 'Hafif', 'alarm'),
+      metric('Alarmsız', String(say(null)), 'Renk almayan fon', 'flag'),
+      metric('Veri Günü', d.day === null ? '—' : gunAd(d.day, true), 'Son fiyat günü', 'chart'),
+    ]),
+    panel(
+      'Kural Tablosu',
+      `${String(d.rules.length)} kural · eşiği değiştirince "ateşleyen" sütunu hemen güncellenir`,
+      el('div', { class: 'panel-body' }, [
+        durum.node,
+        el('p', { class: 'settings-note' }, [
+          'Her kural bir cümle; içindeki sayıları doğrudan değiştirebilirsin. '
+          + '"Uyan Fon" o eşiğe şu an kaç fonun uyduğunu söyler. Aynı ölçütün '
+          + 'birden fazla kademesi varsa bir fon yalnız en yüksek kademenin '
+          + 'puanını alır.',
+        ]),
+        table(['Aile', 'Kural', 'Puan', 'Uyan Fon', 'Etkin'], kuralSatir),
+      ]),
+    ),
+    panel(
+      'Aile Tavanları',
+      'Aynı aileden gelebilecek en yüksek puan',
+      el('div', { class: 'panel-body' }, [
+        el('p', { class: 'settings-note' }, [
+          'Getiri ailesindeki kuralların hepsi aynı şeyi ölçüyor: fiyat düşüyor. '
+          + 'Tavan olmadan kural sayısı ağırlığı sessizce belirler. '
+          + '"Ulaşılabilir en yüksek", bir fonun o aileden alabileceği en çok '
+          + 'puandır: aynı ölçütün kademelerinden yalnız biri sayıldığı için '
+          + 'kuralların düz toplamından küçüktür.',
+        ]),
+        table(['Aile', 'Ulaşılabilir En Yüksek', 'Tavan', ''], aileSatir),
+      ]),
+    ),
+    panel('Renk Eşikleri', 'Toplam puandan renge', el('div', { class: 'panel-body' }, [
+      table(['Renk', 'En Az Puan', 'Uyan Fon'], kademeSatir),
+    ])),
+  ];
+}
+
 // ─── İskelet ────────────────────────────────────────────────────────────────
 
 const VIEWS: {
@@ -6216,13 +6575,14 @@ const VIEWS: {
   { id: 'dashboard', label: 'Panel', adminOnly: false, crumb: 'Genel' },
   { id: 'portfolio', label: 'Portföyüm', adminOnly: false, crumb: 'Genel' },
   { id: 'transactions', label: 'Fon Hareketleri', adminOnly: false, crumb: 'Genel' },
+  { id: 'alarms', label: 'Alarmlar', adminOnly: false, crumb: 'Genel' },
+  { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },
   { id: 'allocation', label: 'Dağılım', adminOnly: false, crumb: 'Genel' },
   { id: 'stocks', label: 'Hisseler', adminOnly: false, crumb: 'Genel' },
   { id: 'chat', label: 'Asistan', adminOnly: false, crumb: 'Genel' },
   { id: 'closed', label: 'Kapananlar', adminOnly: false, crumb: 'Genel' },
   { id: 'cash', label: 'Nakit', adminOnly: false, crumb: 'Genel' },
   { id: 'periods', label: 'Dönemsel Getiri', adminOnly: false, crumb: 'Genel' },
-  { id: 'market', label: 'Piyasa', adminOnly: false, crumb: 'Genel' },
   { id: 'watchlist', label: 'Takip Listem', adminOnly: false, crumb: 'Genel' },
   { id: 'prefs', label: 'Tercihlerim', adminOnly: false, crumb: 'Genel' },
   // Aşağıdakiler sol menünün ana listesinde ÇIKMAZ; en alttaki kullanıcı
@@ -6235,6 +6595,7 @@ const VIEWS: {
   // takvimi. Üç ayrı işi tek ekranda toplamak sayfayı uzatıyordu.
   { id: 'banks', label: 'Bankalar', adminOnly: true, crumb: 'Admin', inUserMenu: true },
   { id: 'sysfunds', label: 'Sistem Fonları', adminOnly: true, crumb: 'Admin', inUserMenu: true },
+  { id: 'alarm', label: 'Alarm Kuralları', adminOnly: true, crumb: 'Admin', inUserMenu: true },
   { id: 'runs', label: 'Collector Log', adminOnly: true, crumb: 'Admin', inUserMenu: true },
   { id: 'settings', label: 'Ayarlar', adminOnly: true, crumb: 'Admin', inUserMenu: true },
 ];
@@ -6453,6 +6814,8 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     else if (current.id === 'sysfunds') bodyNodes = await sysFundsView(reload);
     else if (current.id === 'runs') bodyNodes = await runsView();
     else if (current.id === 'settings') bodyNodes = await settingsView(reload);
+    else if (current.id === 'alarms') bodyNodes = await alarmlarView();
+    else if (current.id === 'alarm') bodyNodes = await alarmView(reload);
     else bodyNodes = await usersView(reload, me);
   } catch (err) {
     bodyNodes = [errorBox(err instanceof Error ? err.message : 'Yüklenemedi.')];

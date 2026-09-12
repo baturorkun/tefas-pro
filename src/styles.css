@@ -358,6 +358,12 @@ td.actions { text-align: right; }
 .status-admin  { color: var(--accent-soft); background: var(--accent-tint); border-color: #2c5f57; }
 .status-super  { color: var(--warn); background: #e8c07d1a; border-color: #5c4a2a; }
 .status-user   { color: var(--muted); background: var(--panel); border-color: var(--line); }
+.status-alarm-kirmizi { color: var(--danger); background: var(--danger-tint); border-color: #5c3535; }
+.status-alarm-turuncu { color: #e8a35c; background: #e8a35c1a; border-color: #5c4227; }
+.status-alarm-sari    { color: var(--warn); background: #e8c07d1a; border-color: #5c4a2a; }
+.status-getiri    { color: var(--accent-soft); background: var(--accent-tint); border-color: #2c5f57; }
+.status-akis      { color: var(--warn); background: #e8c07d1a; border-color: #5c4a2a; }
+.status-operasyon { color: var(--muted); background: var(--panel); border-color: var(--line); }
 .status-passive { color: var(--danger); background: var(--danger-tint); border-color: #5c3535; }
 
 /* ─── Grafik ───────────────────────────────────────────────────────────── */
@@ -1266,3 +1272,21 @@ textarea:focus  { outline: none; border-color: var(--accent);
      kutular ekranla aynı dizilimde (5+4) üstte tek blok, tablo nefes alıyor. */
   @page { size: A4 landscape; margin: 10mm 12mm; }
 }
+
+/* ─── Alarm ekranı ─────────────────────────────────────────────────────── */
+/* Sayı alanları tabloda: her satıra ayrı "Kaydet" düğmesi koymak tabloyu
+   okunmaz hale getiriyordu; alan değişince kaydediliyor. */
+.alarm-sayi { padding: .3rem .45rem; font-size: .82rem; text-align: right;
+              font-family: var(--mono); }
+.alarm-pasif td { opacity: .45; }
+/* Kural cümlesi: sayılar metnin içinde, satır sarabilir. */
+.alarm-cumle { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem;
+               line-height: 1.9; color: var(--text); }
+.alarm-kutu { width: 4.2rem; }
+.alarm-switch { padding: 0; }
+/* Gerekçe: hangi kural hangi rakamla ateşledi. Gerekçesiz renk kara kutudur. */
+.alarm-gerekce { display: flex; flex-wrap: wrap; gap: .35rem; }
+.alarm-hit { padding: .15rem .5rem; border: 1px solid var(--line-soft);
+             border-radius: var(--radius-pill); background: var(--bg-raised);
+             font-size: .72rem; color: var(--muted); white-space: nowrap; }
+.alarm-hit strong { color: var(--text-strong); }
