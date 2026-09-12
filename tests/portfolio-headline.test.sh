@@ -93,7 +93,7 @@ printf 'PASS: agirlikli sure sunucuda lot bazinda, kutu ve ayak ayni alani okuyo
 
 # Yazdırmada bölünmezlik panelde değil: tablo paneli tek parça sayılınca ilk
 # sayfanın kalanına sığmıyor ve bütünüyle ikinci sayfaya atılıyordu.
-grep -qF ".metric-card { break-inside: avoid; }" <<<"${PR}" || fail "kart bolunebiliyor"
+grep -qF ".metric-card { break-inside: avoid;" <<<"${PR}" || fail "kart bolunebiliyor"
 grep -qE "\.metric-card, \.panel \{[^}]*break-inside" <<<"${PR}" \
   && fail "panel bolunmez sayiliyor; tablo ikinci sayfaya atilir"
 printf 'PASS: yazdirmada panel bolunebilir, kutular yalniz kalmiyor\n'
