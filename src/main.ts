@@ -73,6 +73,23 @@ interface UserRow {
   isActive: boolean;
 }
 
+interface AlarmKural {
+  id: number; kind: string; family: string; label: string;
+  windowDays: number; threshold: string; threshold2: string | null;
+  points: number; isActive: boolean; sort: number;
+}
+interface AlarmFonu {
+  fundCode: string; title: string | null; score: number; level: string | null;
+  hits: { ruleId: number; label: string; family: string; value: string; points: number }[];
+}
+interface AlarmVerisi {
+  families: { code: string; label: string; cap: number; sort: number }[];
+  levels: { code: string; label: string; minScore: number; sort: number }[];
+  rules: AlarmKural[];
+  day: string | null;
+  funds: AlarmFonu[];
+}
+
 interface RankEntry {
   fundCode: string;
   title: string | null;
@@ -341,7 +358,7 @@ interface PerformanceSeries {
 type ViewId =
   | 'dashboard' | 'portfolio' | 'closed' | 'cash' | 'periods' | 'market'
   | 'allocation' | 'stocks' | 'chat' | 'transactions' | 'watchlist' | 'prefs'
-  | 'profile' | 'users' | 'banks' | 'sysfunds' | 'runs' | 'settings';
+  | 'profile' | 'users' | 'banks' | 'sysfunds' | 'runs' | 'settings' | 'alarm';
 
 const root = document.getElementById('app');
 
@@ -631,6 +648,8 @@ const ICON_PATHS: Record<string, string[]> = {
   add: ['M12 5v14M5 12h14'],
   logout: ['M15 17l5-5-5-5', 'M20 12H9', 'M12 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6'],
   close: ['M6 6l12 12M18 6 6 18'],
+  // Uyarı üçgeni: alarm ekranı ve fon satırındaki renk işareti.
+  alarm: ['M12 3 2 20h20z', 'M12 10v5', 'M12 17.5v.5'],
   // Yazıcı: Portföyüm'ün PDF düğmesi. Çıktı tarayıcının yazdırmasından.
   print: ['M6 9V3h12v6', 'M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2',
           'M6 14h12v7H6z'],
@@ -6206,6 +6225,159 @@ async function usersView(reload: () => void, me: Me): Promise<Node[]> {
 }
 
 
+/**
+ * Alarm kuralları ekranı.
+ *
+ * Eşiği değiştirirken sonucunu görmeden seçmek tahmindir: ölçüldü, çıkış
+ * eşiği %2 olunca 72 fonun 23'ü ateşliyor, %10'da 5'i. O yüzden kural listesi
+ * ile o anki dağılım aynı ekranda ve her kayıttan sonra dağılım tazeleniyor.
+ */
+async function alarmView(reload: () => void): Promise<Node[]> {
+  const d = (await api('/api/admin/alarm')) as AlarmVerisi;
+  const durum = durumSatiri();
+
+  const say = (kod: string | null): number => d.funds.filter((f) => f.level === kod).length;
+  const renkAdi = (kod: string | null): string =>
+    d.levels.find((l) => l.code === kod)?.label ?? 'Renksiz';
+
+  const kaydet = async (yol: string, govde: unknown, mesaj: string): Promise<void> => {
+    try {
+      await api(yol, { method: 'PATCH', body: JSON.stringify(govde) });
+      durum.sonra(mesaj);
+      reload();
+    } catch (err) {
+      durum.yaz(err instanceof Error ? err.message : 'Kaydedilemedi.', 'hata');
+    }
+  };
+
+  // Sayı alanı: değişince kaydeder. Ayrı bir "Kaydet" düğmesi her satırda bir
+  // düğme daha demekti ve tablo okunmaz hale geliyordu.
+  const sayiAlani = (
+    deger: string, genislik: string, yol: string, alan: string, mesaj: string,
+  ): HTMLInputElement => {
+    const i = el('input', {
+      type: 'number', step: 'any', value: deger, class: 'alarm-sayi', style: `width:${genislik}`,
+    }) as HTMLInputElement;
+    i.addEventListener('change', () => {
+      if (i.value.trim() === '') return;
+      void kaydet(yol, { [alan]: Number(i.value) }, mesaj);
+    });
+    return i;
+  };
+
+  const kuralSatir = d.rules.map((r) => {
+    const aktif = el('input', { type: 'checkbox' }) as HTMLInputElement;
+    aktif.checked = r.isActive;
+    aktif.addEventListener('change', () => {
+      void kaydet(`/api/admin/alarm/rules/${String(r.id)}`, { isActive: aktif.checked },
+        `${r.label} ${aktif.checked ? 'açıldı' : 'kapatıldı'}.`);
+    });
+    // Kaç fon ateşliyor: eşiğin doğru olup olmadığını söyleyen tek sayı.
+    const atesleyen = d.funds.filter((f) => f.hits.some((h) => h.ruleId === r.id)).length;
+    return el('tr', { class: r.isActive ? '' : 'alarm-pasif' }, [
+      el('td', {}, [
+        el('span', { class: 'fund-code' }, [r.label]),
+        el('span', { class: 'fund-title' }, [r.kind]),
+      ]),
+      el('td', {}, [badge(d.families.find((f) => f.code === r.family)?.label ?? r.family, r.family)]),
+      el('td', { class: 'num' }, [sayiAlani(String(r.windowDays), '4.5rem',
+        `/api/admin/alarm/rules/${String(r.id)}`, 'windowDays', `${r.label}: pencere değişti.`)]),
+      el('td', { class: 'num' }, [sayiAlani(r.threshold, '5.5rem',
+        `/api/admin/alarm/rules/${String(r.id)}`, 'threshold', `${r.label}: eşik değişti.`)]),
+      el('td', { class: 'num' }, [r.threshold2 === null
+        ? '—'
+        : sayiAlani(r.threshold2, '5.5rem', `/api/admin/alarm/rules/${String(r.id)}`,
+          'threshold2', `${r.label}: ikinci eşik değişti.`)]),
+      el('td', { class: 'num' }, [sayiAlani(String(r.points), '4.5rem',
+        `/api/admin/alarm/rules/${String(r.id)}`, 'points', `${r.label}: puan değişti.`)]),
+      el('td', { class: 'num' }, [atesleyen === 0 ? el('span', { class: 'dim' }, ['0']) : String(atesleyen)]),
+      el('td', {}, [el('label', { class: 'switch-field alarm-switch' }, [
+        aktif, el('span', { class: 'switch-track' }, []),
+      ])]),
+    ]);
+  });
+
+  const aileSatir = d.families.map((f) => {
+    const ham = d.rules.filter((r) => r.family === f.code && r.isActive)
+      .reduce((t, r) => t + r.points, 0);
+    return el('tr', {}, [
+      el('td', {}, [badge(f.label, f.code)]),
+      el('td', { class: 'num dim' }, [String(ham)]),
+      el('td', { class: 'num' }, [sayiAlani(String(f.cap), '4.5rem',
+        `/api/admin/alarm/families/${f.code}`, 'cap', `${f.label} tavanı değişti.`)]),
+    ]);
+  });
+
+  const kademeSatir = d.levels.map((l) => el('tr', {}, [
+    el('td', {}, [badge(l.label, `alarm-${l.code}`)]),
+    el('td', { class: 'num' }, [sayiAlani(String(l.minScore), '4.5rem',
+      `/api/admin/alarm/levels/${l.code}`, 'minScore', `${l.label} eşiği değişti.`)]),
+    el('td', { class: 'num' }, [String(d.funds.filter((x) => x.level === l.code).length)]),
+  ]));
+
+  // Alarm veren fonlar, gerekçesiyle. Gerekçesiz renk kara kutudur.
+  const fonSatir = d.funds.filter((f) => f.score > 0).map((f) => el('tr', {}, [
+    el('td', {}, [
+      el('span', { class: 'fund-code' }, [f.fundCode]),
+      el('span', { class: 'fund-title' }, [f.title ?? '']),
+    ]),
+    el('td', {}, [badge(renkAdi(f.level), f.level === null ? 'closed' : `alarm-${f.level}`)]),
+    el('td', { class: 'num' }, [String(f.score)]),
+    el('td', {}, [el('div', { class: 'alarm-gerekce' },
+      f.hits.map((h) => el('span', { class: 'alarm-hit' }, [
+        `${h.label}: ${h.value}`,
+        el('strong', {}, [` +${String(h.points)}`]),
+      ])))]),
+  ]));
+
+  return [
+    el('div', { class: 'metric-grid metric-grid-5' }, [
+      metric('Kırmızı', String(say('kirmizi')), 'En ağır', 'alarm'),
+      metric('Turuncu', String(say('turuncu')), 'Orta', 'alarm'),
+      metric('Sarı', String(say('sari')), 'Hafif', 'alarm'),
+      metric('Temiz', String(say(null)), 'Alarm yok', 'flag'),
+      metric('Veri Günü', d.day === null ? '—' : gunAd(d.day, true), 'Son fiyat günü', 'chart'),
+    ]),
+    panel(
+      'Kural Tablosu',
+      `${String(d.rules.length)} kural · eşiği değiştirince "ateşleyen" sütunu hemen güncellenir`,
+      el('div', { class: 'panel-body' }, [
+        durum.node,
+        el('p', { class: 'settings-note' }, [
+          'Ölçüt kod tarafında ve sabittir; pencere, eşik ve puan buradan değişir. '
+          + 'Aynı ölçütün birden fazla kademesi olabilir, ama bir fon o ölçütten '
+          + 'yalnız en yüksek kademenin puanını alır.',
+        ]),
+        table(['Kural', 'Aile', 'Pencere', 'Eşik', '2. Eşik', 'Puan', 'Ateşleyen', 'Etkin'], kuralSatir),
+      ]),
+    ),
+    panel(
+      'Aile Tavanları',
+      'Aynı aileden gelebilecek en yüksek puan',
+      el('div', { class: 'panel-body' }, [
+        el('p', { class: 'settings-note' }, [
+          'Getiri ailesindeki kuralların hepsi aynı şeyi ölçüyor: fiyat düşüyor. '
+          + 'Tavan olmadan kural sayısı ağırlığı sessizce belirler. Ham puan, o '
+          + 'ailedeki etkin kuralların toplamıdır.',
+        ]),
+        table(['Aile', 'Ham Puan', 'Tavan'], aileSatir),
+      ]),
+    ),
+    panel('Renk Eşikleri', 'Toplam puandan renge', el('div', { class: 'panel-body' }, [
+      table(['Renk', 'En Az Puan', 'Şu An'], kademeSatir),
+    ])),
+    panel(
+      'Alarm Veren Fonlar',
+      `${String(fonSatir.length)} fon${d.day === null ? '' : ` · ${gunAd(d.day, true)}`}`,
+      el('div', { class: 'panel-body' }, [
+        fonSatir.length === 0
+          ? el('div', { class: 'empty-state' }, ['Hiçbir fon alarm vermiyor.'])
+          : table(['Fon', 'Renk', 'Puan', 'Gerekçe'], fonSatir),
+      ]),
+    ),
+  ];
+}
+
 // ─── İskelet ────────────────────────────────────────────────────────────────
 
 const VIEWS: {
@@ -6235,6 +6407,7 @@ const VIEWS: {
   // takvimi. Üç ayrı işi tek ekranda toplamak sayfayı uzatıyordu.
   { id: 'banks', label: 'Bankalar', adminOnly: true, crumb: 'Admin', inUserMenu: true },
   { id: 'sysfunds', label: 'Sistem Fonları', adminOnly: true, crumb: 'Admin', inUserMenu: true },
+  { id: 'alarm', label: 'Alarm Kuralları', adminOnly: true, crumb: 'Admin', inUserMenu: true },
   { id: 'runs', label: 'Collector Log', adminOnly: true, crumb: 'Admin', inUserMenu: true },
   { id: 'settings', label: 'Ayarlar', adminOnly: true, crumb: 'Admin', inUserMenu: true },
 ];
@@ -6453,6 +6626,7 @@ async function appShell(me: Me, view: ViewId): Promise<void> {
     else if (current.id === 'sysfunds') bodyNodes = await sysFundsView(reload);
     else if (current.id === 'runs') bodyNodes = await runsView();
     else if (current.id === 'settings') bodyNodes = await settingsView(reload);
+    else if (current.id === 'alarm') bodyNodes = await alarmView(reload);
     else bodyNodes = await usersView(reload, me);
   } catch (err) {
     bodyNodes = [errorBox(err instanceof Error ? err.message : 'Yüklenemedi.')];
