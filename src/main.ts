@@ -513,12 +513,14 @@ function bugunISO(): string {
     + `-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function gunAd(iso: string | null): string {
+function gunAd(iso: string | null, yilHep = false): string {
   if (iso === null || iso.length < 10) return '—';
   const [y, a, g] = [iso.slice(0, 4), Number(iso.slice(5, 7)), Number(iso.slice(8, 10))];
   const ay = AY_ADLARI[a - 1] ?? iso.slice(5, 7);
   const buYil = String(new Date().getFullYear());
-  return `${String(g)} ${ay}${y === buYil ? '' : ` ${y}`}`;
+  // Listelerde bu yıl atlanır, göz yorulmasın diye. Tek başına duran bir
+  // tarihte ("ilk alım 18 Mart") yıl yoksa hangi yıl olduğu bilinmiyor.
+  return `${String(g)} ${ay}${!yilHep && y === buYil ? '' : ` ${y}`}`;
 }
 
 /**
@@ -5740,9 +5742,9 @@ async function portfolioView(me: Me): Promise<Node[]> {
       el('strong', {}, ['TEFAS-Pro · Portföyüm']),
       el('span', {}, [`${me.fullName} · ${veriGunu === null ? '—' : gunAd(veriGunu)}`]),
     ]),
-    // Yedi kutu dört+üç, bekleyen çıkınca sekiz kutu dört+dört: tek başına
-    // ikinci sıraya düşen kutu kalmıyor.
-    el('div', { class: bekleyenToplam === 0 ? 'metric-grid metric-grid-7' : 'metric-grid metric-grid-8' }, [
+    // Sekiz kutu dört+dört, bekleyen çıkınca dokuz kutu üç+üç+üç: tek başına
+    // bir sıraya düşen kutu kalmıyor.
+    el('div', { class: bekleyenToplam === 0 ? 'metric-grid metric-grid-8' : 'metric-grid metric-grid-9' }, [
       metric('Maliyet', money(String(cost)), `${String(rows.length)} Fon`, 'money'),
       metric('Bugünkü Değer', money(String(value)), rows[0]?.asOfDate ?? '—', 'chart'),
       // "Açık": yanındaki Toplam Kazanç kapananları da içeriyor; ikisi aynı
@@ -5757,15 +5759,22 @@ async function portfolioView(me: Me): Promise<Node[]> {
           ? 'Ölçülebilir gün yok'
           : `${pct(Number(h.dayPct))}${h.dayDate === null ? '' : ` · ${gunAd(h.dayDate)}`}`,
         'chart'),
+      // Üçlü yan yana okunsun: Açık + Gerçekleşen = Toplam. Gerçekleşen
+      // önce yalnız Toplam'ın alt satırında "kapanan dahil" diye geçiyordu;
+      // kutu olunca kazancın nereden geldiği bakmadan görünüyor.
+      metric('Gerçekleşen Kazanç', money(h.realizedGain), 'kapanan pozisyonlardan', 'money'),
+      // Yüzdenin paydası net sermaye (maliyet − gerçekleşen): kazanılıp
+      // yeniden yatırılan para yeni sermaye değil. Payda yazılmazsa yüzde
+      // neye göre olduğu bilinmeden okunuyordu.
       metric('Toplam Kazanç', money(h.totalGain),
-        h.totalPct === null ? '—' : `${pct(Number(h.totalPct))} · ${money(h.realizedGain)} kapanan dahil`,
+        h.totalPct === null ? '—' : `${pct(Number(h.totalPct))} · net sermaye ${money(h.netCapital)}`,
         'money'),
       metric('Kârda', String(winners), `${String(rows.length - winners)} Zararda`, 'flag'),
       // Portföyün yaşı: maliyet ağırlıklı işlem günü ve en eski alış. Tablo
       // ayağındaki Süre ile aynı alan; "ne kadar zamanda" sorusunu cevaplıyor.
       metric('Ağırlıklı Süre',
         h.weightedDays === null ? '—' : `${String(h.weightedDays)}g`,
-        h.firstBuyDate === null ? 'açık lot yok' : `ilk alım ${gunAd(h.firstBuyDate)}`,
+        h.firstBuyDate === null ? 'açık lot yok' : `ilk alım ${gunAd(h.firstBuyDate, true)}`,
         'transactions'),
       // Yalnız bekleyen alım varken çizilir; sıfırken boş bir kutu şeridi
       // kalabalıklaştırırdı. Tutar YOK: fiyat açıklanmadı.

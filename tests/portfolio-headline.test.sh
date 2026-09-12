@@ -32,7 +32,11 @@ grep -qF "'Günlük Getiri'" <<<"${PV}" || fail "Günlük Getiri kutusu yok"
 grep -qF "'Toplam Kazanç'" <<<"${PV}" || fail "Toplam Kazanç kutusu yok"
 grep -qF "'Açık Kâr / Zarar'" <<<"${PV}" || fail "acik kazanc 'Açık' diye adlandirilmamis"
 grep -qF "'Kâr / Zarar'" <<<"${PV}" && fail "iki farkli rakam ayni sozcukle yaziliyor"
-grep -qF "kapanan dahil" <<<"${PV}" || fail "toplamin kapananlari icerdigi yazmiyor"
+# Üçlü yan yana: Açık + Gerçekleşen = Toplam. Toplam'ın alt satırı yüzdenin
+# paydasını söylüyor.
+grep -qF "'Gerçekleşen Kazanç'" <<<"${PV}" || fail "gerceklesen kazanc kutusu yok"
+grep -qF "money(h.realizedGain)" <<<"${PV}" || fail "gerceklesen kazanc sunucudan gelmiyor"
+grep -qF "net sermaye \${money(h.netCapital)}" <<<"${PV}" || fail "toplam yuzdesinin paydasi yazmiyor"
 # Gün yazılır: hafta sonu bakan kullanıcı hangi günü gördüğünü bilmeli.
 grep -qF "gunAd(h.dayDate)" <<<"${PV}" || fail "gunluk getirinin gunu yazilmiyor"
 printf 'PASS: acik kazanc ile toplam kazanc farkli adlarla, gunuyle\n'
@@ -57,9 +61,10 @@ grep -qF "thead { display: table-header-group; }" <<<"${PR}" || fail "tablo basl
 grep -qF ".print-only { display: none; }" "${C}" || fail "cikti basligi ekranda gorunuyor"
 printf 'PASS: yazdirma gorunumu gezinmesiz, acik zeminli, tablo sayfaya sigiyor\n'
 
-# Yedi kutu dört+üç, sekiz kutu dört+dört: tek başına kalan kutu yok.
-grep -qF "'metric-grid metric-grid-7' : 'metric-grid metric-grid-8'" <<<"${PV}" || fail "izgara 7/8 degil"
-grep -qF ".metric-grid-7, .metric-grid-8 { grid-template-columns: repeat(4" "${C}" || fail "7/8 kutu 4'lu dizilmiyor"
+# Sekiz kutu dört+dört, dokuz kutu üç+üç+üç: tek başına kalan kutu yok.
+grep -qF "'metric-grid metric-grid-8' : 'metric-grid metric-grid-9'" <<<"${PV}" || fail "izgara 8/9 degil"
+grep -qF ".metric-grid-8 { grid-template-columns: repeat(4" "${C}" || fail "8 kutu 4'lu dizilmiyor"
+grep -qF ".metric-grid-9 { grid-template-columns: repeat(3" "${C}" || fail "9 kutu 3'lu dizilmiyor"
 printf 'PASS: kutu izgarasi yalniz kutu kalmayacak sekilde\n'
 
 # ─── Ağırlıklı süre ───
@@ -75,7 +80,10 @@ grep -qF "min(start_date)" <<<"${HL}" || fail "ilk alis gunu yok"
 grep -qF "el('td', { class: 'num' }, [h.weightedDays === null" <<<"${PV}" || fail "ayak satiri weightedDays okumuyor"
 grep -qF "h.weightedDays === null ? '—' : \`\${String(h.weightedDays)}g\`" <<<"${PV}" || fail "kutu weightedDays okumuyor"
 grep -qF "'Ağırlıklı Süre'" <<<"${PV}" || fail "Agirlikli Sure kutusu yok"
-grep -qF "ilk alım \${gunAd(h.firstBuyDate)}" <<<"${PV}" || fail "ilk alis gunu kutuda yazmiyor"
+# Yıl her zaman: tek başına duran tarihte bu yıl atlanınca hangi yıl olduğu
+# bilinmiyordu ("ilk alım 18 Mart").
+grep -qF "ilk alım \${gunAd(h.firstBuyDate, true)}" <<<"${PV}" || fail "ilk alis gunu yilsiz yaziliyor"
+grep -qF "function gunAd(iso: string | null, yilHep = false)" "${M}" || fail "gunAd yili zorlayamiyor"
 grep -qE "days *\* *cost|reduce\(.*days" <<<"${PV}" && fail "ekran agirlikli gunu kendi hesapliyor"
 printf 'PASS: agirlikli sure sunucuda lot bazinda, kutu ve ayak ayni alani okuyor\n'
 

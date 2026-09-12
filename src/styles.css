@@ -175,10 +175,11 @@ body {
    ikinci sıraya düşüyordu. */
 .metric-grid-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 @media (max-width: 1200px) { .metric-grid-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-/* Portföyüm: yedi kutu dört+üç, sekiz kutu dört+dört. */
-.metric-grid-7, .metric-grid-8 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* Portföyüm: sekiz kutu dört+dört, dokuz kutu üç+üç+üç. */
+.metric-grid-8 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.metric-grid-9 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 1200px) {
-  .metric-grid-7, .metric-grid-8 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .metric-grid-8 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 .metric-card {
