@@ -1279,6 +1279,10 @@ textarea:focus  { outline: none; border-color: var(--accent);
 .alarm-sayi { padding: .3rem .45rem; font-size: .82rem; text-align: right;
               font-family: var(--mono); }
 .alarm-pasif td { opacity: .45; }
+/* Kural cümlesi: sayılar metnin içinde, satır sarabilir. */
+.alarm-cumle { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem;
+               line-height: 1.9; color: var(--text); }
+.alarm-kutu { width: 4.2rem; }
 .alarm-switch { padding: 0; }
 /* Gerekçe: hangi kural hangi rakamla ateşledi. Gerekçesiz renk kara kutudur. */
 .alarm-gerekce { display: flex; flex-wrap: wrap; gap: .35rem; }

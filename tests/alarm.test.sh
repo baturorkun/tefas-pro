@@ -76,6 +76,24 @@ grep -qF "adminOnly: true" <<<"$(grep -F "id: 'alarm'" "${M}")" || fail "alarm e
 # Esigi ayarlarken bakilacak sayi "esige uyan fon"dur, "puan veren" degil:
 # alt kademe ust kademeye yeniliyor ve puan vermiyor. Olculdu: "3 gun"e 4 fon
 # uyuyor, ikisi "5 gun"u de astigi icin puani ust kademeden aliyor.
+# Kural cumle olarak yazilir. Sutunlu tabloda "Pencere" ve "Esik" basliklari
+# her satirda baska bir sey anlatiyordu — birinde gun, otekinde yuzde,
+# ucunculude puan farki — ve iki kuralda pencere hic kullanilmadigi halde
+# 1 yaziyordu.
+grep -qF "table(['Kural', 'Puan', 'Uyan Fon', 'Etkin'], kuralSatir)" <<<"${AV}" \
+  || fail "kural tablosu sadelesmemis"
+grep -qF "'Pencere'" "${M}" && fail "belirsiz Pencere sutunu duruyor"
+grep -qF "'2. Eşik'" "${M}" && fail "belirsiz 2. Esik sutunu duruyor"
+grep -qF "const SABLON: Record<string, Parca[]>" <<<"${AV}" || fail "kural cumlesi sablonu yok"
+for k in ardisik_eksi birikimli_getiri gruba_gore zirveden_dusus yatirimci_azalma net_cikis balina_cikis veri_yok; do
+  grep -qF "${k}:" <<<"${AV}" || fail "cumle sablonu eksik: ${k}"
+done
+# Kayip ekranda pozitif okunur, veritabaninda eksi durur: "-2'den kucuk" ile
+# "%2 dustu" arasinda surekli ceviri gerekiyordu.
+grep -qF "Math.abs(Number(i.value)) * (parca.ters === true ? -1 : 1)" <<<"${AV}" \
+  || fail "ters cevrim kaydetmede yok"
+grep -qF "parca.ters === true ? String(Math.abs(Number(ham))) : ham" <<<"${AV}" \
+  || fail "ters cevrim gosterimde yok"
 grep -qF "'Uyan Fon'" <<<"${AV}" || fail "kural basina uyan fon sayisi yok"
 grep -qF "d.funds.filter((f) => f.matched.includes(r.id)).length" <<<"${AV}" \
   || fail "uyan fon sayisi ham eslesmeden gelmiyor"

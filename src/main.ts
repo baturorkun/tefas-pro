@@ -6410,12 +6410,60 @@ async function alarmView(reload: () => void): Promise<Node[]> {
     return i;
   };
 
+  /**
+   * Kuralın cümle biçimi.
+   *
+   * Önce sütunlu bir tablo vardı: "Pencere" ve "Eşik". Aynı başlık her satırda
+   * başka bir şey anlatıyordu — birinde gün sayısı, ötekinde yüzde, üçüncüde
+   * puan farkı — ve iki kuralda pencere hiç kullanılmadığı hâlde 1 yazıyordu.
+   * Kural cümle olarak yazılınca hangi sayının ne olduğu okunuyor.
+   *
+   * `ters` işaretli alanlar ekranda pozitif gösterilir: eşik veritabanında -2
+   * ama cümlede "%2 veya daha fazla kaybetti" diye okunuyor. Kaybı eksi sayıyla
+   * yazmak, "-2'den küçük" ile "%2 düştü" arasında sürekli çeviri gerektiriyordu.
+   */
+  type Parca = string | { alan: 'windowDays' | 'threshold' | 'threshold2'; ters?: boolean };
+  const SABLON: Record<string, Parca[]> = {
+    ardisik_eksi: [{ alan: 'threshold' }, ' gün üst üste eksi getiri'],
+    birikimli_getiri: ['Son ', { alan: 'windowDays' }, ' günde toplam ',
+      { alan: 'threshold', ters: true }, '% veya daha fazla kaybetti'],
+    gruba_gore: ['Son ', { alan: 'windowDays' }, ' günde kendi şemsiye türünün ortancasından ',
+      { alan: 'threshold', ters: true }, ' puan geride'],
+    zirveden_dusus: ['Son ', { alan: 'windowDays' }, ' günün zirvesinden ',
+      { alan: 'threshold', ters: true }, '% aşağıda'],
+    yatirimci_azalma: ['Son ', { alan: 'windowDays' }, ' günde yatırımcı sayısı ',
+      { alan: 'threshold', ters: true }, '% azaldı'],
+    net_cikis: ['Son ', { alan: 'windowDays' }, ' günde fon büyüklüğünün ',
+      { alan: 'threshold', ters: true }, "%'i çıktı"],
+    balina_cikis: ['Son ', { alan: 'windowDays' }, ' günde büyüklüğün ',
+      { alan: 'threshold', ters: true }, "%'i çıktı ama yatırımcı sayısı ",
+      { alan: 'threshold2', ters: true }, "%'den fazla azalmadı"],
+    veri_yok: [{ alan: 'threshold' }, ' iş günüdür fiyat gelmiyor'],
+  };
+
+  const cumle = (r: AlarmKural): Node[] => (SABLON[r.kind] ?? [r.label]).map((parca) => {
+    if (typeof parca === 'string') return document.createTextNode(parca);
+    const ham = parca.alan === 'windowDays' ? String(r.windowDays)
+      : parca.alan === 'threshold' ? r.threshold : (r.threshold2 ?? '0');
+    const gosterilen = parca.ters === true ? String(Math.abs(Number(ham))) : ham;
+    const i = el('input', {
+      type: 'number', step: 'any', value: gosterilen, class: 'alarm-sayi alarm-kutu',
+    }) as HTMLInputElement;
+    i.addEventListener('change', () => {
+      if (i.value.trim() === '') return;
+      const n = Math.abs(Number(i.value)) * (parca.ters === true ? -1 : 1);
+      void kaydet(`/api/admin/alarm/rules/${String(r.id)}`, { [parca.alan]: n },
+        'Kural güncellendi.');
+    });
+    return i;
+  });
+
   const kuralSatir = d.rules.map((r) => {
     const aktif = el('input', { type: 'checkbox' }) as HTMLInputElement;
     aktif.checked = r.isActive;
     aktif.addEventListener('change', () => {
       void kaydet(`/api/admin/alarm/rules/${String(r.id)}`, { isActive: aktif.checked },
-        `${r.label} ${aktif.checked ? 'açıldı' : 'kapatıldı'}.`);
+        aktif.checked ? 'Kural açıldı.' : 'Kural kapatıldı.');
     });
     // Eşiğe kaç fon uyuyor: eşiği ayarlarken bakılacak sayı bu. `hits` yalnız
     // puan verenleri taşıyor ve alt kademe üst kademeye yenildiği için orada
@@ -6425,20 +6473,13 @@ async function alarmView(reload: () => void): Promise<Node[]> {
     const puanVeren = d.funds.filter((f) => f.hits.some((h) => h.ruleId === r.id)).length;
     return el('tr', { class: r.isActive ? '' : 'alarm-pasif' }, [
       el('td', {}, [
-        el('span', { class: 'fund-code' }, [r.label]),
-        el('span', { class: 'fund-title' }, [r.kind]),
+        el('div', { class: 'alarm-cumle' }, cumle(r)),
+        el('span', { class: 'fund-title' }, [
+          d.families.find((f) => f.code === r.family)?.label ?? r.family,
+        ]),
       ]),
-      el('td', {}, [badge(d.families.find((f) => f.code === r.family)?.label ?? r.family, r.family)]),
-      el('td', { class: 'num' }, [sayiAlani(String(r.windowDays), '4.5rem',
-        `/api/admin/alarm/rules/${String(r.id)}`, 'windowDays', `${r.label}: pencere değişti.`)]),
-      el('td', { class: 'num' }, [sayiAlani(r.threshold, '5.5rem',
-        `/api/admin/alarm/rules/${String(r.id)}`, 'threshold', `${r.label}: eşik değişti.`)]),
-      el('td', { class: 'num' }, [r.threshold2 === null
-        ? '—'
-        : sayiAlani(r.threshold2, '5.5rem', `/api/admin/alarm/rules/${String(r.id)}`,
-          'threshold2', `${r.label}: ikinci eşik değişti.`)]),
       el('td', { class: 'num' }, [sayiAlani(String(r.points), '4.5rem',
-        `/api/admin/alarm/rules/${String(r.id)}`, 'points', `${r.label}: puan değişti.`)]),
+        `/api/admin/alarm/rules/${String(r.id)}`, 'points', 'Puan değişti.')]),
       el('td', { class: 'num' }, [uyan === 0
         ? el('span', { class: 'dim' }, ['0'])
         : el('span', {}, [
@@ -6497,13 +6538,14 @@ async function alarmView(reload: () => void): Promise<Node[]> {
       el('div', { class: 'panel-body' }, [
         durum.node,
         el('p', { class: 'settings-note' }, [
-          'Ölçüt kod tarafında ve sabittir; pencere, eşik ve puan buradan değişir. '
-          + '"Uyan Fon" o eşiğe şu an kaç fonun uyduğunu söyler. Aynı ölçütün '
-          + 'birden fazla kademesi olabilir ve bir fon o ölçütten yalnız en '
-          + 'yüksek kademenin puanını alır; alt kademe uyduğu hâlde puan '
-          + 'vermiyorsa parantez içinde kaç fona puan verdiği yazar.',
+          'Her kural bir cümle; içindeki sayıları doğrudan değiştirebilirsin. '
+          + '"Uyan Fon" o eşiğe şu an kaç fonun uyduğunu söyler ve eşiği '
+          + 'ayarlarken bakılacak sayı budur. Aynı ölçütün birden fazla '
+          + 'kademesi olabilir; bir fon o ölçütten yalnız en yüksek kademenin '
+          + 'puanını alır, alt kademe uyduğu hâlde puan vermiyorsa parantez '
+          + 'içinde kaç fona puan verdiği yazar.',
         ]),
-        table(['Kural', 'Aile', 'Pencere', 'Eşik', '2. Eşik', 'Puan', 'Uyan Fon', 'Etkin'], kuralSatir),
+        table(['Kural', 'Puan', 'Uyan Fon', 'Etkin'], kuralSatir),
       ]),
     ),
     panel(
