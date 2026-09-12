@@ -6443,6 +6443,11 @@ async function alarmView(reload: () => void): Promise<Node[]> {
     balina_cikis: ['Büyük yatırımcı çıkışı: son ', { alan: 'windowDays' },
       ' günde yatırımcıların en fazla ', { alan: 'threshold2', ters: true },
       "%'i çıktı ama paranın ", { alan: 'threshold', ters: true }, "%'si çıktı"],
+    // Pay adedi, para değil: para ölçütü fiyattan kirleniyor. İkinci eşik
+    // yatırımcı sayısındaki artışın üst sınırı, seyrelmeyi dışarıda tutuyor.
+    kisi_basi_dusus: ['Son ', { alan: 'windowDays' }, ' günde kişi başına düşen pay adedi ',
+      { alan: 'threshold', ters: true }, '% düştü ve yatırımcı sayısı en fazla ',
+      { alan: 'threshold2' }, '% arttı'],
     veri_yok: [{ alan: 'threshold' }, ' iş günüdür fiyat gelmiyor'],
   };
 
