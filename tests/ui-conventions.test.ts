@@ -93,7 +93,10 @@ describe('kullanıcı yönetimi', () => {
 
 describe('yerleşim', () => {
   it('liste eylemi panel başlığında durur, gövdeye girmez', () => {
-    expect(main).toMatch(/function panel\([^)]*action\?: Node\)/);
+    // İmza çok satırlı olabilir ve içinde parantez taşıyabilir (meta artık
+    // düğüm de alıyor), o yüzden imzanın tamamı çıkarılıp içine bakılıyor.
+    const imza = /function panel\(([\s\S]*?)\): HTMLElement \{/.exec(main)?.[1] ?? '';
+    expect(imza).toContain('action?: Node');
     expect(main).toContain("el('div', { class: 'panel-heading-text' }");
   });
 

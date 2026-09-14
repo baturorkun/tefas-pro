@@ -818,12 +818,22 @@ function metric(
  * Panel. `action` verilirse başlık şeridinin sağında durur — liste eylemleri
  * gövdeye girip tabloyu bölmemeli.
  */
-function panel(title: string, meta: string, body: Node, action?: Node): HTMLElement {
+/**
+ * `meta` düğüm de olabilir: başlıktaki sayıları vurgulamak için. Meta satırı
+ * soluk gri ve içindeki tutar cümlenin içinde kayboluyordu.
+ */
+function panel(
+  title: string, meta: string | (Node | string)[], body: Node, action?: Node,
+  // Meta alt satıra: uzun açıklama başlığın yanında sıkışıyor. Varsayılan yan
+  // yana, çünkü açıklama panelin kendisini anlatıyor ve uzağa düşünce hangi
+  // panele ait olduğu bakışla kurulmuyor.
+  metaAltSatir = false,
+): HTMLElement {
   return el('section', { class: 'panel' }, [
     el('div', { class: 'panel-heading' }, [
-      el('div', { class: 'panel-heading-text' }, [
+      el('div', { class: `panel-heading-text${metaAltSatir ? ' dikey' : ''}` }, [
         el('h2', {}, [title]),
-        el('span', { class: 'header-meta' }, [meta]),
+        el('span', { class: 'header-meta' }, typeof meta === 'string' ? [meta] : meta),
       ]),
       ...(action ? [action] : []),
     ]),
@@ -5156,6 +5166,40 @@ async function cashView(): Promise<Node[]> {
 
   const bugunToplam = bugunku.reduce((a, g) => a + g.toplam, 0);
   const sonrakiToplam = sonraki.reduce((a, g) => a + g.toplam, 0);
+  /**
+   * Bölüm toplamı panel BAŞLIĞINDA.
+   *
+   * Tablonun altındaki bir toplam satırı uzun listede ekran dışında kalıyor:
+   * "bugün ne gelecek" sorusu için ta aşağı inmek gerekiyordu. Tahmin varsa
+   * işaretlenir — gerçekleşmemiş satışların tutarı son fiyattan hesaplanıyor
+   * ve kesin tutar gibi okunmamalı.
+   */
+  /** Başlıkta öne çıkan sayı. Meta satırı soluk, sayı okunur olmalı. */
+  const vurgu = (metin: string): HTMLElement => el('strong', { class: 'meta-num' }, [metin]);
+
+  const basligaToplam = (
+    grup: { platform: string; toplam: number; tahmin: boolean }[], ek: (Node | string)[],
+  ): (Node | string)[] => {
+    if (grup.length === 0) return ek;
+    const t = grup.reduce((a, g) => a + g.toplam, 0);
+    // Banka kırılımı yalnız BİRDEN FAZLA banka varken: aynı günün girişi iki
+    // bankaya bölünebiliyor ve genel toplam hangisine ne geldiğini
+    // söylemiyordu. Tek bankada parantez gereksiz tekrar olurdu, banka zaten
+    // tablonun kendi sütununda yazıyor.
+    const bankalar = new Map<string, number>();
+    for (const g of grup) bankalar.set(g.platform, (bankalar.get(g.platform) ?? 0) + g.toplam);
+    const kirilim = [...bankalar.entries()].sort((a, b) => b[1] - a[1]);
+    return [
+      ...(grup.some((g) => g.tahmin) ? ['≈ '] : []),
+      vurgu(money(String(t))),
+      ...(kirilim.length < 2
+        ? []
+        : [' ', el('span', { class: 'meta-kirilim' }, [
+          `(${kirilim.map(([ad, v]) => `${ad} ${money(String(v))}`).join(' · ')})`,
+        ])]),
+      ' · ', ...ek,
+    ];
+  };
 
   // Banka kutusunda iki rakam: bugün hesaba geçen ve yolda olan. "bugün +
   // yolda" diye etiket yazmak toplamın neden o kadar olduğunu söylemiyordu.
@@ -5188,31 +5232,37 @@ async function cashView(): Promise<Node[]> {
       'Bugün Gelen',
       // Para gün içinde değil, öğleden sonra hesaba geçiyor: sabah bakıp
       // "gelmemiş" diye okumasın.
-      bugunku.length === 0 ? `${gunAd(bugun)} · para girişi yok`
-        : `${gunAd(bugun)} · saat 15:00'ten sonra hesapta`,
+      bugunku.length === 0 ? [`${gunAd(bugun)} · para girişi yok`]
+        : basligaToplam(bugunku, [`${gunAd(bugun)} · saat 15:00'ten sonra hesapta`]),
       el('div', { class: 'panel-body' }, [
         bugunku.length === 0
           ? el('div', { class: 'empty-state' }, ['Bugün para girişi yok.'])
           : table(['Para Günü', 'Banka', 'Tutar', 'Fonlar'], bugunku.map(satir)),
       ]),
+      undefined,
+      true,
     ),
     panel(
       'Sonraki Günler',
-      'Satış girilmiş, para henüz hesapta değil',
+      basligaToplam(sonraki, ['satış girilmiş, para henüz hesapta değil']),
       el('div', { class: 'panel-body' }, [
         sonraki.length === 0
           ? el('div', { class: 'empty-state' }, ['Yolda bekleyen para yok.'])
           : table(['Para Günü', 'Banka', 'Tutar', 'Fonlar'], sonraki.map(satir)),
       ]),
+      undefined,
+      true,
     ),
     panel(
       'Gelmiş Para',
-      `${String(gelmis.length)} giriş · en yeni üstte`,
+      basligaToplam(gelmis, [vurgu(String(gelmis.length)), ' giriş · en yeni üstte']),
       el('div', { class: 'panel-body' }, [
         gelmis.length === 0
           ? el('div', { class: 'empty-state' }, ['Henüz para girişi yok.'])
           : table(['Para Günü', 'Banka', 'Tutar', 'Fonlar'], gelmis.map(satir)),
       ]),
+      undefined,
+      true,
     ),
   ];
 }
