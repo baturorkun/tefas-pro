@@ -1093,7 +1093,16 @@ function barChart(
     const len = Math.abs(v) * scale;
     const x = v >= 0 ? zeroX : zeroX - len;
 
-    root.append(
+    // Her satır kendi <g>'sinde ve <title> onun İÇİNDE. Kökün doğrudan çocuğu
+    // olan title bütün SVG'nin ipucu sayılıyor: grafiğin neresine gelirsen
+    // gel en üstteki fonun açıklaması çıkıyordu.
+    const satir = svg('g', { class: 'bar-row' });
+    satir.append(
+      // Görünmez vuruş alanı satırın tamamını kaplıyor: yalnız barın üstünde
+      // ipucu çıksaydı kısa barlarda hedef birkaç piksel kalırdı.
+      svg('rect', {
+        x: '0', y: String(y), width: String(W), height: String(ROW), class: 'bar-hit',
+      }),
       svg('title', {}, [
         `${e.fundCode} — ${e.title ?? ''}`,
         e.owned ? 'portföyümde' : 'takip listemde',
@@ -1129,11 +1138,12 @@ function barChart(
       ),
     );
     if (e.days !== null) {
-      root.append(
+      satir.append(
         svg('text', { x: String(W - VALUE - 6), y: String(y + 13), class: 'bar-days' },
           `${String(e.days)}g`),
       );
     }
+    root.append(satir);
   });
   if (hasNeg) {
     root.append(svg('line', {

@@ -377,6 +377,10 @@ td.actions { text-align: right; }
 .chart-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .chart-grid .panel { margin-bottom: 0; }
 
+/* Satırın tamamı ipucu hedefi: görünmez ama fare olaylarını alır.
+   fill:none olsaydı olay almazdı. */
+.bar-hit { fill: transparent; }
+
 .bar-chart { display: block; width: 100%; height: auto; overflow: visible; }
 .bar-chart text { font-family: var(--font); dominant-baseline: middle; }
 .bar-code  { font-size: 12px; font-weight: 600; fill: var(--text-strong); }
