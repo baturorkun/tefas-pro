@@ -66,7 +66,7 @@ describe('günde bir kez', () => {
   it('bugün passed koşum varsa bitiş saatini döndürür', async () => {
     const pool = sahtePool([{ bitis: '10:27' }]);
     expect(await successfulRunToday(pool as never, '2026-09-10')).toBe('10:27');
-    expect(pool.cagrilar[0]?.values).toEqual(['fintables-watchlist', '2026-09-10']);
+    expect(pool.cagrilar[0]?.values).toEqual(['tefas-scheduled', '2026-09-10']);
   });
 
   it('koşum yoksa null döndürür', async () => {

@@ -53,4 +53,6 @@ USER node
 
 # Oneshot: toplar ve çıkar. Ayakta kalan bir servis yoktur, bu yüzden
 # HEALTHCHECK de yoktur. Çıkış kodu run sonucunu taşır.
-ENTRYPOINT ["node", "dist/collector.js"]
+# Varsayılan koşum TEFAS: Fintables kaldırıldı, günlük veriyi o yazıyor.
+# KAP toplaması aynı image'la ama --entrypoint ile çağrılır.
+ENTRYPOINT ["node", "dist/collect-tefas.js"]

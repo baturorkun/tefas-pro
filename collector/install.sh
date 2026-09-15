@@ -300,6 +300,23 @@ cmd_remote() {
 # (varsayılan entrypoint) ve TEFAS collector'ı (--entrypoint ile aynı image
 # içindeki dist/collect-tefas.js). Aynı image'ı paylaşırlar, yeniden build
 # gerekmez.
+# Artik kurulmayan bir birimi sunucudan temizler.
+#
+# Kurulum guncellendiginde eski timer kendiliginden gitmiyor: dosyasi
+# duruyor, etkin kaliyor ve her gun kosup dusuyor. Yoksa sessizce gecer.
+eski_birim_kaldir() {
+  local svc="$1"
+  remote_ssh "
+    if systemctl list-unit-files '${svc}.timer' >/dev/null 2>&1 \
+       && [ -f /etc/systemd/system/${svc}.timer ]; then
+      systemctl disable --now '${svc}.timer' >/dev/null 2>&1 || true
+      rm -f /etc/systemd/system/${svc}.timer /etc/systemd/system/${svc}.service
+      systemctl daemon-reload
+      echo '[collector] Eski birim kaldirildi: ${svc}'
+    fi
+  "
+}
+
 install_one_unit() {
   svc_name="$1"; desc="$2"; exec_line="$3"; calendar="$4"; delay="$5"
 
@@ -353,12 +370,11 @@ install_units() {
   fi
 
   log "systemd service ve timer kuruluyor (${REMOTE_USER})."
-  install_one_unit "${SERVICE_NAME}" "tefas-pro collector (oneshot ingest)" \
-    "/usr/bin/podman run --rm --network ${COLLECTOR_NETWORK} --env-file ${REMOTE_DIR}/.env ${IMAGE} ${COLLECTOR_ARGS}" \
-    "${COLLECTOR_ON_CALENDAR}" "${COLLECTOR_RANDOM_DELAY}"
+  # Fintables birimi kaldırıldı: kaynak erişilemez hâle geldi ve her koşum
+  # "failed" bitiyordu. Önceki kurulumlardan kalan birim varsa temizlenir,
+  # yoksa sunucuda her gün düşmeye devam ederdi.
+  eski_birim_kaldir "${SERVICE_NAME}"
 
-  # TEFAS önce çalışır (10:00 < 10:30): birincil kaynak, Fintables'tan önce
-  # fiyat/getiri/yatırımcı/büyüklüğü yazar.
   install_one_unit "${TEFAS_SERVICE_NAME}" "tefas-pro TEFAS collector (birincil fiyat kaynağı)" \
     "/usr/bin/podman run --rm --network ${COLLECTOR_NETWORK} --env-file ${REMOTE_DIR}/.env --entrypoint node ${IMAGE} dist/collect-tefas.js" \
     "${TEFAS_ON_CALENDAR}" "${TEFAS_RANDOM_DELAY}"

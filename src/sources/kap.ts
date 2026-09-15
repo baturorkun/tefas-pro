@@ -171,3 +171,59 @@ export async function ekIndir(objId: string): Promise<Buffer> {
     return Buffer.from(await res.arrayBuffer());
   });
 }
+
+/**
+ * Şemsiye fon türü. KAP `fundClass` alanında kod veriyor; `dim_fund` ise
+ * kullanıcıya gösterilen Türkçe adı tutuyor.
+ */
+const SEMSIYE = new Map<string, string>([
+  ['HS', 'Hisse Senedi Şemsiye Fonu'],
+  ['KTF', 'Katılım Şemsiye Fonu'],
+  ['DG', 'Değişken Şemsiye Fonu'],
+  ['SF', 'Serbest Şemsiye Fonu'],
+  ['BA', 'Borçlanma Araçları Şemsiye Fonu'],
+  ['PP', 'Para Piyasası Şemsiye Fonu'],
+  ['KM', 'Kıymetli Madenler Şemsiye Fonu'],
+  ['FS', 'Fon Sepeti Şemsiye Fonu'],
+  ['GS', 'Girişim Sermayesi Şemsiye Fonu'],
+  ['GM', 'Gayrimenkul Şemsiye Fonu'],
+]);
+
+/** `dim_fund` satırı biçiminde fon evreni. Fintables'ın fundUniverse'ünün yerini alır. */
+export interface FonEvreniSatiri {
+  code: string;
+  title: string;
+  /** mutual | pension | realestate | exchange */
+  fundType: string;
+  umbrellaType: string | null;
+  managementCompanyId: string | null;
+  isByf: boolean;
+}
+
+/**
+ * Tüm yatırım fonları, `dim_fund`'a yazılacak biçimde.
+ *
+ * Ölçüldü: 2146 fon dönüyor ve takip edilen fonların tamamı eşleşiyor.
+ * Fintables'ın evreninden geniş.
+ */
+export async function fonEvreni(): Promise<FonEvreniSatiri[]> {
+  interface Satir {
+    fundCode: string | null; fundName: string | null;
+    fundClass: string | null; mkkMemberOid: string | null;
+  }
+  const d = await kapGet<Satir[]>(`${BASE}/tr/api/fund/criteria/${FON_GRUBU}/Y`);
+  const out: FonEvreniSatiri[] = [];
+  for (const s of d) {
+    if (s.fundCode === null || s.fundCode === '') continue;
+    out.push({
+      code: s.fundCode,
+      title: s.fundName ?? s.fundCode,
+      // YF grubu yatırım fonu; emeklilik ve BYF ayrı KAP gruplarında.
+      fundType: 'mutual',
+      umbrellaType: s.fundClass === null ? null : SEMSIYE.get(s.fundClass) ?? null,
+      managementCompanyId: s.mkkMemberOid,
+      isByf: false,
+    });
+  }
+  return out;
+}

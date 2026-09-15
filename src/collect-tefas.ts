@@ -16,9 +16,13 @@
 import pg from 'pg';
 
 import { fonBilgiGetir } from './sources/tefas.js';
-import { upsertDaily, successfulRunToday, missingFundsToday, todayIso, type DailyRow } from './collector.js';
+import {
+  upsertDaily, successfulRunToday, missingFundsToday, todayIso,
+  SCHEDULED_SOURCE, type DailyRow,
+} from './collector.js';
 
-export const TEFAS_SOURCE = 'tefas-scheduled';
+/** Zamanlanmış koşumun kaynağı; tek yerde tanımlı (bkz. collector.ts). */
+export const TEFAS_SOURCE = SCHEDULED_SOURCE;
 const THROTTLE_MS = Number(process.env['TEFAS_THROTTLE_MS'] ?? '') || 1500;
 
 function bekle(ms: number): Promise<void> {
@@ -158,4 +162,33 @@ async function main(): Promise<void> {
 
 if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
   await main();
+}
+
+/**
+ * Tek fonun günlük verisi: fiyat, getiri, yatırımcı, büyüklük, net akış.
+ *
+ * Takip listesine yeni fon eklendiğinde çağrılır. Zamanlanmış koşumla aynı
+ * veriyi aynı şekilde yazar — iki yol ayrışırsa fon nasıl eklendiğine göre
+ * farklı veri oluşurdu.
+ */
+export async function tefasFonuTopla(
+  pool: pg.Pool,
+  kod: string,
+  runId: number,
+  today: string = todayIso(),
+): Promise<number> {
+  const g = await fonBilgiGetir(kod);
+  if (g === null) return 0;
+  const oncekiPay = await oncekiPayAdetleri(pool, [kod], today);
+  const rows: DailyRow[] = [{
+    fund_code: g.fundCode,
+    trade_date: today,
+    nav_per_share: g.navPerShare,
+    daily_return_pct: g.dailyReturnPct ?? undefined,
+    shares_active: g.sharesActive ?? undefined,
+    net_flow: netAkis(g.sharesActive ?? undefined, oncekiPay.get(g.fundCode), g.navPerShare),
+    investor_count: g.investorCount ?? undefined,
+    aum: g.aum ?? undefined,
+  }];
+  return upsertDaily(pool, rows, runId, today);
 }
