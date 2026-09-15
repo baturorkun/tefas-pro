@@ -2145,9 +2145,13 @@ export async function fundDetail(
      SELECT h.stock_code, h.company, h.sector, h.weight_pct::text,
             h.prev_weight_pct::text, h.weight_change::text,
             to_char(h.as_of_date, 'YYYY-MM-DD') AS as_of_date,
-            CASE WHEN w.close > 0
+            -- Son kapanis bayatsa getiri GOSTERILMEZ. Kaynak durdugunda bu
+            -- sutunlar boşalmiyor, DONUYOR: ekran guncel bir getiri
+            -- gosteriyormus gibi durur ama sayi gecmiste kalmistir. Bos
+            -- birakmak dogrusu; veri olmadigi gorunur.
+            CASE WHEN w.close > 0 AND s.trade_date > current_date - 7
                  THEN round((s.close / w.close - 1) * 100, 4)::text END AS return_1w,
-            CASE WHEN m.close > 0
+            CASE WHEN m.close > 0 AND s.trade_date > current_date - 7
                  THEN round((s.close / m.close - 1) * 100, 4)::text END AS return_1m
        FROM fund_stock_holding h
        LEFT JOIN son_fiyat s ON s.stock_code = h.stock_code
