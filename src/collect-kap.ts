@@ -21,6 +21,7 @@ import { promisify } from 'node:util';
 
 import pg from 'pg';
 
+import { KAP_SOURCE } from './ingest-source.js';
 import { parseKalemler, parseVarlikSiniflari, type KapKalem } from './sources/kap-parse.js';
 import { kanonikVarlikSinifi } from './sources/varlik-sinifi.js';
 import {
@@ -29,7 +30,7 @@ import {
 
 const calistir = promisify(execFile);
 
-export const KAP_SOURCE = 'kap-scheduled';
+export { KAP_SOURCE } from './ingest-source.js';
 
 /** İstekler arası bekleme: KAP'ı yormayalım, engel yemeyelim. */
 const THROTTLE_MS = Number(process.env['KAP_THROTTLE_MS'] ?? '') || 1500;

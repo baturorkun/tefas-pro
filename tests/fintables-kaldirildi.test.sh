@@ -41,3 +41,16 @@ printf 'PASS: varlik sinifi adlandirmasi tek bicim\n'
 grep -Fq 'TEFAS_ON_CALENDAR="Mon..Fri 10:00:00"' "${I}" || fail "TEFAS saati degismis"
 grep -Fq 'KAP_ON_CALENDAR="Mon..Fri 10:10:00"' "${I}" || fail "KAP saati 10:30 oncesi degil"
 printf 'PASS: kosumlar 10:30 dan once bitiyor\n'
+
+# Kaynak etiketleri bagimsiz bir modulde olmali.
+#
+# collector.ts tek fon icin collect-tefas.ts'i cagiriyor, o da etiketi
+# kullaniyor. Etiketler collector.ts'te durursa dairesel import olusuyor ve
+# modul yuklenirken "Cannot access before initialization" ile cokuyor.
+# Typecheck bunu gormuyor; yalniz calistirinca ortaya cikiyor.
+[ -f "${PROJECT_ROOT}/src/ingest-source.ts" ] || fail "kaynak etiketleri ayri modulde degil"
+if grep -q "from './collect-tefas" "${PROJECT_ROOT}/src/ingest-source.ts" 2>/dev/null \
+   || grep -q "from './collector" "${PROJECT_ROOT}/src/ingest-source.ts" 2>/dev/null; then
+  fail "ingest-source.ts baska modul import ediyor; dairesellik geri gelir"
+fi
+printf 'PASS: kaynak etiketleri bagimsiz modulde, dairesel import yok\n'

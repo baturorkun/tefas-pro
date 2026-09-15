@@ -4,10 +4,11 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 
-# Kaynak ayrımı tek yerde tanımlı olmalı: panel ile collector aynı sabite bakar.
-grep -q "export const SCHEDULED_SOURCE" "${PROJECT_ROOT}/src/collector.ts" \
+# Kaynak ayrımı tek yerde tanımlı olmalı: panel ile collector aynı sabite
+# bakar. Tanım ingest-source.ts'te; collector.ts yeniden dışa açıyor.
+grep -q "export const SCHEDULED_SOURCE" "${PROJECT_ROOT}/src/ingest-source.ts" \
   || fail "zamanlanmış koşum kaynağı dışa açık olmalı"
-grep -q "export const ONDEMAND_SOURCE" "${PROJECT_ROOT}/src/collector.ts" \
+grep -q "export const ONDEMAND_SOURCE" "${PROJECT_ROOT}/src/ingest-source.ts" \
   || fail "tek fonluk koşum kaynağı dışa açık olmalı"
 # Panel'in kutusu zamanlanmış koşumu göstermeli; ayrım olmazsa takip listesine
 # eklenen her fon gecelik taramanın yerine geçerdi.

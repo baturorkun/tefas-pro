@@ -20,6 +20,7 @@
  */
 import type pg from 'pg';
 
+import { ONDEMAND_SOURCE } from './ingest-source.js';
 import { fonListesi } from './sources/kap.js';
 import { kapFonuTopla } from './collect-kap.js';
 import { tefasFonuTopla } from './collect-tefas.js';
@@ -43,13 +44,8 @@ const OVERLAP_DAYS = 5;
  * eklenen her fon gecelik taramanın yerine geçer ve kutu sistemin genel
  * durumu yerine tek bir fonun durumunu gösterirdi.
  */
-/**
- * Zamanlanmış koşumun kaynağı. Fintables kaldırıldıktan sonra günlük veriyi
- * TEFAS yazıyor; Panel'deki "Son Toplama" kutusu da onu göstermeli.
- * Geçmiş satırlar eski etiketle (`fintables-watchlist`) kalır.
- */
-export const SCHEDULED_SOURCE = 'tefas-scheduled';
-export const ONDEMAND_SOURCE = 'tekil-fon';
+export { SCHEDULED_SOURCE, ONDEMAND_SOURCE } from './ingest-source.js';
+import { SCHEDULED_SOURCE } from './ingest-source.js';
 
 interface Args {
   funds: string[] | undefined;

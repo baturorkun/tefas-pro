@@ -16,12 +16,12 @@
 import pg from 'pg';
 
 import { fonBilgiGetir } from './sources/tefas.js';
+import { SCHEDULED_SOURCE } from './ingest-source.js';
 import {
-  upsertDaily, successfulRunToday, missingFundsToday, todayIso,
-  SCHEDULED_SOURCE, type DailyRow,
+  upsertDaily, successfulRunToday, missingFundsToday, todayIso, type DailyRow,
 } from './collector.js';
 
-/** Zamanlanmış koşumun kaynağı; tek yerde tanımlı (bkz. collector.ts). */
+/** Zamanlanmış koşumun kaynağı; tanımı ingest-source.ts'te. */
 export const TEFAS_SOURCE = SCHEDULED_SOURCE;
 const THROTTLE_MS = Number(process.env['TEFAS_THROTTLE_MS'] ?? '') || 1500;
 
