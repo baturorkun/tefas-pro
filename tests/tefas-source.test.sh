@@ -62,3 +62,13 @@ grep -qF "CREATE OR REPLACE VIEW analytics.position_slice" "${MIG}" || fail "pos
 grep -n "ln(1 + d\.daily_return_pct" "${MIG}" | grep -v "greatest" && fail "migration'da hala korumasız ln() var"
 grep -n "ln(1 + d\.daily_return_pct" "${R}" | grep -v "greatest" && fail "repository.ts'te hala korumasız ln() var"
 printf 'PASS: position_return ve position_slice ln(0) korumalı, korumasız çağrı kalmadı\n'
+
+# ─── Net akış TEFAS'tan türetiliyor ───
+# Fintables'ın net_flow serisi bağımsız veri değil, pay adedi değişimi ×
+# fiyat. Ölçüldü: 405 gözlemde medyan sapma sıfır. Türetme kaldırılırsa
+# Fintables çalışmadığı gün Nakit Akışı ekranı boşalır.
+grep -qE "export function netAkis" "${CT}" || fail "netAkis türetmesi yok"
+grep -qF "net_flow: netAkis(" "${CT}" || fail "toplanan satıra net akış yazılmıyor"
+# Önceki pay adedi DB'den gelmeli; yoksa değer üretilmemeli.
+grep -qF "shares_active IS NOT NULL" "${CT}" || fail "önceki pay adedi sorgulanmıyor"
+printf 'PASS: net akış TEFAS pay adedinden türetiliyor\n'

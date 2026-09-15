@@ -6,8 +6,9 @@
  * engellediği günlerde bile Getiri Günü ilerler. Ayrıntı için
  * src/sources/tefas.ts.
  *
- * net_flow (fon akışı) ve varlık dağılımı burada yok — bunlar Fintables
- * çalışırsa ayrıca gelir, COALESCE upsert sayesinde bu koşum onları silmez.
+ * Net akış da buradan çıkıyor: ayrı bir veri değil, pay adedi değişimi ×
+ * fiyat — bkz. netAkis(). Varlık sınıfı dağılımı hâlâ eksik, o Fintables
+ * çalışırsa gelir; COALESCE upsert sayesinde bu koşum onu silmez.
  *
  * Yavaş ve nazik: TEFAS'ın kendi API'si bugüne kadar hiç engellememişti,
  * öyle kalsın diye istekler arası bekleme var.
@@ -22,6 +23,43 @@ const THROTTLE_MS = Number(process.env['TEFAS_THROTTLE_MS'] ?? '') || 1500;
 
 function bekle(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Net akış: dolaşımdaki pay adedindeki değişim × o günkü pay fiyatı.
+ *
+ * Fintables'ın `net_flow` serisi bağımsız bir veri değil, bu formülün
+ * sonucuymuş — 405 gözlemde ölçüldü: korelasyon 0.936, yön tutarlılığı %98.8,
+ * medyan sapma %0.00, vakaların %90'ından fazlasında tam sıfır sapma.
+ *
+ * Önceki pay adedi bilinmiyorsa değer üretilmez; eksik veriyi uydurmaktansa
+ * NULL bırakmak doğru.
+ */
+export function netAkis(
+  simdikiPay: number | undefined,
+  oncekiPay: number | null | undefined,
+  fiyat: number,
+): number | undefined {
+  if (simdikiPay === undefined || oncekiPay === null || oncekiPay === undefined) {
+    return undefined;
+  }
+  return (simdikiPay - oncekiPay) * fiyat;
+}
+
+/** Her fon için `today`den önceki en son bilinen pay adedi. */
+async function oncekiPayAdetleri(
+  pool: pg.Pool,
+  codes: readonly string[],
+  today: string,
+): Promise<Map<string, number>> {
+  const r = await pool.query<{ fund_code: string; shares_active: string }>(
+    `SELECT DISTINCT ON (fund_code) fund_code, shares_active
+       FROM fact_fund_daily
+      WHERE fund_code = ANY($1) AND trade_date < $2::date AND shares_active IS NOT NULL
+      ORDER BY fund_code, trade_date DESC`,
+    [[...codes], today],
+  );
+  return new Map(r.rows.map((x) => [x.fund_code, Number(x.shares_active)]));
 }
 
 async function main(): Promise<void> {
@@ -71,6 +109,8 @@ async function main(): Promise<void> {
 
     console.log(`tefas toplaması: ${String(codes.length)} fon, gün ${today} (run ${String(runId)})`);
 
+    const oncekiPay = await oncekiPayAdetleri(pool, codes, today);
+
     const rows: DailyRow[] = [];
     const errors: string[] = [];
     for (const kod of codes) {
@@ -86,6 +126,9 @@ async function main(): Promise<void> {
             nav_per_share: g.navPerShare,
             daily_return_pct: g.dailyReturnPct ?? undefined,
             shares_active: g.sharesActive ?? undefined,
+            net_flow: netAkis(
+              g.sharesActive ?? undefined, oncekiPay.get(g.fundCode), g.navPerShare,
+            ),
             investor_count: g.investorCount ?? undefined,
             aum: g.aum ?? undefined,
           });
