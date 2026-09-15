@@ -598,6 +598,7 @@ async function ingestYieldSnapshot(
 export async function successfulRunToday(
   pool: pg.Pool,
   today: string,
+  source: string = SCHEDULED_SOURCE,
 ): Promise<string | null> {
   const r = await pool.query<{ bitis: string }>(
     `SELECT to_char(finished_at, 'HH24:MI') AS bitis
@@ -605,7 +606,7 @@ export async function successfulRunToday(
       WHERE source = $1 AND status = 'passed'
         AND started_at >= $2::date AND started_at < $2::date + 1
       ORDER BY started_at DESC LIMIT 1`,
-    [SCHEDULED_SOURCE, today],
+    [source, today],
   );
   return r.rows[0]?.bitis ?? null;
 }

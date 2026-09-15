@@ -80,6 +80,15 @@ COLLECTOR_ARGS="--skip-stocks"
 COLLECTOR_ON_CALENDAR="Mon..Fri 10:30:00"
 # Dar bir pencere: 1800 sn'lik dağılım koşumu 11:00'a kadar öteliyordu.
 COLLECTOR_RANDOM_DELAY="300"
+# TEFAS birincil kaynak, Fintables'tan ÖNCE çalışır. Fintables 15 Eylül'de
+# dört bağımsız ağdan (sunucu dahil) aynı anda 403 vermeye başladı, kalıcı
+# bir durum; TEFAS'ın kendi API'si (api/funds/*) hiçbir IP'yi engellemiyor,
+# ölçüldü. TEFAS erken çalışıp fiyat/getiri/yatırımcı/büyüklüğü yazar,
+# Fintables çalışırsa (varsa) net akış ve dağılımla üstüne ekler — COALESCE
+# upsert ikisini çakıştırmadan birleştirir.
+TEFAS_SERVICE_NAME="tefas-pro-tefas-collector"
+TEFAS_ON_CALENDAR="Mon..Fri 10:00:00"
+TEFAS_RANDOM_DELAY="180"
 
 # Env dosyası doğrulanır ama SOURCE EDİLMEZ: parolayı kabuk ortamına almaya
 # gerek yok, podman dosyayı kendisi okuyor.
@@ -282,6 +291,52 @@ cmd_remote() {
   log "Uzak kurulum tamam: ${REMOTE_TARGET}:${REMOTE_DIR}"
 }
 
+# Tek bir servis+timer çiftini kurar. İki kez çağrılır: Fintables collector'ı
+# (varsayılan entrypoint) ve TEFAS collector'ı (--entrypoint ile aynı image
+# içindeki dist/collect-tefas.js). Aynı image'ı paylaşırlar, yeniden build
+# gerekmez.
+install_one_unit() {
+  svc_name="$1"; desc="$2"; exec_line="$3"; calendar="$4"; delay="$5"
+
+  remote_ssh "mkdir -p ${UNIT_DIR} && cat > ${UNIT_DIR}/${svc_name}.service" <<UNIT
+[Unit]
+Description=${desc}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=${REMOTE_DIR}
+ExecStart=${exec_line}
+TimeoutStartSec=3600
+UNIT
+
+  remote_ssh "cat > ${UNIT_DIR}/${svc_name}.timer" <<UNIT
+[Unit]
+Description=${desc} — zamanlanmış
+
+[Timer]
+OnCalendar=${calendar}
+# Sabit dakikada atılan istekler kaynak tarafında düzenli bir imza bırakır.
+RandomizedDelaySec=${delay}
+# Sunucu kapalıyken kaçan tetikleme açılışta telafi edilir; collector idempotent
+# olduğu için tekrar çalışması zararsızdır.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+  remote_ssh "${SYSTEMCTL} daemon-reload && ${SYSTEMCTL} enable --now ${svc_name}.timer"
+  state="$(remote_ssh "${SYSTEMCTL} is-enabled ${svc_name}.timer" || true)"
+  active="$(remote_ssh "${SYSTEMCTL} is-active ${svc_name}.timer" || true)"
+  if [ "${state}" != "enabled" ] || [ "${active}" != "active" ]; then
+    error "Timer beklenen durumda değil (${svc_name}): enabled=${state} active=${active}"
+    exit 1
+  fi
+  log "Timer hazır: ${svc_name} ${state} ${active}, OnCalendar=${calendar}"
+}
+
 install_units() {
   if [ "${REMOTE_USER}" = "root" ]; then
     UNIT_DIR="/etc/systemd/system"
@@ -293,43 +348,15 @@ install_units() {
   fi
 
   log "systemd service ve timer kuruluyor (${REMOTE_USER})."
-  remote_ssh "mkdir -p ${UNIT_DIR} && cat > ${UNIT_DIR}/${SERVICE_NAME}.service" <<UNIT
-[Unit]
-Description=tefas-pro collector (oneshot ingest)
-After=network-online.target
-Wants=network-online.target
+  install_one_unit "${SERVICE_NAME}" "tefas-pro collector (oneshot ingest)" \
+    "/usr/bin/podman run --rm --network ${COLLECTOR_NETWORK} --env-file ${REMOTE_DIR}/.env ${IMAGE} ${COLLECTOR_ARGS}" \
+    "${COLLECTOR_ON_CALENDAR}" "${COLLECTOR_RANDOM_DELAY}"
 
-[Service]
-Type=oneshot
-WorkingDirectory=${REMOTE_DIR}
-ExecStart=/usr/bin/podman run --rm --network ${COLLECTOR_NETWORK} --env-file ${REMOTE_DIR}/.env ${IMAGE} ${COLLECTOR_ARGS}
-TimeoutStartSec=3600
-UNIT
-
-  remote_ssh "cat > ${UNIT_DIR}/${SERVICE_NAME}.timer" <<UNIT
-[Unit]
-Description=tefas-pro collector her gece
-
-[Timer]
-OnCalendar=${COLLECTOR_ON_CALENDAR}
-# Sabit dakikada atılan istekler kaynak tarafında düzenli bir imza bırakır.
-RandomizedDelaySec=${COLLECTOR_RANDOM_DELAY}
-# Sunucu kapalıyken kaçan tetikleme açılışta telafi edilir; collector idempotent
-# olduğu için tekrar çalışması zararsızdır.
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-UNIT
-
-  remote_ssh "${SYSTEMCTL} daemon-reload && ${SYSTEMCTL} enable --now ${SERVICE_NAME}.timer"
-  TIMER_STATE="$(remote_ssh "${SYSTEMCTL} is-enabled ${SERVICE_NAME}.timer" || true)"
-  TIMER_ACTIVE="$(remote_ssh "${SYSTEMCTL} is-active ${SERVICE_NAME}.timer" || true)"
-  if [ "${TIMER_STATE}" != "enabled" ] || [ "${TIMER_ACTIVE}" != "active" ]; then
-    error "Timer beklenen durumda değil: enabled=${TIMER_STATE} active=${TIMER_ACTIVE}"
-    exit 1
-  fi
-  log "Timer hazır: ${TIMER_STATE} ${TIMER_ACTIVE}, OnCalendar=${COLLECTOR_ON_CALENDAR}"
+  # TEFAS önce çalışır (10:00 < 10:30): birincil kaynak, Fintables'tan önce
+  # fiyat/getiri/yatırımcı/büyüklüğü yazar.
+  install_one_unit "${TEFAS_SERVICE_NAME}" "tefas-pro TEFAS collector (birincil fiyat kaynağı)" \
+    "/usr/bin/podman run --rm --network ${COLLECTOR_NETWORK} --env-file ${REMOTE_DIR}/.env --entrypoint node ${IMAGE} dist/collect-tefas.js" \
+    "${TEFAS_ON_CALENDAR}" "${TEFAS_RANDOM_DELAY}"
 }
 
 main() {
