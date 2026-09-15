@@ -1,0 +1,42 @@
+[
+  {
+    "gate": "schemaCheck",
+    "status": "passed",
+    "output": "0 step file(s) valid",
+    "durationMs": 0
+  },
+  {
+    "gate": "build",
+    "status": "skipped",
+    "output": "No targetProject.commands.build configured.",
+    "durationMs": 0
+  },
+  {
+    "gate": "typeCheck",
+    "status": "passed",
+    "output": "> tefas-pro@0.1.0 typecheck /Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro\n> tsc --noEmit",
+    "durationMs": 1642,
+    "command": "pnpm typecheck",
+    "cwd": "/Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro"
+  },
+  {
+    "gate": "lint",
+    "status": "skipped",
+    "output": "No targetProject.commands.lint configured.",
+    "durationMs": 0
+  },
+  {
+    "gate": "tests",
+    "status": "failed",
+    "output": "> tefas-pro@0.1.0 test /Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro\n> vitest run && LC_ALL=C bash tests/db-install.test.sh && LC_ALL=C bash tests/db-sync.test.sh && LC_ALL=C bash tests/position-open.test.sh && LC_ALL=C bash tests/closed-position.test.sh && LC_ALL=C bash tests/settings.test.sh && LC_ALL=C bash tests/bank.test.sh && LC_ALL=C bash tests/collector-log.test.sh && LC_ALL=C bash tests/user-setting.test.sh && LC_ALL=C bash tests/cash-calendar.test.sh && LC_ALL=C bash tests/cash-totals.test.sh && LC_ALL=C bash tests/tefas-source.test.sh && LC_ALL=C bash tests/kap-source.test.sh && LC_ALL=C bash tests/fintables-kaldirildi.test.sh && LC_ALL=C bash tests/same-day-position.test.sh && LC_ALL=C bash tests/allocation.test.sh && LC_ALL=C bash tests/headline.test.sh && LC_ALL=C bash tests/transaction-detail.test.sh && LC_ALL=C bash tests/fifo.test.sh && LC_ALL=C bash tests/user-clone.test.sh && LC_ALL=C bash tests/assistant.test.sh && LC_ALL=C bash tests/profile.test.sh && LC_ALL=C bash tests/stock-scope.test.sh && LC_ALL=C bash tests/market-tabs.test.sh && LC_ALL=C bash tests/holding-exit.test.sh && LC_ALL=C bash tests/closed-fund-summary.test.sh && LC_ALL=C bash tests/pending-orders.test.sh && LC_ALL=C bash tests/transaction-form.test.sh && LC_ALL=C bash tests/fund-picker.test.sh && LC_ALL=C bash tests/pending-purchase.test.sh && LC_ALL=C bash tests/impersonation.test.sh && LC_ALL=C bash tests/loading.test.sh && LC_ALL=C bash tests/test-hygiene.test.sh && LC_ALL=C bash tests/portfolio-headline.test.sh && LC_ALL=C bash tests/version-check.test.sh && LC_ALL=C bash tests/panel-status.test.sh && LC_ALL=C bash tests/alarm.test.sh && LC_ALL=C bash tests/chart-tooltip.test.sh && LC_ALL=C bash tests/collector-deploy.test.sh && LC_ALL=C bash tests/deployment-target.test.sh\n\n\n RUN  v2.1.9 /Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro\n\n ✓ tests/settlement.test.ts (18 tests) 8ms\n ✓ tests/http.test.ts (11 tests) 6ms\n ✓ tests/kap-parse.test.ts (9 tests) 8ms\n ✓ tests/fifo.test.ts (11 tests) 56ms\n ✓ tests/version.test.ts (20 tests) 26ms\n ✓ tests/ui-conventions.test.ts (129 tests) 42ms\n ✓ tests/performance.test.ts (13 tests) 3ms\n ✓ tests/allocation.test.ts (14 tests) 5ms\n ✓ tests/periods.test.ts (21 tests) 16ms\n ✓ tests/collector.test.ts (29 tests) 14ms\n ✓ tests/sse.test.ts (6 tests) 2ms\n ✓ tests/assistant.test.ts (8 tests) 3ms\n ✓ tests/user-fields.test.ts (11 tests) 3ms\n ✓ tests/tefas-net-akis.test.ts (8 tests) 2ms\n ✓ tests/market-window.test.ts (3 tests) 2ms\n ✓ tests/auth.test.ts (16 tests) 233ms\n\n Test Files  16 passed (16)\n      Tests  327 passed (327)\n   Start at  00:02:24\n   Duration  695ms (transform 792ms, setup 0ms, collect 1.93s, tests 429ms, environment 2ms, prepare 1.02s)\n\nPASS: geliştirme ortamı pnpm kısayollarıyla yönetiliyor\nPASS: install help documents local and remote modes\nPASS: rendered Compose config enforces images, isolation, persistence, and secret handling\nPASS: local mode rejects a symlinked secret directory\nPASS: local mode creates environment and verifies services\nPASS: local mode supports podman-compose fallback\nPASS: remote mode rejects option-like SSH targets\nPASS: remote mode rejects the development password\nPASS: remote mode rejects quoted or non-canonical passwords\nPASS: remote mode rejects low-entropy passwords\nPASS: remote mode rejects unsafe database identifiers\nPASS: remote mode validates service host port ranges\nPASS: remote mode validates SSH port range\nPASS: remote mode rejects dangerous system directories\nPASS: remote no-service mode copies, starts, verifies, and reports tunnel\nPASS: remote mode installs and verifies a rootless systemd service\nPASS: remote mode rejects an unexpected systemd state\nPASS: remote mode installs and verifies a root systemd service\nPASS: sync help from-remote kullanımını belgeliyor\nPASS: restore öncesi local şema tamamen temizleniyor\nPASS: ters yön (local -> remote) hiç uygulanmamış\nPASS: hedef verilmezse reddedilir\nPASS: user@host olmayan hedef reddedilir\nPASS: seçenek benzeri hedef reddedilir\nPASS: kabuk metakarakteri taşıyan hedef reddedilir\nPASS: SSH portu 1-65535 aralığında doğrulanır\nPASS: bilinmeyen seçenek reddedilir\nPASS: bilinmeyen komut reddedilir\nPASS: DATABASE_URL tanımsızsa anlaşılır hata verir\nPASS: app_session içeriği hariç, app_user dahil\nPASS: sync sonrası migration uygulanır\nPASS: --yes onay sorusunu atlar\nPASS: restore hatası yutulmaz\nPASS: sürüm uyumsuzluğu meta komutları filtrelenir\nPASS: restore sonrası ANALYZE çalışır\nPASS: açıklık kuralı ileri tarihli satışı kapsıyor\nPASS: gerçekleşmemiş satışta değerleme son veri gününde duruyor\nPASS: ileri tarihli satış açık, bugünkü ve geçmiş satış kapalı\nPASS: değerleme son veri gününü aşmıyor\nPASS: fon sayısı ile açık kayıt sayısı ayrı ölçülüyor\nPASS: açık pozisyonlu fon takip bacağı üretmiyor\nPASS: takip listesi açıklık kuralı position_leg ile aynı\nPASS: tamamen satılmış fon takip listesinde kalıyor\nPASS: ileri tarihli satış kapanmış sayılmıyor\nPASS: ileri tarihli satış listede yok, gerçekleşenler var\nPASS: kâr/zarar satış ile alış farkına eşit\nPASS: yüzde ile tutarın işareti tutarlı\nPASS: kırılım işlem başına\nPASS: ayar tablosu ve emir tarihi kolonları tanımlı\nPASS: başlangıç tatil listesi yüklü (11 gün)\nPASS: sabit tatiller yılsız tutuluyor (7 gün)\nPASS: yıla özel tatiller fiyat verisiyle tutarlı\nPASS: satış emri satış tarihi olmadan reddediliyor\nPASS: benchmark fonu TP2 kullanılabilir (388 gün)\nPASS: eksik fiyatlı günler seriye girmiyor\nPASS: banka tablosu ve foreign key kuralları tanımlı\nPASS: her işlemin bankası tanımlı\nPASS: kullanılan banka silinemiyor (Fiba)\nPASS: kullanılmayan banka silinebiliyor\nPASS: tanımsız bankaya işlem yazılamıyor\nPASS: banka listesi Türkçe sıralanıyor\nPASS: kaynak ayrımı ve takip listesi sorgusu doğru\nPASS: suren kosum \"hic kosmadi\" gibi gorunmuyor\nPASS: gun gerideyken sebebi yaziyor\nPASS: gunde bir kez, --force ile zorlanabilir\nPASS: koşum kayıtları eksiksiz\nPASS: başarısız koşumların sebebi kayıtlı (0 hatalı koşum)\nPASS: fon sayısı saklanıyor ve tek fonluk koşum tek fon sayıyor\nPASS: kısmi koşumların sebebi kayıtlı\n ELIFECYCLE  Test failed. See above for more details.\n\nFAIL: pencere hataları fon hatalarından ayrılmalı\n\nCommand failed: pnpm test\nFAIL: pencere hataları fon hatalarından ayrılmalı",
+    "durationMs": 5623,
+    "command": "pnpm test",
+    "cwd": "/Users/batur/Documents/Projects/bytecraft/agentic/tefas-pro"
+  },
+  {
+    "gate": "security",
+    "status": "skipped",
+    "output": "No files to scan.",
+    "durationMs": 0
+  }
+]

@@ -13,24 +13,29 @@
       }
     ]
   },
-  "status": "queued",
+  "status": "needs-fix",
   "createdAt": "2026-09-15T21:01:19.112Z",
-  "updatedAt": "2026-09-15T21:01:19.143Z",
+  "updatedAt": "2026-09-15T21:02:29.593Z",
   "steps": [
     {
       "agent": "handoff",
-      "status": "pending",
+      "status": "needs-fix",
+      "startedAt": "2026-09-15T21:02:22.299Z",
+      "finishedAt": "2026-09-15T21:02:29.592Z",
       "retries": 0
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    "collector/install.sh",
+    "tests/fintables-kaldirildi.test.sh"
+  ],
   "deletedFiles": [],
   "gateResults": {
-    "schemaCheck": "pending",
-    "build": "pending",
-    "typeCheck": "pending",
-    "lint": "pending",
-    "tests": "pending",
-    "security": "pending"
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "skipped",
+    "tests": "failed",
+    "security": "skipped"
   }
 }
