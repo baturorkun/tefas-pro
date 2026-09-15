@@ -1066,7 +1066,7 @@ export async function portfolioHeadline(
               (SELECT count(*) FROM fact_fund_daily d
                 WHERE d.fund_code = l.fund_code AND d.daily_return_pct IS NOT NULL
                   AND d.trade_date > l.start_date AND d.trade_date <= (SELECT d FROM son)) AS days,
-              nav.nav_per_share / coalesce((SELECT exp(sum(ln(1 + d.daily_return_pct / 100)))
+              nav.nav_per_share / coalesce((SELECT exp(sum(ln(greatest(1 + d.daily_return_pct / 100, 1e-9))))
                                               FROM fact_fund_daily d
                                              WHERE d.fund_code = l.fund_code AND d.daily_return_pct IS NOT NULL
                                                AND d.trade_date > l.start_date), 1) AS nav_buy

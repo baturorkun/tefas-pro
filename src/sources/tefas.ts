@@ -1,26 +1,26 @@
 /**
- * TEFAS'ın kendi resmi API'si — acil durum kaynağı.
+ * TEFAS'ın kendi resmi API'si — birincil fiyat/getiri kaynağı.
  *
  * Fintables 15 Eylül'de dört bağımsız ağdan (sunucu, iki ev IP'si, Anthropic
- * altyapısı) aynı anda 403 vermeye başladı; kalıcı, IP'ye özel olmayan bir
- * durumdu. tefas.gov.tr'nin kendi web sayfaları (TarihselVeriler.aspx,
+ * altyapısı) aynı anda 403 vermeye başladı — kalıcı, IP'ye özel olmayan bir
+ * durum. tefas.gov.tr'nin kendi web sayfaları (TarihselVeriler.aspx,
  * /tr/fon-verileri, FonAnaliz.aspx, /tr/fon-detayli-analiz) hepsi Akamai bot
  * korumasına takılıyor — düz istek de headless tarayıcı da JS-sensör
  * kabuğundan öteye geçemiyor.
  *
- * Ama `api/funds/*` altındaki uçlar bu korumaya HİÇ tabi değil: düz
- * `fetch`/`requests.post`, özel bir TLS taklidi olmadan, doğrudan çalışıyor.
- * Kullanıcının kendi eski projesinde (github/tefas, main.py) bu uçlar aylardır
- * kullanılıyordu — o kod referans alındı, ölçülerek doğrulandı.
+ * Ama `api/funds/*` altındaki uçlar bu korumaya HİÇ tabi değil, ne istemcide
+ * ne IP'de bir kısıtlama var. Ölçüldü:
  *
- *     fonFiyatBilgiGetir  → günlük NAV serisi (periyod ay cinsinden pencere)
- *     fonBilgiGetir       → GÜNÜN özeti: fiyat, GÜNLÜK GETİRİ (hazır!),
- *                           yatırımcı sayısı, büyüklük, pay adedi
+ *     ev IP'si      fonBilgiGetir   200, tam veri
+ *     sunucu IP'si  fonBilgiGetir   200, tam veri
  *
- * `fonBilgiGetir` tek çağrıda fiyat+getiri+yatırımcı+büyüklük veriyor; günlük
- * koşum için bu yeterli. Net akış (net_flow) bu uçta YOK — Getiri Günü'nü
- * ilerletmeye engel değil ama alarm motorunun akış kuralları o gün için eksik
- * kalır.
+ * Kullanıcının kendi eski projesinde (github/tefas, main.py) bu uçlar
+ * aylardır kullanılıyordu — o kod referans alındı, ölçülerek doğrulandı.
+ *
+ * Fintables'tan farkı: net akış (cashflow) ve varlık sınıfı dağılımı burada
+ * yok. Bu yüzden TEFAS birincil kaynak (fiyat, günlük getiri, yatırımcı
+ * sayısı, büyüklük — Getiri Günü'nü ilerletmeye yeter), Fintables varsa
+ * tamamlayıcı; artık kritik yolda değil.
  */
 const BASE = 'https://www.tefas.gov.tr/api/funds';
 const HEADERS = {
