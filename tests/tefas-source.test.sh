@@ -72,3 +72,27 @@ grep -qF "net_flow: netAkis(" "${CT}" || fail "toplanan satıra net akış yazı
 # Önceki pay adedi DB'den gelmeli; yoksa değer üretilmemeli.
 grep -qF "shares_active IS NOT NULL" "${CT}" || fail "önceki pay adedi sorgulanmıyor"
 printf 'PASS: net akış TEFAS pay adedinden türetiliyor\n'
+
+# Havuz yalniz finally blogunda kapatilmali.
+#
+# Idempotency yolunda return oncesi pool.end() cagriliyordu; return finally'yi
+# tetikleyince ikinci kez kapaniyor ve kosum "Called end on pool more than
+# once" ile dusuyordu. Gun icinde ikinci kez kosan her toplama basarisiz
+# gorunuyordu -- sunucudaki dogrulama kosusu boyle patladi.
+for f in collect-tefas collect-kap collect-hisse; do
+  n="$(grep -c "pool.end()" "${PROJECT_ROOT}/src/${f}.ts" || true)"
+  [ "${n}" = "1" ] || fail "${f}.ts icinde ${n} adet pool.end() var, bir tane olmali"
+done
+printf 'PASS: havuz tek yerde kapatiliyor\n'
+
+# Fiyatin AIT OLDUGU gun kaynaktan sorulmali, kosum gunu varsayilmamali.
+#
+# fonBilgiGetir yalniz "son fiyat" veriyor. Fon bugunun fiyatini
+# aciklamadiysa dunku fiyat donuyor; onu bugune yazmak uydurma bir gunluk
+# getiri uretir ve Getiri Gunu'nu yanlis ilerletir. Timer 10:00'da kostugu
+# icin bu risk somut.
+grep -q "sonFiyatTarihi" "${TS}" || fail "fiyat tarihi kaynaktan alinmiyor"
+grep -q "fonFiyatBilgiGetir" "${TS}" || fail "tarihli seri ucu kullanilmiyor"
+grep -q "trade_date: gun" "${CT}" || fail "satir kosum gunuyle yaziliyor"
+if grep -q "trade_date: today" "${CT}"; then fail "hala kosum gunu varsayiliyor"; fi
+printf 'PASS: fiyatin tarihi kaynaktan geliyor\n'

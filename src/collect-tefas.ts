@@ -15,7 +15,7 @@
  */
 import pg from 'pg';
 
-import { fonBilgiGetir } from './sources/tefas.js';
+import { fonBilgiGetir, sonFiyatTarihi } from './sources/tefas.js';
 import { SCHEDULED_SOURCE } from './ingest-source.js';
 import {
   upsertDaily, successfulRunToday, missingFundsToday, todayIso, type DailyRow,
@@ -84,7 +84,10 @@ async function main(): Promise<void> {
       const bitis = await successfulRunToday(pool, today, TEFAS_SOURCE);
       const eksik = bitis === null ? [] : await missingFundsToday(pool);
       if (bitis !== null && eksik.length === 0) {
-        await pool.end();
+        // Havuzu burada kapatma: `finally` zaten kapatıyor ve ikinci çağrı
+        // "Called end on pool more than once" ile koşumu düşürüyordu. Gün
+        // içinde ikinci kez koşan her toplama — timer'dan önce elle koşulan
+        // gün dahil — başarısız görünüyordu.
         console.log(`Bugün ${bitis} itibarıyla toplandı, eksik fon yok — atlandı.`);
         return;
       }
@@ -117,6 +120,7 @@ async function main(): Promise<void> {
 
     const rows: DailyRow[] = [];
     const errors: string[] = [];
+    let atlanan = 0;
     for (const kod of codes) {
       try {
         const g = await fonBilgiGetir(kod);
@@ -124,9 +128,26 @@ async function main(): Promise<void> {
           errors.push(`${kod}: sonuç yok`);
           console.log(`  ✗ ${kod}: sonuç yok`);
         } else {
+          // Fiyatın AİT OLDUĞU gün kaynaktan sorulur, koşum günü varsayılmaz.
+          // Fon bugünün fiyatını açıklamadıysa dünkü fiyat dönüyor; onu
+          // bugüne yazmak uydurma bir günlük getiri üretirdi.
+          await bekle(THROTTLE_MS);
+          const gun = await sonFiyatTarihi(kod);
+          if (gun === null) {
+            errors.push(`${kod}: fiyat tarihi yok`);
+            console.log(`  ✗ ${kod}: fiyat tarihi yok`);
+            await bekle(THROTTLE_MS);
+            continue;
+          }
+          if (gun !== today) {
+            // Gün ilerlemiyor: fon henüz açıklamamış. Var olan güne tekrar
+            // yazmak zararsız, ileri kaydırmak değil.
+            atlanan++;
+            console.log(`  · ${kod}: ${gun} (bugünün fiyatı yok)`);
+          }
           rows.push({
             fund_code: g.fundCode,
-            trade_date: today,
+            trade_date: gun,
             nav_per_share: g.navPerShare,
             daily_return_pct: g.dailyReturnPct ?? undefined,
             shares_active: g.sharesActive ?? undefined,
@@ -153,7 +174,10 @@ async function main(): Promise<void> {
       [runId, durum, yazilan, codes.length - errors.length, errors.length,
         errors.length === 0 ? null : errors.join('\n')],
     );
-    console.log(`\nBitti: ${String(yazilan)} satır yazıldı, ${String(errors.length)} hata`);
+    console.log(
+      `\nBitti: ${String(yazilan)} satır yazıldı, ` +
+      `${String(atlanan)} fonun bugünkü fiyatı yok, ${String(errors.length)} hata`,
+    );
     if (errors.length > 0) process.exitCode = 1;
   } finally {
     await pool.end();
@@ -179,10 +203,14 @@ export async function tefasFonuTopla(
 ): Promise<number> {
   const g = await fonBilgiGetir(kod);
   if (g === null) return 0;
-  const oncekiPay = await oncekiPayAdetleri(pool, [kod], today);
+  // Zamanlanmış koşumla aynı kural: tarih kaynaktan gelir, koşum günü
+  // varsayılmaz. Fon bugünün fiyatını açıklamadıysa günü ilerletmeyiz.
+  const gun = await sonFiyatTarihi(kod);
+  if (gun === null) return 0;
+  const oncekiPay = await oncekiPayAdetleri(pool, [kod], gun);
   const rows: DailyRow[] = [{
     fund_code: g.fundCode,
-    trade_date: today,
+    trade_date: gun,
     nav_per_share: g.navPerShare,
     daily_return_pct: g.dailyReturnPct ?? undefined,
     shares_active: g.sharesActive ?? undefined,
