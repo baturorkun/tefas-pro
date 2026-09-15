@@ -35,15 +35,15 @@ describe('parseArgs', () => {
   it('varsayılan: akış 12 ay, büyüklük 6 ay, artımlı', () => {
     expect(parseArgs([])).toEqual({
       funds: undefined, backfill: false, skipYield: false,
-      skipStocks: false, force: false, flowMonths: 12, sizeMonths: 6,
+      force: false, flowMonths: 12, sizeMonths: 6,
     });
   });
   it('bayrakları okur', () => {
     expect(parseArgs(['--funds', 'AAA,BBB', '--backfill', '--skip-yield',
-                      '--skip-stocks', '--force',
+                      '--force',
                       '--flow-months', '24', '--size-months', '3'])).toEqual({
       funds: ['AAA', 'BBB'], backfill: true, skipYield: true,
-      skipStocks: true, force: true, flowMonths: 24, sizeMonths: 3,
+      force: true, flowMonths: 24, sizeMonths: 3,
     });
   });
 });
