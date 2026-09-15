@@ -45,3 +45,12 @@ printf 'PASS: mesaj reloadu asiyor ve bir kez gosteriliyor\n'
 
 grep -qF ".panel-status[hidden] { display: none; }" "${C}" || fail "gizli durum satiri gorunuyor"
 printf 'PASS: durum satiri stilli\n'
+
+# Gun ertesiye gectiginde kutu degerlerin ne zaman gelecegini soylemeli.
+# Onceden dunku kosumun "toplandi" yazisi duruyordu ve bugunun verisinin
+# gelip gelmeyecegi belli olmuyordu.
+grep -q "degerlerBekleniyor" "${M}" || fail "degerlerin ne zaman gelecegi yazilmiyor"
+grep -Fq "10:30" "${M}" || fail "saat yazilmiyor"
+# Hafta sonu gosterilmemeli: cumartesi veri gunu cuma olur, bu dogrudur.
+grep -q "gun === 0 || gun === 6" "${M}" || fail "hafta sonu ayrilmamis"
+printf 'PASS: gun gerideyken degerlerin gelecegi saat yaziliyor\n'

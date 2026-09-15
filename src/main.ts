@@ -541,6 +541,23 @@ function bugunISO(): string {
     + `-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * Veri günü geride ve bugün değerlerin gelmesi bekleniyor mu?
+ *
+ * Hafta sonu gösterilmez: cumartesi veri günü cuma olur ve bu doğrudur,
+ * gelecek bir şey yoktur. 10:30'dan sonra da gösterilmez — o saatten sonra
+ * gün hâlâ gerideyse sebebi mevcut mesajlar anlatıyor.
+ */
+function degerlerBekleniyor(dataDate: string | null): boolean {
+  if (dataDate === null) return false;
+  const simdi = new Date();
+  const gun = simdi.getDay();
+  if (gun === 0 || gun === 6) return false;
+  const dakika = simdi.getHours() * 60 + simdi.getMinutes();
+  if (dakika > 10 * 60 + 30) return false;
+  return dataDate < bugunISO();
+}
+
 function gunAd(iso: string | null, yilHep = false): string {
   if (iso === null || iso.length < 10) return '—';
   const [y, a, g] = [iso.slice(0, 4), Number(iso.slice(5, 7)), Number(iso.slice(8, 10))];
@@ -1961,6 +1978,12 @@ async function dashboardView(reload: () => void): Promise<Node[]> {
           ? 'Henüz Koşmadı'
           : run.finishedAt === null
           ? 'Toplanıyor…'
+          // Gün ertesiye geçtiğinde kutu dünkü koşumun "toplandı" yazısını
+          // gösteriyordu ve bugünün verisinin gelip gelmeyeceği belli
+          // olmuyordu. Toplama 10:20'de bitiyor; 10:30'a kadar beklemek
+          // doğru cevap.
+          : degerlerBekleniyor(m.dataDate)
+          ? 'tüm değerler 10:30\u2019a kadar gelecek'
           // Gün geride kaldığında SEBEBİ yazılır. Toplama gününü yazmak kutuyu
           // kendisiyle çelişkiye düşürüyordu: başlıkta 9 Eylül, altında
           // "toplandı 10 Eylül". Toplama koştu; eksik olan fonların fiyatıydı

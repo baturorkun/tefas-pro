@@ -68,3 +68,25 @@ export async function fonBilgiGetir(fundCode: string): Promise<TefasGunOzeti | n
     sharesActive: item.payAdet,
   };
 }
+
+/**
+ * Fonun son fiyatının AİT OLDUĞU gün.
+ *
+ * `fonBilgiGetir` yalnız "son fiyat" veriyor, hangi güne ait olduğunu
+ * söylemiyor. Fon bugünün fiyatını henüz açıklamamışsa dünkü fiyat dönüyor;
+ * onu bugünün verisi diye yazmak uydurma bir günlük getiri üretir ve Getiri
+ * Günü'nü yanlış ilerletir.
+ *
+ * Bu uç tarihli seri veriyor ve en son kaydı `sonFiyat` ile birebir aynı
+ * (ölçüldü: TLY 2026-09-15, 10133.510887 iki uçta da aynı). Koşum saatinden
+ * bağımsız doğru sonuç için tarih buradan alınır.
+ */
+export async function sonFiyatTarihi(fundCode: string): Promise<string | null> {
+  interface Yanit { resultList?: { tarih: string; fiyat: number }[] }
+  const data = await tefasPost<Yanit>(`${BASE}/fonFiyatBilgiGetir`, {
+    fonKodu: fundCode, dil: 'TR', periyod: 1,
+  });
+  const liste = data.resultList ?? [];
+  const son = liste[liste.length - 1];
+  return son?.tarih.slice(0, 10) ?? null;
+}
