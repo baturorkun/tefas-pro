@@ -59,11 +59,14 @@ grep -q "RUNNER_TRACKING_ID: ''" <<<"$(awk '/- name: Replace slot container/,/ru
   || fail "container adımı runner'ın orphan temizliğinden muaf değil"
 printf 'PASS: container conmon süreci deploy sonunda öldürülmüyor\n'
 
-# Zamanlanmış kosum fvt adimini atlar. fvt'nin veri uclari sunucunun IP'sine
-# kapali: her kosumda 71 fonun 71'i de 403 aliyordu, kosum "partial" bitiyor
-# ve Collector Log hata doluyordu. Hisse kirilimi ev IP'sinden toplaniyor.
-grep -Fq 'COLLECTOR_ARGS="--skip-stocks"' "${PROJECT_ROOT}/collector/install.sh" \
-  || fail "zamanlanmis kosum fvt adimini deniyor"
-grep -Fq "'--skip-stocks'" "${PROJECT_ROOT}/src/collector.ts" \
-  || fail "--skip-stocks bayragi kodda yok"
-printf 'PASS: zamanlanmis kosum engellenmis uca istek atmiyor\n'
+# fvt kaldirildi: veri uclari sunucunun IP'sine kapaliydi, her kosumda
+# fonlarin hepsi 403 aliyordu ve kosum "partial" bitiyordu. Hisse kirilimi
+# artik KAP'tan, ayri bir timer'la. Geri gelmemesi icin koda basvuru
+# kalmadigi da kontrol edilir.
+if grep -rq "sources/fvt" "${PROJECT_ROOT}/src"; then fail "fvt hala kodda"; fi
+[ -f "${PROJECT_ROOT}/src/collect-fvt.ts" ] && fail "collect-fvt.ts hala duruyor"
+grep -Fq "KAP_SERVICE_NAME=" "${PROJECT_ROOT}/collector/install.sh" \
+  || fail "KAP timer tanimsiz"
+grep -Fq "dist/collect-kap.js" "${PROJECT_ROOT}/collector/install.sh" \
+  || fail "KAP entrypointi yanlis"
+printf 'PASS: fvt kaldirildi, hisse kirilimi KAP timerinda\n'

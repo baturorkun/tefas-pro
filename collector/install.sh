@@ -67,12 +67,10 @@ ensure_env_file() {
 # konmaz: orada tırnak podman tarafından değerin parçası sayılır, tırnaksız
 # boşluk ise bash source'unda komuta bölünür.
 COLLECTOR_NETWORK="tefas-pro-db_default"
-# Zamanlanmış koşum fvt adımını atlar: fvt'nin veri uçları sunucunun IP'sine
-# kapalı (403, Cloudflare) ve her koşumda 71 fonun 71'i de hata veriyordu —
-# koşum "partial" bitiyor, Collector Log hata doluyor ve engellenmiş bir uca
-# günde 71 istek gidiyordu. Ölçüm src/collect-fvt.ts başında; hisse kırılımı
-# artık ev IP'sinden `pnpm collect:fvt` ile toplanıyor.
-COLLECTOR_ARGS="--skip-stocks"
+# Hisse kırılımı bu koşumdan çıktı: artık KAP'tan, ayrı bir timer'la
+# toplanıyor (aşağıda KAP_SERVICE_NAME). fvt kaldırıldı — veri uçları
+# sunucunun IP'sine kapalıydı ve her koşumda fonların hepsi 403 alıyordu.
+COLLECTOR_ARGS=""
 # Hafta içi sabah 10:30. Gece 03:00 değil: fon fiyatları sabah yayımlanıyor ve
 # hafta sonu yeni veri yok — gece koşum bir önceki günün verisini tekrar
 # çekiyordu. Sunucudaki timer zaten buydu; varsayılan farklı kaldığı için bir
@@ -86,6 +84,13 @@ COLLECTOR_RANDOM_DELAY="300"
 # ölçüldü. TEFAS erken çalışıp fiyat/getiri/yatırımcı/büyüklüğü yazar,
 # Fintables çalışırsa (varsa) net akış ve dağılımla üstüne ekler — COALESCE
 # upsert ikisini çakıştırmadan birleştirir.
+KAP_SERVICE_NAME="tefas-pro-kap-collector"
+# Hisse kırılımı KAP'tan. Her gün koşar ama her gün veri yazmaz: fonlar
+# portföyünü aylık ya da haftalık bildiriyor ve her fon farklı günde
+# yayımlıyor. Zaten kayıtlı dönem tekrar indirilmez. Fiyat koşumlarından
+# sonra (11:15) çünkü acelesi yok ve aynı anda iki koşum istemiyoruz.
+KAP_ON_CALENDAR="Mon..Fri 11:15:00"
+KAP_RANDOM_DELAY="600"
 TEFAS_SERVICE_NAME="tefas-pro-tefas-collector"
 TEFAS_ON_CALENDAR="Mon..Fri 10:00:00"
 TEFAS_RANDOM_DELAY="180"
@@ -357,6 +362,11 @@ install_units() {
   install_one_unit "${TEFAS_SERVICE_NAME}" "tefas-pro TEFAS collector (birincil fiyat kaynağı)" \
     "/usr/bin/podman run --rm --network ${COLLECTOR_NETWORK} --env-file ${REMOTE_DIR}/.env --entrypoint node ${IMAGE} dist/collect-tefas.js" \
     "${TEFAS_ON_CALENDAR}" "${TEFAS_RANDOM_DELAY}"
+
+  # Hisse kırılımı: KAP'ın portföy dağılım raporundan, aynı image'la.
+  install_one_unit "${KAP_SERVICE_NAME}" "tefas-pro KAP collector (hisse kırılımı)" \
+    "/usr/bin/podman run --rm --network ${COLLECTOR_NETWORK} --env-file ${REMOTE_DIR}/.env --entrypoint node ${IMAGE} dist/collect-kap.js" \
+    "${KAP_ON_CALENDAR}" "${KAP_RANDOM_DELAY}"
 }
 
 main() {

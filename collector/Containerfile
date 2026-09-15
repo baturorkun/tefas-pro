@@ -30,6 +30,13 @@ RUN pnpm build
 FROM docker.io/library/node:22-bookworm-slim
 
 WORKDIR /app
+# poppler-utils: KAP'ın portföy dağılım raporu PDF ekinde geliyor ve
+# `pdftotext -layout` ile okunuyor. Sütun hizası korunmalı — ağırlık satırın
+# son sütununda. JS tarafında PDF kütüphanesi eklemek yerine bu tercih edildi;
+# proje iki runtime bağımlılığıyla yalın kalıyor.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends poppler-utils \
+ && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
 COPY package.json pnpm-lock.yaml ./

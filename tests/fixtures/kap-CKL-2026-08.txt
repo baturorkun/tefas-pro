@@ -1,0 +1,147 @@
+II- FONUN PERFORMANSINA                                     TL
+İLİŞKİN BİLGİLER
+
+
+
+ A. AY SONU KATILMA PAYI       :                      1.597005
+FİYATI
+
+ B. ÖNCEKİ AY KATILMA          :                      1.433642
+PAYI FİYATI
+
+ C. AYLIK KATILMA PAYI         :                       11.39%
+FİYATI ARTIŞ ORANI
+
+ Ç. YILBAŞINA GÖRE FİYAT       :                       37.47%
+ARTIŞ ORANI
+
+ D. YILLIK KATILMA PAYI        :                       47.95%
+FİYATI ARTIŞ ORANI
+
+ E. AYLIK ORTALAMA
+PORTFÖYDEKİ
+
+ MENKUL KIYMETLER              :
+YÜZDESİ
+
+ Hisse Senedi                                          16.64%
+
+ Devlet Tahvili Ters Repo                              41.78%
+
+ Takasbank Para Piyasası                                1.35%
+
+ Yabancı Hisse Senetleri                               19.70%
+
+ VİOP Nakit Teminat                                     4.61%
+
+ Vadeli Mevduat/Yabancı Para                            0.73%
+
+ Borsa Yatırım Fonu /ETF                               15.19%
+
+ F. AYLIK ORTALAMA             :                        1.34%
+PORTFÖY DEVİR HIZI
+
+ G. PORTFÖYÜN ORTALAMA         :                          1.38
+VADESİ (GÜN)
+
+ Ğ. KATILMA PAYI               :                 45,709,990.91
+İHRAÇLARINDAN
+KAYNAKLANAN NAKİT
+GİRİŞLERİ
+
+ H. KATILMA PAYI               :                 48,940,129.75
+İADELERİNDEN
+KAYNAKLANAN NAKİT
+ÇIKIŞLARI
+
+
+
+
+III- FON PORTFÖY DEĞERİ        :
+TABLOSU
+
+                                                     Isin Kodu                             Vade   İhraçcı   Nominal Değeri   Rayiç Değeri                  %
+
+A) HİSSE SENETLERİ             :
+
+
+
+
+02/09/2026 23:55:46                                                                                                                         Sayfa 1 / 38
+RGYAS                         TRERSGY00036                      Rönesans Gayrimenkul Yatırım        300,000.00     64,620,000.00                   8.55
+
+SOKM                          TRESOKM00022                                      Şok Marketler      1,000,000.00    55,400,000.00                   7.33
+
+TOPLAM                                                                                             1,300,000.00   120,020,000.00                  15.88
+
+Ğ) YABANCI HİSSE          :
+SENETLERİ
+
+BABA.K                        US01609W1027                         Alibaba Group Holding Ltd.          3,800.00    21,132,438.14                   2.80
+
+INTC.O                         US4581401001                                            INTEL          15,000.00    65,365,088.58                   8.65
+
+MELI                           US58733R1023                                 MercadoLibre Inc.           400.00     37,339,746.63                   4.94
+
+TTWO                           US8740541094                     Take-Two Interactive Software,         1,400.00    14,875,919.47                   1.97
+                                                                                          Inc.
+
+TOPLAM                                                                                                20,600.00   138,713,192.82                  18.35
+
+H) BORSA YATIRIM FONU /   :
+ETF
+
+KSTR.K                         US5007676944                  KraneShares SSE STAR Market 50           30,000.00    35,064,291.57                   4.64
+                                                                                 Index ETF
+
+SIL                            US37954Y8488                        Global X Silver Miners ETF          6,500.00    30,364,315.09                   4.02
+
+TMF                            US25460G1388                   Direxion Daily 20+ Year Treasury        37,000.00    54,692,895.25                   7.23
+                                                                                Bull 3x Shares
+
+TOPLAM                                                                                                73,500.00   120,121,501.90                  15.89
+
+N) TERS REPO              :
+
+
+TRT131027T36                   TRT131027T36     01.09.2026         Hazine ve Maliye Bakanlığı    316,996,750.00   350,354,315.07                  46.35
+
+TOPLAM                                                                                           316,996,750.00   350,354,315.07                  46.35
+
+O) TAKASBANK PARA         :
+PİYASASI
+
+BPP                                             01.09.2026                                        13,333,812.66    13,333,812.66                   1.76
+
+TOPLAM                                                                                                             13,333,812.66                   1.76
+
+T) FORWARD                :
+
+
+Forward USD/TL                       USD/TL     01.09.2026                                          310,000.00
+
+TOPLAM                                                                                                                      0.00                   0.00
+
+U) VİOP                   :
+
+
+F_XAUUSD1026                                                                                            420.00     90,380,083.10
+
+TOPLAM                                                                                                                      0.00                   0.00
+
+AC) VİOP NAKİT TEMİNAT    :
+
+
+                                                                                                  13,415,363.36    13,415,363.36                   1.77
+
+TOPLAM                                                                                            13,415,363.36    13,415,363.36                   1.77
+
+AF) SERTIFIKALAR          :
+
+
+TOPLAM
+
+
+
+
+I
