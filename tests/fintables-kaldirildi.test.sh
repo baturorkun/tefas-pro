@@ -35,3 +35,9 @@ grep -q "kanonikVarlikSinifi" "${PROJECT_ROOT}/src/collect-kap.ts" \
 [ -f "${PROJECT_ROOT}/db/migrations/047_varlik_sinifi_adlari.sql" ] \
   || fail "gecmis etiketleri donusturen migration yok"
 printf 'PASS: varlik sinifi adlandirmasi tek bicim\n'
+
+# Butun kosumlar 10:30'da bitmis olmali: TEFAS 10:00, KAP 10:10.
+# Saatler ileri kayarsa gunluk veri gec hazir olur.
+grep -Fq 'TEFAS_ON_CALENDAR="Mon..Fri 10:00:00"' "${I}" || fail "TEFAS saati degismis"
+grep -Fq 'KAP_ON_CALENDAR="Mon..Fri 10:10:00"' "${I}" || fail "KAP saati 10:30 oncesi degil"
+printf 'PASS: kosumlar 10:30 dan once bitiyor\n'

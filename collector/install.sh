@@ -89,8 +89,13 @@ KAP_SERVICE_NAME="tefas-pro-kap-collector"
 # portföyünü aylık ya da haftalık bildiriyor ve her fon farklı günde
 # yayımlıyor. Zaten kayıtlı dönem tekrar indirilmez. Fiyat koşumlarından
 # sonra (11:15) çünkü acelesi yok ve aynı anda iki koşum istemiyoruz.
-KAP_ON_CALENDAR="Mon..Fri 11:15:00"
-KAP_RANDOM_DELAY="600"
+# Her şey 10:30'da bitmiş olmalı. TEFAS 10:00'da başlayıp ~2 dakikada
+# bitiyor (74 fon, istek arası 1,5sn); KAP ardından 10:10'da başlıyor ve
+# normal günlerde çoğu fonun dönemi zaten kayıtlı olduğu için indirme
+# yapmadan geçiyor. Rastgele gecikme 5 dakika: 10:15'te başlasa bile
+# 10:30'dan önce biter.
+KAP_ON_CALENDAR="Mon..Fri 10:10:00"
+KAP_RANDOM_DELAY="300"
 TEFAS_SERVICE_NAME="tefas-pro-tefas-collector"
 TEFAS_ON_CALENDAR="Mon..Fri 10:00:00"
 TEFAS_RANDOM_DELAY="180"
