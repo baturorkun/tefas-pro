@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { parseKalemler } from '../src/sources/kap-parse.js';
+import { kodNormalize, parseKalemler } from '../src/sources/kap-parse.js';
 
 const metin = (ad: string): string =>
   readFileSync(new URL(`fixtures/${ad}.txt`, import.meta.url), 'utf8');
@@ -52,9 +52,13 @@ describe('parseKalemler — şablon B (Yapı Kredi)', () => {
     expect(b.get('SOKM')).toBe(7.33);
   });
 
-  it('borsa ekli yabancı hisse kodlarını korur', () => {
-    // INTC.O ve BABA.K: normalleştirme parse katmanının işi değil.
-    expect(b.get('INTC.O')).toBe(8.65);
+  it('borsa sonekini ayırır, aynı kıymet tek kodla gelir', () => {
+    // Raporda INTC.O ve BABA.K yazıyor; başka fonlar aynı kıymeti soneksiz
+    // yazıyor. Ölçüldü: 139 sonekli kodun 120'sinin sadesi de kayıtlıydı,
+    // yani aynı kıymet iki kez sayılıyordu.
+    expect(b.get('INTC')).toBe(8.65);
+    expect(b.get('BABA')).toBe(2.8);
+    expect(b.has('INTC.O')).toBe(false);
     expect(b.get('MELI')).toBe(4.94);
   });
 });
@@ -85,5 +89,35 @@ describe('parseKalemler — sınır durumlar', () => {
       .reduce((x, k) => x + k.weightPct, 0);
     expect(t).toBeGreaterThan(99);
     expect(t).toBeLessThan(101);
+  });
+});
+
+describe('kodNormalize', () => {
+  it('borsa sonekini atar', () => {
+    expect(kodNormalize('AKBNK.E')).toBe('AKBNK');
+    expect(kodNormalize('AAPL.O')).toBe('AAPL');
+    expect(kodNormalize('BABA.K')).toBe('BABA');
+  });
+
+  it('soneksiz kodu değiştirmez', () => {
+    expect(kodNormalize('GARAN')).toBe('GARAN');
+    // Tahvil ISIN'inde nokta yok; bozulmamalı.
+    expect(kodNormalize('TRT181028T14')).toBe('TRT181028T14');
+  });
+});
+
+describe('parseKalemler — hisse olmayan kodlar', () => {
+  it('tamamı rakam olan kodu yazmaz', () => {
+    // PDF'ten yanlış çıkarılmış sayı satırları; üretimde 15 tane birikmişti.
+    const metin = [
+      'III-FON PORTFÖY DEĞERİ TABLOSU',
+      '1.232.000   TL   ACIKLAMA   100,00   50,00   25,00',
+      'GARAN   TL   GARANTI   3.792.180,00   116,58   14,65   12,86',
+      'IV-FON TOPLAM DEĞERİ TABLOSU',
+    ].join('\n');
+    const k = new Map(parseKalemler(metin).map((x) => [x.code, x.weightPct]));
+    expect(k.get('GARAN')).toBe(12.86);
+    expect(k.has('1')).toBe(false);
+    expect(k.has('1.232.000')).toBe(false);
   });
 });

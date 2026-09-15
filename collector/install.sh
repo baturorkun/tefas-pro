@@ -96,6 +96,11 @@ KAP_SERVICE_NAME="tefas-pro-kap-collector"
 # 10:30'dan önce biter.
 KAP_ON_CALENDAR="Mon..Fri 10:10:00"
 KAP_RANDOM_DELAY="300"
+HISSE_SERVICE_NAME="tefas-pro-hisse-collector"
+# Hisse kapanislari en sonda: fon detayindaki getiri sutunlari icin gerekli
+# ama gunluk fon verisi kadar kritik degil. Yine de 10:30'dan once biter.
+HISSE_ON_CALENDAR="Mon..Fri 10:20:00"
+HISSE_RANDOM_DELAY="120"
 TEFAS_SERVICE_NAME="tefas-pro-tefas-collector"
 TEFAS_ON_CALENDAR="Mon..Fri 10:00:00"
 TEFAS_RANDOM_DELAY="180"
@@ -388,6 +393,11 @@ install_units() {
   install_one_unit "${KAP_SERVICE_NAME}" "tefas-pro KAP collector (hisse kırılımı)" \
     "/usr/bin/podman run --rm --network ${COLLECTOR_NETWORK} --env-file ${REMOTE_DIR}/.env --entrypoint node ${IMAGE} dist/collect-kap.js" \
     "${KAP_ON_CALENDAR}" "${KAP_RANDOM_DELAY}"
+
+  # Hisse gunluk kapanislari: fon detayindaki 1 haftalik/1 aylik getiri.
+  install_one_unit "${HISSE_SERVICE_NAME}" "tefas-pro hisse fiyat collector" \
+    "/usr/bin/podman run --rm --network ${COLLECTOR_NETWORK} --env-file ${REMOTE_DIR}/.env --entrypoint node ${IMAGE} dist/collect-hisse.js" \
+    "${HISSE_ON_CALENDAR}" "${HISSE_RANDOM_DELAY}"
 }
 
 main() {

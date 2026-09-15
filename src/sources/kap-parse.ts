@@ -58,13 +58,29 @@ function abdBicimiMi(govde: string): boolean {
   return us > tr;
 }
 
-/** Satırın başındaki menkul kıymet kodu; başlık satırıysa null. */
+/**
+ * Menkul kıymet kodunu tek biçime getirir.
+ *
+ * Bazı fon şablonları borsa sonekini yazıyor (`AKBNK.E`), bazıları
+ * yazmıyor (`AKBNK`). Ölçüldü: KAP'tan gelen 1327 kodun 139'u sonekli ve
+ * 120'sinin sadesi de ayrıca kayıtlıydı — aynı kıymet iki kez sayılıyordu.
+ *
+ * Tahvil ISIN'lerine dokunulmaz: onlarda nokta yok zaten.
+ */
+export function kodNormalize(ham: string): string {
+  return (ham.split('.')[0] ?? ham).trim();
+}
+
+/** Satırın başındaki menkul kıymet kodu; başlık satırı ya da kod değilse null. */
 function kod(satir: string): string | null {
   const m = /^\s*([A-Z0-9ÇĞİÖŞÜ][A-Z0-9ÇĞİÖŞÜ.]{1,13})\b/.exec(satir);
   if (m === null) return null;
-  const k = (m[1] ?? '').replace(/\.$/, '');
+  const k = kodNormalize(m[1] ?? '');
   if (k === '') return null;
-  return BASLIK_TOKENLARI.has(k.split('.')[0] ?? '') ? null : k;
+  // Tamamı rakam olan "kod" menkul kıymet değil: tablodan yanlış çıkarılmış
+  // bir sayı. Ölçüldü, üretimde 15 tane böyle kod birikmişti.
+  if (!/[A-ZÇĞİÖŞÜ]/.test(k)) return null;
+  return BASLIK_TOKENLARI.has(k) ? null : k;
 }
 
 /**

@@ -24,3 +24,6 @@ export const ONDEMAND_SOURCE = 'tekil-fon';
 
 /** KAP portföy dağılım toplaması. */
 export const KAP_SOURCE = 'kap-scheduled';
+
+/** Hisse günlük kapanış toplaması. */
+export const HISSE_SOURCE = 'hisse-scheduled';
