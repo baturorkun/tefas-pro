@@ -2575,7 +2575,7 @@ async function prefsView(reload: () => void): Promise<Node[]> {
  */
 async function runsView(): Promise<Node[]> {
   const runs = (await api('/api/admin/runs')) as IngestRunRow[];
-  const scheduled = runs.filter((r) => r.source === 'fintables-watchlist');
+  const scheduled = runs.filter((r) => r.source === 'tefas-scheduled');
   // Kısmi koşum da sorunlu: tamamı çökmemiş ama fonların bir kısmı düşmüş.
   // Yalnız 'failed' sayılsaydı kutu sorunları olduğundan az gösterirdi.
   const failed = runs.filter((r) => r.status === 'failed' || r.fundsFailed > 0);
@@ -2590,7 +2590,7 @@ async function runsView(): Promise<Node[]> {
   for (const r of runs) {
     rows.push(el('tr', {}, [
       el('td', { class: 'num dim' }, [`#${String(r.id)}`]),
-      el('td', {}, [r.source === 'fintables-watchlist'
+      el('td', {}, [r.source === 'tefas-scheduled'
         ? badge('Zamanlanmış', 'watch')
         : badge('Tek Fon', 'sold')]),
       el('td', { class: 'num' }, [r.startedAt]),

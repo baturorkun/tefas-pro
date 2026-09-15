@@ -20,7 +20,10 @@
  */
 import type pg from 'pg';
 
-import { FintablesClient, isCarriedForwardWindow } from './sources/fintables.js';
+import { ONDEMAND_SOURCE } from './ingest-source.js';
+import { fonListesi } from './sources/kap.js';
+import { kapFonuTopla } from './collect-kap.js';
+import { tefasFonuTopla } from './collect-tefas.js';
 import { makePool } from './db/pool.js';
 import { upsertWatchedFunds } from './db/seed.js';
 
@@ -41,8 +44,8 @@ const OVERLAP_DAYS = 5;
  * eklenen her fon gecelik taramanın yerine geçer ve kutu sistemin genel
  * durumu yerine tek bir fonun durumunu gösterirdi.
  */
-export const SCHEDULED_SOURCE = 'fintables-watchlist';
-export const ONDEMAND_SOURCE = 'fintables-fund';
+export { SCHEDULED_SOURCE, ONDEMAND_SOURCE } from './ingest-source.js';
+import { SCHEDULED_SOURCE } from './ingest-source.js';
 
 interface Args {
   funds: string[] | undefined;
@@ -305,7 +308,6 @@ async function lastFlowDate(pool: pg.Pool, code: string): Promise<string | null>
  */
 export async function collectSingleFund(
   pool: pg.Pool,
-  client: FintablesClient,
   code: string,
 ): Promise<{ runId: number; upserted: number }> {
   const today = todayIso();
@@ -317,9 +319,14 @@ export async function collectSingleFund(
   ).rows[0]!.id;
 
   try {
-    const last = await lastFlowDate(pool, code);
-    const flowStart = last === null ? monthsBack(today, 12) : addDays(last, -OVERLAP_DAYS);
-    const upserted = await ingestFund(pool, client, code, today, flowStart, runId);
+    // TEFAS günlük veriyi, KAP portföyü verir. Zamanlanmış koşumlarla aynı
+    // fonksiyonlar çağrılır: iki yol ayrışırsa fon nasıl eklendiğine göre
+    // farklı veri oluşurdu.
+    let upserted = await tefasFonuTopla(pool, code, runId, today);
+    const oid = (await fonListesi()).find((f) => f.fundCode === code)?.fundOid;
+    if (oid !== undefined) {
+      upserted += (await kapFonuTopla(pool, code, oid, runId)).yazilan;
+    }
     await pool.query(
       `UPDATE ingest_run SET status = 'passed', finished_at = now(), rows_upserted = $2,
               funds_ok = 1 WHERE id = $1`,
@@ -334,158 +341,6 @@ export async function collectSingleFund(
     );
     throw err;
   }
-}
-
-async function ingestFund(
-  pool: pg.Pool,
-  client: FintablesClient,
-  code: string,
-  today: string,
-  flowStart: string,
-  runId: number,
-): Promise<number> {
-  const price = await client.price(code);
-  await throttle();
-  const returns = await client.volatility(code);
-  await throttle();
-  const flows = await client.cashflow(code, flowStart, today);
-  await throttle();
-  const rows = mergeDailySources(code, { date: price.date, price: price.price }, returns, flows);
-
-  const info = await client.info(code);
-  await pool.query(
-    `INSERT INTO dim_fund_terms (fund_code, tax_pct, management_fee_pct,
-                                 buy_valor_days, sell_valor_days, risk, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, now())
-     ON CONFLICT (fund_code) DO UPDATE SET
-       tax_pct = EXCLUDED.tax_pct, management_fee_pct = EXCLUDED.management_fee_pct,
-       buy_valor_days = EXCLUDED.buy_valor_days, sell_valor_days = EXCLUDED.sell_valor_days,
-       risk = EXCLUDED.risk, updated_at = now()`,
-    [code, info.taxPct, info.managementFeePct, info.buyValorDays, info.sellValorDays, info.risk],
-  );
-
-  let n = await upsertDaily(pool, rows, runId, today);
-
-  if (info.allocation.length > 0) {
-    const res = await pool.query(
-      `INSERT INTO fact_fund_allocation (fund_code, as_of_date, asset_class, weight_pct, ingest_run_id)
-       SELECT $1, $2::date, r.asset_class, r.weight_pct, $4
-       FROM jsonb_to_recordset($3::jsonb) AS r(asset_class text, weight_pct numeric)
-       ON CONFLICT (fund_code, as_of_date, asset_class) DO UPDATE SET
-         weight_pct = EXCLUDED.weight_pct, ingest_run_id = EXCLUDED.ingest_run_id,
-         updated_at = now()
-       WHERE fact_fund_allocation.weight_pct IS DISTINCT FROM EXCLUDED.weight_pct`,
-      [
-        code,
-        price.date,
-        JSON.stringify(
-          info.allocation.map((a) => ({ asset_class: a.assetClass, weight_pct: a.weightPct })),
-        ),
-        runId,
-      ],
-    );
-    n += res.rowCount ?? 0;
-  }
-  await throttle();
-  return n;
-}
-
-/**
- * Bir pencerenin sonundaki büyüklük, pay adedi ve yatırımcı sayısını yazar.
- * İki toplu endpoint tüm evreni döndürür; takip filtresi upsertDaily'de.
- * Taşınmış (tatil) pencere yazılmaz ve takvime işlenir.
- */
-async function ingestSizeWindow(
-  pool: pg.Pool,
-  client: FintablesClient,
-  window: { start: string; end: string },
-  runId: number,
-  markCalendar: boolean,
-  today: string,
-): Promise<number> {
-  const sizes = await client.windowSize(window.start, window.end);
-  await throttle();
-  if (markCalendar && isCarriedForwardWindow(sizes)) {
-    await pool.query(
-      `INSERT INTO dim_calendar (trade_date, is_business_day) VALUES ($1, false)
-       ON CONFLICT (trade_date) DO UPDATE SET is_business_day = false`,
-      [window.end],
-    );
-    return 0;
-  }
-  const investors = await client.windowInvestors(window.start, window.end);
-  await throttle();
-  const byCode = new Map(investors.map((i) => [i.code, i.endInvestorCount]));
-  const rows: DailyRow[] = sizes.map((s) => ({
-    fund_code: s.code,
-    trade_date: window.end,
-    ...(s.endAum !== null ? { aum: s.endAum } : {}),
-    ...(s.endShareCount !== null ? { shares_active: s.endShareCount } : {}),
-    ...(byCode.get(s.code) != null ? { investor_count: byCode.get(s.code) as number } : {}),
-  }));
-  const n = await upsertDaily(pool, rows, runId, today);
-  if (markCalendar) {
-    await pool.query(
-      `INSERT INTO dim_calendar (trade_date, is_business_day) VALUES ($1, true)
-       ON CONFLICT (trade_date) DO UPDATE SET is_business_day = true`,
-      [window.end],
-    );
-  }
-  return n;
-}
-
-async function ingestYieldSnapshot(
-  pool: pg.Pool,
-  client: FintablesClient,
-  today: string,
-  runId: number,
-): Promise<number> {
-  const rows = await client.yields();
-  const res = await pool.query(
-    `INSERT INTO fact_fund_yield_snapshot (fund_code, as_of_date, yield_1m, yield_3m,
-                                           yield_6m, yield_ytd, yield_1y, yield_3y,
-                                           yield_5y, ingest_run_id)
-     SELECT r.fund_code, $2::date, r.yield_1m, r.yield_3m, r.yield_6m, r.yield_ytd,
-            r.yield_1y, r.yield_3y, r.yield_5y, $3
-     FROM jsonb_to_recordset($1::jsonb) AS r(
-       fund_code text, yield_1m numeric, yield_3m numeric, yield_6m numeric,
-       yield_ytd numeric, yield_1y numeric, yield_3y numeric, yield_5y numeric)
-     WHERE EXISTS (SELECT 1 FROM analytics.tracked_fund t WHERE t.fund_code = r.fund_code)
-     ON CONFLICT (fund_code, as_of_date) DO UPDATE SET
-       yield_1m = EXCLUDED.yield_1m, yield_3m = EXCLUDED.yield_3m,
-       yield_6m = EXCLUDED.yield_6m, yield_ytd = EXCLUDED.yield_ytd,
-       yield_1y = EXCLUDED.yield_1y, yield_3y = EXCLUDED.yield_3y,
-       yield_5y = EXCLUDED.yield_5y, ingest_run_id = EXCLUDED.ingest_run_id,
-       updated_at = now()
-     -- Diger fact tablolariyla ayni kural: degeri degismemis satir yeniden
-     -- yazilmaz. Aksi halde ayni gun ikinci kez kosuldugunda 26 satir bosuna
-     -- yazilir ve rows_upserted gercek degisimi yansitmaz.
-     WHERE (fact_fund_yield_snapshot.yield_1m, fact_fund_yield_snapshot.yield_3m,
-            fact_fund_yield_snapshot.yield_6m, fact_fund_yield_snapshot.yield_ytd,
-            fact_fund_yield_snapshot.yield_1y, fact_fund_yield_snapshot.yield_3y,
-            fact_fund_yield_snapshot.yield_5y)
-        IS DISTINCT FROM
-           (EXCLUDED.yield_1m, EXCLUDED.yield_3m, EXCLUDED.yield_6m,
-            EXCLUDED.yield_ytd, EXCLUDED.yield_1y, EXCLUDED.yield_3y,
-            EXCLUDED.yield_5y)`,
-    [
-      JSON.stringify(
-        rows.map((r) => ({
-          fund_code: r.code,
-          yield_1m: r.yield1m,
-          yield_3m: r.yield3m,
-          yield_6m: r.yield6m,
-          yield_ytd: r.yieldYtd,
-          yield_1y: r.yield1y,
-          yield_3y: r.yield3y,
-          yield_5y: r.yield5y,
-        })),
-      ),
-      today,
-      runId,
-    ],
-  );
-  return res.rowCount ?? 0;
 }
 
 /**
@@ -531,159 +386,3 @@ export async function missingFundsToday(pool: pg.Pool): Promise<string[]> {
   return r.rows.map((x) => x.fund_code);
 }
 
-async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
-  const today = todayIso();
-  const pool = makePool();
-  const client = new FintablesClient();
-
-  // Toplanacak fon var mi? Bu bir ingest denemesi degil, yapilandirma kontrolu:
-  // ingest_run satiri acilmadan once yapilir ki bos takip listesi tabloda
-  // "basarisiz toplama" gibi gorunmesin.
-  //
-  // Kaynak tek bir kullanicinin listesi degil: analytics.tracked_fund tum
-  // kullanicilarin takip listeleri ile ACIK pozisyonlarinin birlesimidir.
-  // Collector kimin ekledigine bakmaz, fon basina bir kez toplar.
-  //
-  // Tamamen satilmis bir fon yalniz takip listesinde kaldigi surece toplanir;
-  // bu kullanicinin karari, portfoy gecmisinin yan etkisi degil.
-  // Yapılandırma kontrolleri gibi bu da ingest_run satırı açılmadan önce
-  // yapılır: atlanan koşum Collector Log'a girmemeli.
-  // Aynı günün ikinci koşumu boşa istek: Fintables günde bir kez yayımlıyor,
-  // ikinci tarama aynı satırları aynı değerlerle üzerine yazıyor. Timer'ın
-  // saatinden önce elle koşturulduğu gün timer 10:30'da tekrar giriyordu.
-  //
-  // Ama kapı "koştu mu" ile değil "bitti mi" ile kapanır: fonlar günü farklı
-  // saatlerde yayımlıyor ve bugün 71 fonun dördü hâlâ dünde. Başarılı koşum
-  // eksik fonu tamamlamıyorsa tekrar denemek işin kendisi — sonraki koşum
-  // eksikleri toplasın diye kapı açık kalır.
-  if (!args.force) {
-    const bitis = await successfulRunToday(pool, today);
-    const eksik = bitis === null ? [] : await missingFundsToday(pool);
-    if (bitis !== null && eksik.length === 0) {
-      await pool.end();
-      console.log(`Bugün ${bitis} itibarıyla toplandı, eksik fon yok — atlandı.`);
-      return;
-    }
-    if (bitis !== null) {
-      console.log(`Bugün ${bitis}'de toplandı ama ${String(eksik.length)} fon eksik `
-        + `(${eksik.slice(0, 5).join(', ')}${eksik.length > 5 ? '…' : ''}) — yeniden koşuluyor.`);
-    }
-  }
-
-  const codes =
-    args.funds ??
-    (
-      await pool.query<{ fund_code: string }>(
-        'SELECT fund_code FROM analytics.tracked_fund ORDER BY fund_code',
-      )
-    ).rows.map((r) => r.fund_code);
-  if (codes.length === 0) {
-    await pool.end();
-    console.error('Takip edilen fon yok — önce panelden fon ekleyin');
-    process.exitCode = 1;
-    return;
-  }
-
-  const runId = (
-    await pool.query<{ id: number }>(
-      `INSERT INTO ingest_run (source, status) VALUES ($1, 'running') RETURNING id`,
-      [SCHEDULED_SOURCE],
-    )
-  ).rows[0]!.id;
-
-  let upserted = 0;
-  let ok = 0;
-  // Fon hataları ile pencere hataları ayrı sayılır: ikisi tek sayaçta
-  // toplanınca "3 fonda hata" denip aslında üç büyüklük penceresinin
-  // düşmüş olması mümkündü.
-  const fundErrors: string[] = [];
-  const windowErrors: string[] = [];
-
-  try {
-
-    // Evren yanıtı tüm fonları taşır; yalnız takip listesindekiler yazılır.
-    const universe = await client.fundUniverse();
-    await upsertWatchedFunds(pool, universe, codes);
-    await throttle();
-
-    if (!args.skipYield) {
-      upserted += await ingestYieldSnapshot(pool, client, today, runId);
-      await throttle();
-    }
-
-    console.log(
-      `Collector başladı: ${codes.length} fon, ${args.backfill ? 'backfill' : 'artımlı'} (run #${runId})`,
-    );
-
-    for (const code of codes) {
-      try {
-        const last = args.backfill ? null : await lastFlowDate(pool, code);
-        const flowStart =
-          last === null ? monthsBack(today, args.flowMonths) : addDays(last, -OVERLAP_DAYS);
-        upserted += await ingestFund(pool, client, code, today, flowStart, runId);
-        ok += 1;
-        console.log(`  ✓ ${code}`);
-      } catch (err) {
-        const reason = String(err).split('\n')[0] ?? '';
-        fundErrors.push(`${code}: ${reason}`);
-        console.error(`  ✗ ${code}: ${reason}`);
-      }
-    }
-
-    // Fon büyüklüğü: fon başına endpoint yok, toplu pencereden gelir.
-    const sizeWindows = args.backfill
-      ? [
-          ...monthlyWindows(monthsBack(today, args.sizeMonths), 12 - args.sizeMonths),
-          ...dailyWindows(monthsBack(today, args.sizeMonths), today),
-        ]
-      : dailyWindows((await lastSizeDate(pool)) ?? monthsBack(today, args.sizeMonths), today);
-    console.log(`Büyüklük pencereleri: ${sizeWindows.length}`);
-    for (const w of sizeWindows) {
-      try {
-        upserted += await ingestSizeWindow(pool, client, w, runId, w.end > monthsBack(today, 1), today);
-      } catch (err) {
-        const reason = String(err).split('\n')[0] ?? '';
-        windowErrors.push(`pencere ${w.start}→${w.end}: ${reason}`);
-        console.error(`  ✗ pencere ${w.start}→${w.end}: ${reason}`);
-      }
-    }
-
-    const failed = fundErrors.length + windowErrors.length;
-    // Sebepler kaydedilir: sayı "üç fon düştü" der ama hangisi ve neden
-    // olduğunu yalnız konsol biliyordu, o da koşum bitince kayboluyordu.
-    const errorText = [...fundErrors, ...windowErrors].join('\n');
-    await pool.query(
-      `UPDATE ingest_run SET status = $2, finished_at = now(), rows_upserted = $3,
-              funds_ok = $4, funds_failed = $5, last_error = $6 WHERE id = $1`,
-      [
-        runId,
-        failed === 0 ? 'passed' : 'partial',
-        upserted,
-        ok,
-        fundErrors.length,
-        errorText === '' ? null : errorText.slice(0, 4000),
-      ],
-    );
-    console.log(
-      `\nBitti: ${ok} fon, ${failed} hata, ${upserted} satır yazıldı (run #${runId}).` +
-        (skippedFuture > 0 ? `\n${skippedFuture} ileri tarihli satır atlandı (bugün ${today}).` : ''),
-    );
-    if (ok === 0) process.exitCode = 1;
-  } catch (err) {
-    await pool.query(
-      `UPDATE ingest_run SET status = 'failed', finished_at = now(), last_error = $2 WHERE id = $1`,
-      [runId, String(err)],
-    );
-    throw err;
-  } finally {
-    await pool.end();
-  }
-}
-
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((err: unknown) => {
-    console.error(err);
-    process.exitCode = 1;
-  });
-}

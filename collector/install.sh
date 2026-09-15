@@ -89,8 +89,13 @@ KAP_SERVICE_NAME="tefas-pro-kap-collector"
 # portföyünü aylık ya da haftalık bildiriyor ve her fon farklı günde
 # yayımlıyor. Zaten kayıtlı dönem tekrar indirilmez. Fiyat koşumlarından
 # sonra (11:15) çünkü acelesi yok ve aynı anda iki koşum istemiyoruz.
-KAP_ON_CALENDAR="Mon..Fri 11:15:00"
-KAP_RANDOM_DELAY="600"
+# Her şey 10:30'da bitmiş olmalı. TEFAS 10:00'da başlayıp ~2 dakikada
+# bitiyor (74 fon, istek arası 1,5sn); KAP ardından 10:10'da başlıyor ve
+# normal günlerde çoğu fonun dönemi zaten kayıtlı olduğu için indirme
+# yapmadan geçiyor. Rastgele gecikme 5 dakika: 10:15'te başlasa bile
+# 10:30'dan önce biter.
+KAP_ON_CALENDAR="Mon..Fri 10:10:00"
+KAP_RANDOM_DELAY="300"
 TEFAS_SERVICE_NAME="tefas-pro-tefas-collector"
 TEFAS_ON_CALENDAR="Mon..Fri 10:00:00"
 TEFAS_RANDOM_DELAY="180"
@@ -300,6 +305,23 @@ cmd_remote() {
 # (varsayılan entrypoint) ve TEFAS collector'ı (--entrypoint ile aynı image
 # içindeki dist/collect-tefas.js). Aynı image'ı paylaşırlar, yeniden build
 # gerekmez.
+# Artik kurulmayan bir birimi sunucudan temizler.
+#
+# Kurulum guncellendiginde eski timer kendiliginden gitmiyor: dosyasi
+# duruyor, etkin kaliyor ve her gun kosup dusuyor. Yoksa sessizce gecer.
+eski_birim_kaldir() {
+  local svc="$1"
+  remote_ssh "
+    if systemctl list-unit-files '${svc}.timer' >/dev/null 2>&1 \
+       && [ -f /etc/systemd/system/${svc}.timer ]; then
+      systemctl disable --now '${svc}.timer' >/dev/null 2>&1 || true
+      rm -f /etc/systemd/system/${svc}.timer /etc/systemd/system/${svc}.service
+      systemctl daemon-reload
+      echo '[collector] Eski birim kaldirildi: ${svc}'
+    fi
+  "
+}
+
 install_one_unit() {
   svc_name="$1"; desc="$2"; exec_line="$3"; calendar="$4"; delay="$5"
 
@@ -353,12 +375,11 @@ install_units() {
   fi
 
   log "systemd service ve timer kuruluyor (${REMOTE_USER})."
-  install_one_unit "${SERVICE_NAME}" "tefas-pro collector (oneshot ingest)" \
-    "/usr/bin/podman run --rm --network ${COLLECTOR_NETWORK} --env-file ${REMOTE_DIR}/.env ${IMAGE} ${COLLECTOR_ARGS}" \
-    "${COLLECTOR_ON_CALENDAR}" "${COLLECTOR_RANDOM_DELAY}"
+  # Fintables birimi kaldırıldı: kaynak erişilemez hâle geldi ve her koşum
+  # "failed" bitiyordu. Önceki kurulumlardan kalan birim varsa temizlenir,
+  # yoksa sunucuda her gün düşmeye devam ederdi.
+  eski_birim_kaldir "${SERVICE_NAME}"
 
-  # TEFAS önce çalışır (10:00 < 10:30): birincil kaynak, Fintables'tan önce
-  # fiyat/getiri/yatırımcı/büyüklüğü yazar.
   install_one_unit "${TEFAS_SERVICE_NAME}" "tefas-pro TEFAS collector (birincil fiyat kaynağı)" \
     "/usr/bin/podman run --rm --network ${COLLECTOR_NETWORK} --env-file ${REMOTE_DIR}/.env --entrypoint node ${IMAGE} dist/collect-tefas.js" \
     "${TEFAS_ON_CALENDAR}" "${TEFAS_RANDOM_DELAY}"

@@ -21,14 +21,16 @@ import { promisify } from 'node:util';
 
 import pg from 'pg';
 
-import { parseKalemler } from './sources/kap-parse.js';
+import { KAP_SOURCE } from './ingest-source.js';
+import { parseKalemler, parseVarlikSiniflari, type KapKalem } from './sources/kap-parse.js';
+import { kanonikVarlikSinifi } from './sources/varlik-sinifi.js';
 import {
   bildirimEkleri, ekIndir, fonListesi, portfoyBildirimleri, type KapBildirim,
 } from './sources/kap.js';
 
 const calistir = promisify(execFile);
 
-export const KAP_SOURCE = 'kap-scheduled';
+export { KAP_SOURCE } from './ingest-source.js';
 
 /** İstekler arası bekleme: KAP'ı yormayalım, engel yemeyelim. */
 const THROTTLE_MS = Number(process.env['KAP_THROTTLE_MS'] ?? '') || 1500;
@@ -74,17 +76,138 @@ export function donemAnahtari(b: KapBildirim): string {
  * alışlar), portföy tablosu ikincisinde. Ölçüldü: IAE, IVY. İlk eke
  * sabitlenmek o fonları kaybettiriyordu.
  */
-async function kalemleriBul(
+async function raporuBul(
   disclosureIndex: number,
-): Promise<{ code: string; weightPct: number }[]> {
+): Promise<{ kalemler: KapKalem[]; siniflar: { label: string; weightPct: number }[] }> {
   const ekler = await bildirimEkleri(disclosureIndex);
   for (const ek of ekler) {
     if (!ek.fileName.toLowerCase().endsWith('.pdf')) continue;
     await bekle(THROTTLE_MS);
-    const kalemler = parseKalemler(await pdfMetni(await ekIndir(ek.objId)));
-    if (kalemler.length > 0) return kalemler;
+    const metin = await pdfMetni(await ekIndir(ek.objId));
+    const kalemler = parseKalemler(metin);
+    if (kalemler.length === 0) continue;
+    // Varlık sınıfları aynı PDF'in II. bölümünde; ikinci indirme gerekmez.
+    //
+    // Toplanarak biriktirilir: normalleştirme birden fazla ham etiketi aynı
+    // kanonik ada çeviriyor ("Vadeli Mevduat TL" ve "Vadeli Mevduat Döviz"
+    // → "Mevduat") ve ağırlıkların toplanması gerekiyor. Ayrıca aynı
+    // anahtarı iki kez yazmak upsert'i "cannot affect row a second time"
+    // ile düşürüyordu.
+    const topla = new Map<string, number>();
+    for (const v of parseVarlikSiniflari(metin)) {
+      const ad = kanonikVarlikSinifi(v.label);
+      if (ad === null) continue;
+      topla.set(ad, (topla.get(ad) ?? 0) + v.weightPct);
+    }
+    const siniflar = [...topla].map(([label, weightPct]) => ({ label, weightPct }));
+    return { kalemler, siniflar };
   }
-  return [];
+  return { kalemler: [], siniflar: [] };
+}
+
+/** Tek fonun KAP sonucu. */
+export interface KapFonSonucu {
+  durum: 'yazildi' | 'guncel' | 'bildirim-yok' | 'okunamadi';
+  yazilan: number;
+  kalem: number;
+  sinif: number;
+  donem: string | null;
+}
+
+/**
+ * Bir fonun portföy dağılım raporunu indirir ve yazar.
+ *
+ * Hem zamanlanmış koşum hem takip listesine yeni fon eklendiğindeki tek
+ * fonluk toplama buradan geçer: iki yol aynı veriyi aynı şekilde yazmalı.
+ */
+export async function kapFonuTopla(
+  pool: pg.Pool,
+  kod: string,
+  oid: string,
+  runId: number,
+): Promise<KapFonSonucu> {
+  const bos = { yazilan: 0, kalem: 0, sinif: 0 };
+  await bekle(THROTTLE_MS);
+  const bildirimler = await portfoyBildirimleri(oid, 120);
+  const son = bildirimler[0];
+  if (son === undefined) return { durum: 'bildirim-yok', donem: null, ...bos };
+
+  const donem = donemAnahtari(son);
+  // Aynı dönem zaten yazılmışsa PDF'i indirmeye gerek yok.
+  const var_ = await pool.query(
+    `SELECT 1 FROM fund_stock_holding
+      WHERE fund_code = $1 AND as_of_date = $2::date LIMIT 1`,
+    [kod, son.publishDate],
+  );
+  if ((var_.rowCount ?? 0) > 0) return { durum: 'guncel', donem, ...bos };
+
+  await bekle(THROTTLE_MS);
+  const { kalemler, siniflar } = await raporuBul(son.disclosureIndex);
+  if (kalemler.length === 0) return { durum: 'okunamadi', donem, ...bos };
+
+  // İki yazım tek transaction'da: hisse kırılımı yazılıp dağılım yazılamazsa
+  // idempotency kontrolü fonu "tamam" sanıp bir daha denemiyordu ve dağılım
+  // kalıcı olarak eksik kalıyordu.
+  //
+  // Havuzdan ayrılmış tek bağlantı: pool.query her çağrıda başka bir bağlantı
+  // verebilir, BEGIN ile COMMIT farklı bağlantılara düşerse transaction
+  // anlamsız olur.
+  const baglanti = await pool.connect();
+  let yazilan = 0;
+  try {
+    await baglanti.query('BEGIN');
+    const r = await baglanti.query(
+      // KAP hisse adı ve sektörü yayımlamıyor; ikisi de daha önce toplanmış
+      // satırlardan taşınır. Aksi hâlde aynı ekranda bazı hisseler adıyla,
+      // bazıları kodla görünürdü.
+      `INSERT INTO fund_stock_holding
+         (fund_code, as_of_date, stock_code, company, sector, weight_pct, ingest_run_id)
+       SELECT $1, $2::date, x.stock_code, b.company, b.sector, x.weight_pct, $4
+         FROM jsonb_to_recordset($3::jsonb) AS x(stock_code text, weight_pct numeric)
+         LEFT JOIN LATERAL (
+           SELECT company, sector FROM fund_stock_holding p
+            WHERE p.stock_code = x.stock_code
+              AND (p.company IS NOT NULL OR p.sector IS NOT NULL)
+            ORDER BY p.as_of_date DESC LIMIT 1
+         ) b ON true
+       ON CONFLICT (fund_code, as_of_date, stock_code) DO UPDATE SET
+         weight_pct = EXCLUDED.weight_pct,
+         company = COALESCE(EXCLUDED.company, fund_stock_holding.company),
+         sector = COALESCE(EXCLUDED.sector, fund_stock_holding.sector),
+         ingest_run_id = EXCLUDED.ingest_run_id, updated_at = now()
+        WHERE fund_stock_holding.weight_pct IS DISTINCT FROM EXCLUDED.weight_pct`,
+      [kod, son.publishDate,
+        JSON.stringify(kalemler.map((k) => ({ stock_code: k.code, weight_pct: k.weightPct }))),
+        runId],
+    );
+    yazilan += r.rowCount ?? 0;
+
+    // Varlık sınıfı dağılımı: Dağılım ekranının verisi. Aynı rapordan geldiği
+    // için ayrı bir koşuma gerek yok.
+    if (siniflar.length > 0) {
+      const a = await baglanti.query(
+        `INSERT INTO fact_fund_allocation
+           (fund_code, as_of_date, asset_class, weight_pct, ingest_run_id)
+         SELECT $1, $2::date, x.asset_class, x.weight_pct, $4
+           FROM jsonb_to_recordset($3::jsonb) AS x(asset_class text, weight_pct numeric)
+         ON CONFLICT (fund_code, as_of_date, asset_class) DO UPDATE SET
+           weight_pct = EXCLUDED.weight_pct,
+           ingest_run_id = EXCLUDED.ingest_run_id, updated_at = now()
+          WHERE fact_fund_allocation.weight_pct IS DISTINCT FROM EXCLUDED.weight_pct`,
+        [kod, son.publishDate,
+          JSON.stringify(siniflar.map((v) => ({ asset_class: v.label, weight_pct: v.weightPct }))),
+          runId],
+      );
+      yazilan += a.rowCount ?? 0;
+    }
+    await baglanti.query('COMMIT');
+  } catch (e) {
+    await baglanti.query('ROLLBACK').catch(() => undefined);
+    throw e;
+  } finally {
+    baglanti.release();
+  }
+  return { durum: 'yazildi', donem, yazilan, kalem: kalemler.length, sinif: siniflar.length };
 }
 
 async function main(): Promise<void> {
@@ -126,61 +249,21 @@ async function main(): Promise<void> {
         continue;
       }
       try {
-        await bekle(THROTTLE_MS);
-        const bildirimler = await portfoyBildirimleri(oid, 120);
-        const son = bildirimler[0];
-        if (son === undefined) {
-          console.log(`  · ${kod}: bildirim yok`);
-          continue;
-        }
-        const donem = donemAnahtari(son);
-        // Aynı dönem zaten yazılmışsa PDF'i indirmeye gerek yok.
-        const var_ = await pool.query(
-          `SELECT 1 FROM fund_stock_holding
-            WHERE fund_code = $1 AND as_of_date = $2::date LIMIT 1`,
-          [kod, son.publishDate],
-        );
-        if ((var_.rowCount ?? 0) > 0) {
+        const s = await kapFonuTopla(pool, kod, oid, runId);
+        yazilan += s.yazilan;
+        if (s.durum === 'yazildi') {
+          console.log(
+            `  ✓ ${kod}: ${String(s.kalem)} kalem, ${String(s.sinif)} varlık sınıfı (${s.donem ?? ''})`,
+          );
+        } else if (s.durum === 'guncel') {
           atlanan++;
-          console.log(`  · ${kod}: ${donem} zaten var`);
-          continue;
-        }
-        await bekle(THROTTLE_MS);
-        const kalemler = await kalemleriBul(son.disclosureIndex);
-        if (kalemler.length === 0) {
-          hatalar.push(`${kod}: rapor okunamadı (${donem})`);
+          console.log(`  · ${kod}: ${s.donem ?? ''} zaten var`);
+        } else if (s.durum === 'bildirim-yok') {
+          console.log(`  · ${kod}: bildirim yok`);
+        } else {
+          hatalar.push(`${kod}: rapor okunamadı (${s.donem ?? ''})`);
           console.log(`  ✗ ${kod}: rapor okunamadı`);
-          continue;
         }
-        const r = await pool.query(
-          // KAP hisse adı ve sektörü yayımlamıyor; ikisi de daha önce
-          // toplanmış satırlardan taşınır. Aksi hâlde aynı ekranda bazı
-          // hisseler adıyla, bazıları kodla görünürdü.
-          `INSERT INTO fund_stock_holding
-             (fund_code, as_of_date, stock_code, company, sector, weight_pct,
-              ingest_run_id)
-           SELECT $1, $2::date, x.stock_code, b.company, b.sector, x.weight_pct, $4
-             FROM jsonb_to_recordset($3::jsonb)
-                  AS x(stock_code text, weight_pct numeric)
-             LEFT JOIN LATERAL (
-               SELECT company, sector FROM fund_stock_holding p
-                WHERE p.stock_code = x.stock_code
-                  AND (p.company IS NOT NULL OR p.sector IS NOT NULL)
-                ORDER BY p.as_of_date DESC LIMIT 1
-             ) b ON true
-           ON CONFLICT (fund_code, as_of_date, stock_code) DO UPDATE SET
-             weight_pct = EXCLUDED.weight_pct,
-             company = COALESCE(EXCLUDED.company, fund_stock_holding.company),
-             sector = COALESCE(EXCLUDED.sector, fund_stock_holding.sector),
-             ingest_run_id = EXCLUDED.ingest_run_id, updated_at = now()
-            WHERE fund_stock_holding.weight_pct IS DISTINCT FROM EXCLUDED.weight_pct`,
-          [kod, son.publishDate,
-            JSON.stringify(kalemler.map((k) => ({
-              stock_code: k.code, weight_pct: k.weightPct,
-            }))), runId],
-        );
-        yazilan += r.rowCount ?? 0;
-        console.log(`  ✓ ${kod}: ${String(kalemler.length)} kalem (${donem})`);
       } catch (err) {
         hatalar.push(`${kod}: ${String(err)}`);
         console.log(`  ✗ ${kod}: ${String(err)}`);

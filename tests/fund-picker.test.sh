@@ -41,6 +41,6 @@ grep -Fq "Takip Listem" "${M}" || fail "fon listede yoksa yol gösterilmiyor"
 printf 'PASS: koda ve ada göre aranıyor, düzenleme ve çıkmaz sokak korunuyor\n'
 
 # Sunucu doğrulaması kalkmamalı: arayüz tek savunma hattı değil.
-grep -Fq "ensureFundKnown(pool, client, input.fundCode)" "${I}" \
+grep -Fq "ensureFundKnown(pool, input.fundCode)" "${I}" \
   || fail "sunucu tarafı fon doğrulaması kalkmış"
 printf 'PASS: sunucu doğrulaması yerinde\n'

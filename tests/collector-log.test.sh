@@ -4,10 +4,11 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 
-# Kaynak ayrımı tek yerde tanımlı olmalı: panel ile collector aynı sabite bakar.
-grep -q "export const SCHEDULED_SOURCE" "${PROJECT_ROOT}/src/collector.ts" \
+# Kaynak ayrımı tek yerde tanımlı olmalı: panel ile collector aynı sabite
+# bakar. Tanım ingest-source.ts'te; collector.ts yeniden dışa açıyor.
+grep -q "export const SCHEDULED_SOURCE" "${PROJECT_ROOT}/src/ingest-source.ts" \
   || fail "zamanlanmış koşum kaynağı dışa açık olmalı"
-grep -q "export const ONDEMAND_SOURCE" "${PROJECT_ROOT}/src/collector.ts" \
+grep -q "export const ONDEMAND_SOURCE" "${PROJECT_ROOT}/src/ingest-source.ts" \
   || fail "tek fonluk koşum kaynağı dışa açık olmalı"
 # Panel'in kutusu zamanlanmış koşumu göstermeli; ayrım olmazsa takip listesine
 # eklenen her fon gecelik taramanın yerine geçerdi.
@@ -70,8 +71,11 @@ q "SELECT funds_ok, funds_failed FROM ingest_run LIMIT 1" >/dev/null \
 dolu="$(q "SELECT count(*) FROM ingest_run WHERE status = 'passed' AND funds_ok > 0")"
 [ "${dolu}" -ge 1 ] || printf 'NOT: henüz fon sayacı dolu koşum yok\n'
 # Tek fonluk koşum tanım gereği tek fon toplar.
+# Etiket 'fintables-fund' idi; Fintables kalkinca 'tekil-fon' oldu. Eski
+# satirlar da sayilir, ikisi de tek fonluk kosum.
 coklu="$(q "SELECT count(*) FROM ingest_run
-            WHERE source = 'fintables-fund' AND funds_ok + funds_failed > 1")"
+            WHERE source IN ('tekil-fon','fintables-fund')
+              AND funds_ok + funds_failed > 1")"
 [ "${coklu}" = "0" ] || fail "tek fonluk koşum birden fazla fon saymış: ${coklu}"
 printf 'PASS: fon sayısı saklanıyor ve tek fonluk koşum tek fon sayıyor\n'
 
@@ -82,12 +86,16 @@ sebepsiz_kismi="$(q "SELECT count(*) FROM ingest_run
 [ "${sebepsiz_kismi}" = "0" ] || fail "${sebepsiz_kismi} kısmi koşumun sebebi kayıtlı değil"
 printf 'PASS: kısmi koşumların sebebi kayıtlı\n'
 
-# Fon sayacı yalnız fonları saymalı; büyüklük penceresi hataları ayrı.
-grep -q "windowErrors" "${PROJECT_ROOT}/src/collector.ts" \
-  || fail "pencere hataları fon hatalarından ayrılmalı"
-grep -q "fundErrors.length," "${PROJECT_ROOT}/src/collector.ts" \
-  || fail "funds_failed yalnız fon hatalarını saymalı"
-printf 'PASS: fon hatası ile pencere hatası ayrı sayılıyor\n'
+# Buyukluk/yatirimci penceresi toplama kalkti: TEFAS bu degerleri gunluk
+# veriyor, pencere cekmeye gerek yok. Geri gelirse ayni veri iki kez
+# toplanir ve fon sayaci yine pencere hatalariyla kirlenir.
+if grep -q "windowSize\|windowInvestors" "${PROJECT_ROOT}/src/collector.ts"; then
+  fail "pencere toplama geri gelmis; TEFAS bu veriyi gunluk veriyor"
+fi
+# Fon sayaci yalniz fonlari saymali.
+grep -Fq "codes.length - errors.length, errors.length" "${PROJECT_ROOT}/src/collect-tefas.ts" \
+  || fail "funds_failed yalniz fon hatalarini saymali"
+printf 'PASS: pencere toplama yok, fon sayaci yalniz fonlari sayiyor\n'
 
 # Durum alanı yalnız bilinen değerleri alır; ekran bunlara göre rozet basıyor.
 bilinmeyen="$(q "SELECT count(*) FROM ingest_run

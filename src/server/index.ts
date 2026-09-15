@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import type pg from 'pg';
 
 import { collectSingleFund } from '../collector.js';
-import { FintablesClient } from '../sources/fintables.js';
+import { fonEvreni } from '../sources/kap.js';
 import { makePool } from '../db/pool.js';
 import { currentVersion } from '../version.js';
 import { NOTE_MAX } from '../limits.js';
@@ -193,7 +193,7 @@ export async function ensureAdminUser(pool: pg.Pool): Promise<void> {
 }
 
 /**
- * Fon kodu dim_fund'da yoksa fintables evreninden çekilip yazılır; evrende de
+ * Fon kodu dim_fund'da yoksa KAP evreninden çekilip yazılır; evrende de
  * yoksa istek reddedilir. Hem portföy hem takip listesi girişleri buradan
  * geçer, ikisi de dim_fund'a foreign key ile bağlı.
  *
@@ -202,12 +202,11 @@ export async function ensureAdminUser(pool: pg.Pool): Promise<void> {
  */
 async function ensureFundKnown(
   pool: pg.Pool,
-  client: FintablesClient,
   fundCode: string,
 ): Promise<void> {
   const known = await pool.query('SELECT 1 FROM dim_fund WHERE fund_code = $1', [fundCode]);
   if ((known.rowCount ?? 0) > 0) return;
-  const universe = await client.fundUniverse();
+  const universe = await fonEvreni();
   const fund = universe.find((f) => f.code === fundCode);
   if (!fund) throw new Error(`Fon kodu bulunamadı: ${fundCode}`);
   await pool.query(
@@ -236,13 +235,13 @@ const collecting = new Set<string>();
  * verisi zamanlanmış koşumda gelir. Ekleme kullanıcının kararı, toplama onun
  * yan etkisi.
  */
-function triggerFundCollection(pool: pg.Pool, client: FintablesClient, fundCode: string): void {
+function triggerFundCollection(pool: pg.Pool, fundCode: string): void {
   if (collecting.has(fundCode)) return;
   collecting.add(fundCode);
   void (async () => {
     try {
       if (await fundHasData(pool, fundCode)) return;
-      const { runId, upserted } = await collectSingleFund(pool, client, fundCode);
+      const { runId, upserted } = await collectSingleFund(pool, fundCode);
       console.log(`Tek fon toplandı: ${fundCode}, ${String(upserted)} satır (run #${String(runId)})`);
     } catch (err) {
       console.error(`Tek fon toplanamadı: ${fundCode}: ${String(err).split('\n')[0]}`);
@@ -269,12 +268,11 @@ function triggerFundCollection(pool: pg.Pool, client: FintablesClient, fundCode:
  */
 async function prepareBenchmark(
   pool: pg.Pool,
-  client: FintablesClient,
   raw: unknown,
 ): Promise<string> {
   const code = String(raw).trim().toUpperCase();
   if (code === '') throw new Error('Benchmark fon kodu boş olamaz.');
-  await ensureFundKnown(pool, client, code);
+  await ensureFundKnown(pool, code);
   return code;
 }
 
@@ -355,7 +353,7 @@ function serveStatic(res: ServerResponse, path: string, req: IncomingMessage): b
   return true;
 }
 
-export function createApp(pool: pg.Pool, client: FintablesClient) {
+export function createApp(pool: pg.Pool) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const path = url.pathname;
@@ -601,9 +599,9 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         const note = body['note'] === undefined || body['note'] === null
           ? null
           : String(body['note']).trim() || null;
-        await ensureFundKnown(pool, client, fundCode);
+        await ensureFundKnown(pool, fundCode);
         await addToWatchlist(pool, user.id, fundCode, note);
-        triggerFundCollection(pool, client, fundCode);
+        triggerFundCollection(pool, fundCode);
         // Takip listesi "sahip olmadığım fonlar" demek: açık pozisyonu olan
         // fon listede GÖRÜNMEZ (analytics.watchlist_visible). Kayıt yine de
         // duruyor ve pozisyon kapanınca listeye dönüyor — yani ekleme boşa
@@ -724,7 +722,7 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         } else {
           let code: string;
           try {
-            code = await prepareBenchmark(pool, client, raw);
+            code = await prepareBenchmark(pool, raw);
           } catch (err) {
             sendJson(res, 400, {
               error: err instanceof Error ? err.message : 'Fon kodu doğrulanamadı.',
@@ -734,7 +732,7 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
           await writeUserSetting(pool, user.id, 'benchmark', code);
           // Verisi olmayan yeni fon arkada toplanır; karşılaştırma sütunu o
           // bitene kadar boş kalır, bu yüzden istek beklemez.
-          triggerFundCollection(pool, client, code);
+          triggerFundCollection(pool, code);
         }
         sendJson(res, 200, { benchmark: await userBenchmark(pool, user.id) });
         return;
@@ -936,14 +934,14 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
             return;
           }
         }
-        await ensureFundKnown(pool, client, input.fundCode);
+        await ensureFundKnown(pool, input.fundCode);
         await trackFundForUser(pool, user.id, input.fundCode);
         // Takip listesine ekleme bunu yapıyordu, alış ekleme yapmıyordu:
         // fon tanıtılıp takibe alınıyor ama verisi çekilmiyordu. Ölçüldü —
         // 07:38'de zamanlanmış koşum bitti, 11:46'da PPS alışı girildi ve fon
         // ertesi güne kadar fiyatsız kaldı; ekranda maliyet vardı, değer ve
         // getiri hesaplanamıyordu.
-        triggerFundCollection(pool, client, input.fundCode);
+        triggerFundCollection(pool, input.fundCode);
         sendJson(res, 201, await createTransaction(pool, user.id, input));
         return;
       }
@@ -978,7 +976,7 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
         }
         if (method === 'PUT') {
           const input = readTransactionInput(asRecord(await readJson(req)));
-          await ensureFundKnown(pool, client, input.fundCode);
+          await ensureFundKnown(pool, input.fundCode);
           await trackFundForUser(pool, user.id, input.fundCode);
           // Satış tarihi eklenen kayıt, o fon ve bankadaki en eski açık kayıt
           // değilse reddedilir. Yalnız açıktan kapalıya geçişte bakılır: zaten
@@ -1035,11 +1033,11 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
           const fundCode = reqString(b, 'fundCode').toUpperCase();
           // Tanınmayan kod kaydedilemez: foreign key zaten engellerdi ama
           // mesajı anlaşılır olsun ve fon evrenden çekilip kaydedilsin.
-          await ensureFundKnown(pool, client, fundCode);
+          await ensureFundKnown(pool, fundCode);
           const eklendi = await addSystemFund(
             pool, fundCode, optString(b, 'note'), user.id,
           );
-          triggerFundCollection(pool, client, fundCode);
+          triggerFundCollection(pool, fundCode);
           sendJson(res, eklendi ? 201 : 200, { fundCode, added: eklendi });
           return;
         }
@@ -1079,7 +1077,7 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
           if (bench !== undefined) {
             let code: string;
             try {
-              code = await prepareBenchmark(pool, client, bench);
+              code = await prepareBenchmark(pool, bench);
             } catch (err) {
               sendJson(res, 400, {
                 error: err instanceof Error ? err.message : 'Fon kodu doğrulanamadı.',
@@ -1087,7 +1085,7 @@ export function createApp(pool: pg.Pool, client: FintablesClient) {
               return;
             }
             await writeSetting(pool, 'benchmark', code, user.id);
-            triggerFundCollection(pool, client, code);
+            triggerFundCollection(pool, code);
           }
 
           await writeSetting(pool, 'holidays', clean, user.id);
@@ -1248,7 +1246,7 @@ async function main(): Promise<void> {
   const pool = makePool();
   await ensureAdminUser(pool);
   const server = createServer((req, res) => {
-    void createApp(pool, new FintablesClient())(req, res);
+    void createApp(pool)(req, res);
   });
   server.listen(PORT, HOST, () => {
     console.log(`tefas-pro sunucusu hazır: http://${HOST}:${String(PORT)}`);

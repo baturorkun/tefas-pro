@@ -3,7 +3,7 @@
  *
  *   pnpm db:seed <kullanıcı> [dosya]      (varsayılan dosya: db/watchlist.txt)
  *
- * Önce fon evrenini fintables'tan çekip dim_fund'a yazar — user_watchlist ona
+ * Önce fon evrenini KAP'tan çekip dim_fund'a yazar — user_watchlist ona
  * foreign key ile bağlı. Sonra dosyadaki kodları o kullanıcının listesine
  * uygular. Idempotent: tekrar çalıştırmak satır sayısını değiştirmez.
  *
@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type pg from 'pg';
 
-import { FintablesClient, type FundUniverseRow } from '../sources/fintables.js';
+import { fonEvreni, type FonEvreniSatiri } from '../sources/kap.js';
 import { makePool } from './pool.js';
 
 const DEFAULT_FILE = join(process.cwd(), 'db', 'watchlist.txt');
@@ -52,7 +52,7 @@ export function parseWatchlistFile(text: string): string[] {
  */
 export async function upsertWatchedFunds(
   pool: pg.Pool,
-  funds: FundUniverseRow[],
+  funds: FonEvreniSatiri[],
   codes: string[],
 ): Promise<number> {
   const wanted = new Set(codes.map((c) => c.toUpperCase()));
@@ -120,7 +120,6 @@ async function main(): Promise<void> {
   const file = process.argv[3] ?? DEFAULT_FILE;
   const codes = parseWatchlistFile(readFileSync(file, 'utf-8'));
   const pool = makePool();
-  const client = new FintablesClient();
   try {
     const user = await pool.query<{ id: number }>(
       // Küçük harfe göre: benzersizlik ve giriş de öyle arıyor.
@@ -129,7 +128,7 @@ async function main(): Promise<void> {
     );
     const userId = user.rows[0]?.id;
     if (userId === undefined) throw new Error(`Kullanıcı bulunamadı: ${username}`);
-    const universe = await client.fundUniverse();
+    const universe = await fonEvreni();
     const missing = codes.filter((c) => !universe.some((f) => f.code === c));
     if (missing.length > 0) {
       throw new Error(`watchlist: fon evreninde bulunamayan kod(lar): ${missing.join(', ')}`);
