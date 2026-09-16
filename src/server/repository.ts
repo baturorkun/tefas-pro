@@ -2669,10 +2669,25 @@ export async function ingestRuns(pool: pg.Pool, limit = 100): Promise<IngestRunR
 }
 
 /** Fonun ölçülmüş getiri verisi var mı? Yoksa toplama tetiklenir. */
+/**
+ * Fonun verisi, en eski alışını kapsayacak kadar geriye gidiyor mu?
+ *
+ * "Herhangi bir satır var mı" yetmiyordu. Üretimde yaşandı: PSE 16 Eylül'de
+ * eklendi, yalnız 16'nın fiyatı geldi; alış 15 Eylül tarihliydi. Tek satır
+ * "verisi var" sayıldığı için toplama bir daha tetiklenmedi, 15 Eylül hiç
+ * dolmadı, portföy günlüğü o günü attı ve alış parası kazanç sanıldı.
+ *
+ * Alış yoksa (yalnız takip) herhangi bir fiyat yeter. Alış hafta sonuna
+ * denk gelebilir; o güne değil, o güne KADAR bir fiyat aranır.
+ */
 export async function fundHasData(pool: pg.Pool, fundCode: string): Promise<boolean> {
   const r = await pool.query(
-    `SELECT 1 FROM fact_fund_daily
-     WHERE fund_code = $1 AND daily_return_pct IS NOT NULL LIMIT 1`,
+    `SELECT 1 FROM fact_fund_daily d
+      WHERE d.fund_code = $1 AND d.nav_per_share IS NOT NULL
+        AND d.trade_date <= COALESCE(
+              (SELECT min(trade_date) FROM portfolio_transaction WHERE fund_code = $1),
+              d.trade_date)
+      LIMIT 1`,
     [fundCode],
   );
   return (r.rowCount ?? 0) > 0;

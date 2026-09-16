@@ -38,14 +38,45 @@ const THROTTLE_MS = Number(process.env['TEFAS_THROTTLE_MS'] ?? '') || 3000;
  */
 const PENCERE_GUN = 8;
 
+/**
+ * Tek istekte istenebilecek azami gün. Kaynak kütüphane (pytefas) 28 kullanıyor
+ * ve daha uzun aralıkları parçalıyor; sınırı kendimiz ölçmedik, o değer esas
+ * alındı. Aşılırsa istek parçalanır, hiçbir parça sınırı geçmez.
+ */
+export const AZAMI_ISTEK_GUN = 28;
+
+/**
+ * Parçalı istekler arası bekleme. Kaynak dakikada 6 istek sınırı koyuyor
+ * (ölçüldü: art arda istekte HTTP 429). Eski tarihli alış için 10-20 parça
+ * gidebilir; 12 saniye aralık sınırın altında kalır, tek fon eklemede birkaç
+ * dakika sürer ve bu kabul edilebilir — yanlış kazanç göstermekten iyidir.
+ */
+export const PARCA_ARASI_MS = 12_000;
+
 function bekle(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function gunEkle(iso: string, gun: number): string {
+export function gunEkle(iso: string, gun: number): string {
   const d = new Date(`${iso}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + gun);
   return d.toISOString().slice(0, 10);
+}
+
+/**
+ * [bas, bit] aralığını (iki uç dahil) en fazla `azami` günlük ardışık
+ * parçalara böler. Parçalar bitişiktir, örtüşmez; birleştirilince günlük
+ * getiri parça sınırında da bir önceki günden türetilebilir.
+ */
+export function tarihParcalari(bas: string, bit: string, azami = AZAMI_ISTEK_GUN): [string, string][] {
+  const out: [string, string][] = [];
+  let b = bas;
+  while (b <= bit) {
+    const e = gunEkle(b, azami - 1);
+    out.push([b, e < bit ? e : bit]);
+    b = gunEkle(e, 1);
+  }
+  return out;
 }
 
 /**
@@ -236,7 +267,26 @@ export async function tefasFonuTopla(
   runId: number,
   today: string = todayIso(),
 ): Promise<number> {
-  const gunler = await topluFonBilgisi(gunEkle(today, -PENCERE_GUN), today, kod);
+  // Pencere o fondaki EN ESKİ alıştan başlar, sabit 8 gün değil. Üretimde
+  // yaşandı: 15 Eylül tarihli alış, fon 16 Eylül'de eklendi, yalnız 16'nın
+  // fiyatı geldi; portföy günlüğü 15'i attı ve alış parası kazanç sanıldı.
+  // Alış yoksa (yalnız takip) 8 gün yeter. Üst sınır yok: günlük değer her
+  // gün için fiyat ister, eski alışın her günü gerekir.
+  const enEski = (await pool.query<{ d: string | null }>(
+    `SELECT to_char(min(trade_date), 'YYYY-MM-DD') AS d
+       FROM portfolio_transaction WHERE fund_code = $1`,
+    [kod],
+  )).rows[0]?.d ?? null;
+  const varsayilan = gunEkle(today, -PENCERE_GUN);
+  const bas = enEski !== null && enEski < varsayilan ? enEski : varsayilan;
+
+  const gunler: TefasTopluGun[] = [];
+  let ilk = true;
+  for (const [b, e] of tarihParcalari(bas, today)) {
+    if (!ilk) await bekle(PARCA_ARASI_MS);
+    ilk = false;
+    gunler.push(...(await topluFonBilgisi(b, e, kod)));
+  }
   const rows = topluSatirlar(gunler.filter((g) => g.fundCode === kod));
   if (rows.length === 0) return 0;
   return upsertDaily(pool, rows, runId, today);

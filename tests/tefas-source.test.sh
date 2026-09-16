@@ -109,3 +109,27 @@ for f in collect-tefas collect-kap collect-hisse; do
   [ "${n}" = "1" ] || fail "${f}.ts icinde ${n} adet pool.end() var, bir tane olmali"
 done
 printf 'PASS: havuz tek yerde kapatiliyor\n'
+
+# ─── Tek fon: pencere en eski alistan, istek 28 gunluk parcalarla ───
+# Uretimde yasandi: 15 Eylul tarihli alis, fon 16 Eylul'de eklendi, yalniz
+# 16'nin fiyati geldi; portfoy gunlugu 15'i atti, alis parasi kazanc sanildi.
+grep -q "min(trade_date)" "${CT}" || fail "tek fon penceresi en eski alistan baslamiyor"
+grep -q "export function tarihParcalari" "${CT}" || fail "uzun aralik parcalanmiyor"
+grep -q "AZAMI_ISTEK_GUN = 28" "${CT}" || fail "istek basina gun siniri 28 degil"
+printf 'PASS: tek fon toplamasi en eski alisi kapsiyor\n'
+
+# Sunucu "herhangi bir satir var" diye toplamayi atlamamali; alisi kapsayan
+# fiyat var mi diye bakmali. Tek satir yeterli sayilinca eksik gunler hic
+# dolmuyordu.
+grep -q "min(trade_date) FROM portfolio_transaction" "${R}" \
+  || fail "fundHasData en eski alisi kapsamaya bakmiyor"
+printf 'PASS: sunucu eksik gunleri olan fonu atlamiyor\n'
+
+# ─── Istek siniri: 429'da bekle, parcalari seyrek gonder ───
+# Olculdu: art arda istekte toplu uc HTTP 429 dondurdu; kaynak dakikada 6
+# istek sinirliyor. Eski tarihli alis icin parcali istek atan tek fon yolu
+# uretimde ayni 429'u yerdi.
+grep -q "status !== 429" "${TS}" || fail "429'da yeniden deneme yok"
+grep -q "PARCA_ARASI_MS = 12_000" "${CT}" || fail "parcalar arasi bekleme sinirin altinda degil"
+grep -q "await bekle(PARCA_ARASI_MS)" "${CT}" || fail "parca dongusu beklemiyor"
+printf 'PASS: istek sinirina uyuluyor\n'

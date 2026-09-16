@@ -108,8 +108,29 @@ function topluGovde(bas: string, bit: string, fonKodu: string | null): Record<st
 
 const TOPLU_HEADERS = { ...HEADERS, Referer: 'https://www.tefas.gov.tr/tr/fon-verileri' };
 
+/**
+ * 429'da bekleyip yeniden dener.
+ *
+ * Ölçüldü: geliştirme sırasında art arda gelen isteklerin ardından toplu uç
+ * HTTP 429 döndürdü. Kaynak kütüphanenin belgelediği sınır dakikada 6 istek.
+ * Israr etmek durumu uzatır; artan beklemeyle (15sn, 30sn, 60sn) denenir,
+ * sonra pes edilir. Diğer hatalar hemen fırlatılır.
+ */
+async function sinirdaBekle<T>(is: () => Promise<Response>, url: string): Promise<Response> {
+  const bekleme = [15_000, 30_000, 60_000];
+  for (let i = 0; ; i++) {
+    const res = await is();
+    if (res.status !== 429) return res;
+    const ms = bekleme[i];
+    if (ms === undefined) throw new Error(`tefas ${url}: http 429 (istek sınırı, ${String(bekleme.length)} denemede açılmadı)`);
+    await new Promise((c) => setTimeout(c, ms));
+  }
+}
+
 async function topluPost<T>(url: string, govde: Record<string, unknown>): Promise<T> {
-  const res = await fetch(url, { method: 'POST', headers: TOPLU_HEADERS, body: JSON.stringify(govde) });
+  const res = await sinirdaBekle<T>(
+    () => fetch(url, { method: 'POST', headers: TOPLU_HEADERS, body: JSON.stringify(govde) }), url,
+  );
   if (!res.ok) throw new Error(`tefas ${url}: http ${String(res.status)}`);
   const d = (await res.json()) as { errorMessage: string | null; resultList: T[] | null };
   // Boş sonuç kümesinde sunucu "Index 0 out of bounds" mesajı döndürüyor;
