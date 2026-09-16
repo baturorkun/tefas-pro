@@ -937,6 +937,9 @@ export interface TodayExitRow {
   title: string | null;
   /** Fonun bugünkü getiri yüzdesi; fiyat yoksa null. */
   dailyReturnPct: string | null;
+  /** Fonun kendi 1/3 aylık getirisi — çıkarken karşılaştırma için. */
+  return1m: string | null;
+  return3m: string | null;
   /** Elde tutulan gün, pay ağırlıklı. */
   days: number;
   /** Bugün satılan toplam pay. */
@@ -966,6 +969,8 @@ export async function todayExits(pool: pg.Pool, userId: number): Promise<TodayEx
   const r = await pool.query(
     `SELECT c.fund_code AS "fundCode", c.title,
             round(d.daily_return_pct, 4)::text AS "dailyReturnPct",
+            fr.return_1m::text AS "return1m",
+            fr.return_3m::text AS "return3m",
             round(sum(c.held_days * c.units) / nullif(sum(c.units), 0))::int AS days,
             sum(c.units)::text AS units,
             round(sum(c.buy_value), 2)::text AS cost,
@@ -975,8 +980,9 @@ export async function todayExits(pool: pg.Pool, userId: number): Promise<TodayEx
        FROM analytics.closed_position c
        LEFT JOIN fact_fund_daily d
               ON d.fund_code = c.fund_code AND d.trade_date = c.sell_date
+       LEFT JOIN analytics.fund_returns fr ON fr.fund_code = c.fund_code
       WHERE c.user_id = $1 AND c.sell_date = current_date
-      GROUP BY c.fund_code, c.title, d.daily_return_pct
+      GROUP BY c.fund_code, c.title, d.daily_return_pct, fr.return_1m, fr.return_3m
       ORDER BY c.fund_code`,
     [userId],
   );

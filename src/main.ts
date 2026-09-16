@@ -151,6 +151,8 @@ interface TodayExitRow {
   fundCode: string;
   title: string | null;
   dailyReturnPct: string | null;
+  return1m: string | null;
+  return3m: string | null;
   days: number;
   units: string;
   cost: string;
@@ -5912,10 +5914,10 @@ async function portfolioView(me: Me): Promise<Node[]> {
   for (const c of cikislar) {
     const detay = iconButton('search', 'Fon detayı');
     detay.addEventListener('click', () => { void openFundModal(c.fundCode); });
-    // Açık satırlarla aynı sütunlar: kapanan pozisyonun da maliyeti, süresi,
-    // K/Z'si ve getirisi var. "1 ay / 3 ay" boş — o pencereler elde tutmayı
-    // varsayıyor, satılan pozisyonda tanımsız. Değer sütunu çıkış değeri,
-    // K/Z sütunu gerçekleşen kâr; açık satırlardaki anlamla birebir.
+    // Açık satırlarla birebir aynı sütunlar: kapanan pozisyonun da maliyeti,
+    // süresi, K/Z'si, getirisi var; 1/3 aylık ise fonun kendi getirisi
+    // (fund_returns), satıştan bağımsız — çıkarken "bu fon ne getirmiş" diye
+    // bakılabilsin. Değer sütunu çıkış değeri, K/Z gerçekleşen kâr.
     body.push(el('tr', { class: 'exit-row' }, [
       el('td', {}, [
         badge('Bugün çıkış', 'sold'),
@@ -5923,7 +5925,8 @@ async function portfolioView(me: Me): Promise<Node[]> {
         el('span', { class: 'fund-title' }, [c.title ?? '']),
       ]),
       el('td', {}, [signed(c.dailyReturnPct, '')]),
-      el('td', {}, []), el('td', {}, []),
+      el('td', {}, [signed(c.return1m, '')]),
+      el('td', {}, [signed(c.return3m, '')]),
       el('td', { class: 'num' }, [`${String(c.days)}g`]),
       el('td', { class: 'num' }, [num(c.units, 0)]),
       el('td', { class: 'num' }, [num(c.cost, 0)]),
