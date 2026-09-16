@@ -90,3 +90,103 @@ export async function sonFiyatTarihi(fundCode: string): Promise<string | null> {
   const son = liste[liste.length - 1];
   return son?.tarih.slice(0, 10) ?? null;
 }
+
+/**
+ * Toplu uçların ortak gövdesi. fon-verileri sayfasının gönderdiği alanların
+ * tamamı zorunlu: `aramaMetni`, `sfonTurKod`, `dil`, `sFonTurKod` eksikse
+ * sunucu NullPointerException döndürüyor (ölçüldü — beş farklı gövde denendi,
+ * ancak tam küme kabul edildi). Tarihler YYYYMMDD.
+ */
+function topluGovde(bas: string, bit: string, fonKodu: string | null): Record<string, unknown> {
+  return {
+    fonTipi: 'YAT', fonKodu, aramaMetni: null, fonTurKod: null, fonGrubu: null,
+    sfonTurKod: null, fonTurAciklama: null, kurucuKod: null,
+    basTarih: bas.replace(/-/g, ''), bitTarih: bit.replace(/-/g, ''),
+    basSira: 1, bitSira: 100000, dil: 'TR', sFonTurKod: '', fonKod: '', fonGrup: '', fonUnvanTip: '',
+  };
+}
+
+const TOPLU_HEADERS = { ...HEADERS, Referer: 'https://www.tefas.gov.tr/tr/fon-verileri' };
+
+async function topluPost<T>(url: string, govde: Record<string, unknown>): Promise<T> {
+  const res = await fetch(url, { method: 'POST', headers: TOPLU_HEADERS, body: JSON.stringify(govde) });
+  if (!res.ok) throw new Error(`tefas ${url}: http ${String(res.status)}`);
+  const d = (await res.json()) as { errorMessage: string | null; resultList: T[] | null };
+  // Boş sonuç kümesinde sunucu "Index 0 out of bounds" mesajı döndürüyor;
+  // bu hata değil, o aralıkta veri yok demek.
+  if (d.errorMessage !== null && !/out of bounds/.test(d.errorMessage)) {
+    throw new Error(`tefas ${url}: ${d.errorMessage}`);
+  }
+  return (d.resultList ?? []) as unknown as T;
+}
+
+/** Bir günün toplu fon verisi. */
+export interface TefasTopluGun {
+  fundCode: string;
+  title: string;
+  /** YYYY-MM-DD */
+  tradeDate: string;
+  navPerShare: number;
+  sharesActive: number | null;
+  investorCount: number | null;
+  aum: number | null;
+}
+
+/**
+ * Tüm yatırım fonlarının günlük verisi, tarih aralığıyla, TEK istekte.
+ *
+ * Ölçüldü: 5 günlük aralık 8157 kayıt (2040 fon x 4 iş günü) döndürdü ve
+ * takip edilen fonların tamamı listedeydi. 15 Eylül için tekil uçtan
+ * yazılmış veriyle karşılaştırıldı: fiyat, yatırımcı, büyüklük 74/74 aynı.
+ *
+ * `fonKodu` verilirse tek fona iner — takip listesine yeni fon eklendiğinde
+ * tek fon yolu bunu kullanır, ayrı uç yok.
+ */
+export async function topluFonBilgisi(
+  bas: string, bit: string, fonKodu: string | null = null,
+): Promise<TefasTopluGun[]> {
+  interface Satir {
+    fonKodu: string; fonUnvan: string; tarih: string; fiyat: number | null;
+    tedPaySayisi: number | null; kisiSayisi: number | null; portfoyBuyukluk: number | null;
+  }
+  const l = await topluPost<Satir[]>(`${BASE}/fonGnlBlgSiraliGetir`, topluGovde(bas, bit, fonKodu));
+  const out: TefasTopluGun[] = [];
+  for (const s of l) {
+    if (s.fiyat === null) continue;
+    out.push({
+      fundCode: s.fonKodu, title: s.fonUnvan, tradeDate: s.tarih.slice(0, 10),
+      navPerShare: s.fiyat, sharesActive: s.tedPaySayisi,
+      investorCount: s.kisiSayisi, aum: s.portfoyBuyukluk,
+    });
+  }
+  return out;
+}
+
+/** Bir fonun bir günkü varlık sınıfı dağılımı: alan kodu → yüzde. */
+export interface TefasDagilim {
+  fundCode: string;
+  tradeDate: string;
+  /** Sıfır olmayan alanlar; kod anlamları için tefas-dagilim.ts. */
+  yuzdeler: Record<string, number>;
+}
+
+/**
+ * Tüm fonların varlık sınıfı dağılımı, günlük, TEK istekte.
+ *
+ * 54 sabit alan kodu (hs, dt, tr, vmtl, byf, yyf…). KAP'ın aylık PDF'inin
+ * yerini alır: şablon çeşitliliği yok, etiket normalizasyonu yok.
+ */
+export async function topluDagilim(bas: string, bit: string): Promise<TefasDagilim[]> {
+  type Satir = { fonKodu: string; tarih: string } & Record<string, unknown>;
+  const l = await topluPost<Satir[]>(`${BASE}/dagilimSiraliGetirT`, topluGovde(bas, bit, null));
+  const out: TefasDagilim[] = [];
+  for (const s of l) {
+    const yuzdeler: Record<string, number> = {};
+    for (const [k, v] of Object.entries(s)) {
+      if (k === 'fonKodu' || k === 'fonUnvan' || k === 'tarih' || k === 'rn') continue;
+      if (typeof v === 'number' && v !== 0) yuzdeler[k] = v;
+    }
+    out.push({ fundCode: s.fonKodu, tradeDate: s.tarih.slice(0, 10), yuzdeler });
+  }
+  return out;
+}

@@ -1,36 +1,51 @@
 /**
- * TEFAS'ın kendi API'sinden zamanlanmış fiyat/getiri toplaması.
+ * TEFAS'ın toplu uçlarından zamanlanmış günlük toplama.
  *
- * Birincil kaynak — Fintables'a bağımlı değil. Sunucuda zamanlanmış koşar
- * (bkz. collector/install.sh); Fintables'ın veri merkezi IP'lerini
- * engellediği günlerde bile Getiri Günü ilerler. Ayrıntı için
- * src/sources/tefas.ts.
+ * Birincil kaynak. Sunucuda zamanlanmış koşar (bkz. collector/install.sh).
  *
- * Net akış da buradan çıkıyor: ayrı bir veri değil, pay adedi değişimi ×
- * fiyat — bkz. netAkis(). Varlık sınıfı dağılımı hâlâ eksik, o Fintables
- * çalışırsa gelir; COALESCE upsert sayesinde bu koşum onu silmez.
+ * Günde İKİ istek: `fonGnlBlgSiraliGetir` tüm fonların fiyat/pay/yatırımcı/
+ * büyüklüğünü, `dagilimSiraliGetirT` varlık sınıfı dağılımını tek yanıtta
+ * veriyor. Önceki sürüm fon başına iki istek atıyordu (74 fon için 148);
+ * tekrarlanan koşumlar bir IP'nin engellenmesine yol açmıştı.
  *
- * Yavaş ve nazik: TEFAS'ın kendi API'si bugüne kadar hiç engellememişti,
- * öyle kalsın diye istekler arası bekleme var.
+ * Tarih yanıttan gelir, koşum günü varsayılmaz: fon bugünün fiyatını
+ * açıklamadıysa yanıtta bugünün satırı olmaz ve gün ilerlemez. Aralık birkaç
+ * gün geriye alınır ki günlük getiri ve net akış aynı yanıt içindeki bir
+ * önceki günden türetilebilsin; COALESCE upsert sayesinde eski günlere
+ * yeniden yazmak zararsız.
+ *
+ * Günlük getiri ardışık fiyatlardan türetilir — toplu uç vermiyor. Ölçüldü:
+ * TEFAS'ın kendi gunlukGetiri değeriyle 224 gözlemin 220'si binde bir içinde.
  */
 import pg from 'pg';
 
-import { fonBilgiGetir, sonFiyatTarihi } from './sources/tefas.js';
 import { SCHEDULED_SOURCE } from './ingest-source.js';
+import { topluDagilim, topluFonBilgisi, type TefasTopluGun } from './sources/tefas.js';
+import { kanonikDagilim } from './sources/tefas-dagilim.js';
 import {
   upsertDaily, successfulRunToday, missingFundsToday, todayIso, type DailyRow,
 } from './collector.js';
 
 /** Zamanlanmış koşumun kaynağı; tanımı ingest-source.ts'te. */
 export const TEFAS_SOURCE = SCHEDULED_SOURCE;
-// Fon başına İKİ istek gidiyor (bilgi + fiyat tarihi), yani bekleme fiilen
-// iki katı aralık demek. 1,5 saniyeyken geliştirme sırasında tekrarlanan
-// koşumlar TEFAS'ın bir IP'yi engellemesine yol açtı; kaynak bizim için
-// kritik, yormamak engellenmemekten daha önemli.
+
+/** İki toplu istek arasındaki bekleme. */
 const THROTTLE_MS = Number(process.env['TEFAS_THROTTLE_MS'] ?? '') || 3000;
+
+/**
+ * Geriye kaç gün istenir. Hafta sonu ve tatil boşluklarını aşacak kadar:
+ * bir önceki iş günü yanıtta olmalı ki getiri ve akış türetilebilsin.
+ */
+const PENCERE_GUN = 8;
 
 function bekle(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function gunEkle(iso: string, gun: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + gun);
+  return d.toISOString().slice(0, 10);
 }
 
 /**
@@ -54,20 +69,67 @@ export function netAkis(
   return (simdikiPay - oncekiPay) * fiyat;
 }
 
-/** Her fon için `today`den önceki en son bilinen pay adedi. */
-async function oncekiPayAdetleri(
+/** Günlük getiri yüzdesi; önceki fiyat yoksa ya da sıfırsa üretilmez. */
+export function gunlukGetiri(bugun: number, dun: number | undefined): number | undefined {
+  if (dun === undefined || dun <= 0) return undefined;
+  return (bugun / dun - 1) * 100;
+}
+
+/**
+ * Toplu yanıtı günlük satırlara çevirir. Getiri ve akış, aynı fonun yanıt
+ * içindeki bir önceki gününden türetilir; pencerenin ilk günü için önceki
+ * gün yoktur, o alanlar boş kalır ve upsert var olan değeri korur.
+ */
+export function topluSatirlar(gunler: readonly TefasTopluGun[]): DailyRow[] {
+  const fona = new Map<string, TefasTopluGun[]>();
+  for (const g of gunler) fona.set(g.fundCode, [...(fona.get(g.fundCode) ?? []), g]);
+  const rows: DailyRow[] = [];
+  for (const seri of fona.values()) {
+    seri.sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : 1));
+    for (let i = 0; i < seri.length; i++) {
+      const g = seri[i]!;
+      const onceki = i > 0 ? seri[i - 1] : undefined;
+      rows.push({
+        fund_code: g.fundCode,
+        trade_date: g.tradeDate,
+        nav_per_share: g.navPerShare,
+        daily_return_pct: gunlukGetiri(g.navPerShare, onceki?.navPerShare),
+        shares_active: g.sharesActive ?? undefined,
+        net_flow: netAkis(g.sharesActive ?? undefined, onceki?.sharesActive, g.navPerShare),
+        investor_count: g.investorCount ?? undefined,
+        aum: g.aum ?? undefined,
+      });
+    }
+  }
+  return rows;
+}
+
+/** Dağılımı kanonik adlarla `fact_fund_allocation`'a yazar. */
+async function dagilimYaz(
   pool: pg.Pool,
-  codes: readonly string[],
-  today: string,
-): Promise<Map<string, number>> {
-  const r = await pool.query<{ fund_code: string; shares_active: string }>(
-    `SELECT DISTINCT ON (fund_code) fund_code, shares_active
-       FROM fact_fund_daily
-      WHERE fund_code = ANY($1) AND trade_date < $2::date AND shares_active IS NOT NULL
-      ORDER BY fund_code, trade_date DESC`,
-    [[...codes], today],
+  dagilim: readonly { fundCode: string; tradeDate: string; yuzdeler: Record<string, number> }[],
+  codes: ReadonlySet<string>,
+  runId: number,
+): Promise<number> {
+  const satirlar: { fund_code: string; as_of_date: string; asset_class: string; weight_pct: number }[] = [];
+  for (const d of dagilim) {
+    if (!codes.has(d.fundCode)) continue;
+    for (const [ad, yuzde] of kanonikDagilim(d.yuzdeler)) {
+      satirlar.push({ fund_code: d.fundCode, as_of_date: d.tradeDate, asset_class: ad, weight_pct: yuzde });
+    }
+  }
+  if (satirlar.length === 0) return 0;
+  const r = await pool.query(
+    `INSERT INTO fact_fund_allocation (fund_code, as_of_date, asset_class, weight_pct, ingest_run_id)
+     SELECT x.fund_code, x.as_of_date::date, x.asset_class, x.weight_pct, $2
+       FROM jsonb_to_recordset($1::jsonb)
+            AS x(fund_code text, as_of_date text, asset_class text, weight_pct numeric)
+     ON CONFLICT (fund_code, as_of_date, asset_class) DO UPDATE SET
+       weight_pct = EXCLUDED.weight_pct, ingest_run_id = EXCLUDED.ingest_run_id, updated_at = now()
+      WHERE fact_fund_allocation.weight_pct IS DISTINCT FROM EXCLUDED.weight_pct`,
+    [JSON.stringify(satirlar), runId],
   );
-  return new Map(r.rows.map((x) => [x.fund_code, Number(x.shares_active)]));
+  return r.rowCount ?? 0;
 }
 
 async function main(): Promise<void> {
@@ -81,34 +143,26 @@ async function main(): Promise<void> {
   const force = process.argv.includes('--force');
 
   try {
-    // Aynı kural collector.ts'deki gibi: "koştu mu" değil "bitti mi". TEFAS
-    // tek istekte fiyat+getiri+yatırımcı+büyüklük verdiği için Fintables'taki
-    // gibi artımlı pencere yok; eksik kalan fon varsa yeniden koşmak yeterli.
+    // "Koştu mu" değil "bitti mi": başarılı koşum varsa ve eksik fon yoksa
+    // tekrar sorulmaz. Toplu uçta bir istek ucuz ama gereksiz istek gereksiz.
     if (!force) {
       const bitis = await successfulRunToday(pool, today, TEFAS_SOURCE);
       const eksik = bitis === null ? [] : await missingFundsToday(pool);
       if (bitis !== null && eksik.length === 0) {
-        // Havuzu burada kapatma: `finally` zaten kapatıyor ve ikinci çağrı
-        // "Called end on pool more than once" ile koşumu düşürüyordu. Gün
-        // içinde ikinci kez koşan her toplama — timer'dan önce elle koşulan
-        // gün dahil — başarısız görünüyordu.
+        // Havuzu burada kapatma: `finally` kapatıyor; ikinci çağrı koşumu
+        // "Called end on pool more than once" ile düşürüyordu.
         console.log(`Bugün ${bitis} itibarıyla toplandı, eksik fon yok — atlandı.`);
         return;
-      }
-      if (bitis !== null) {
-        console.log(`Bugün ${bitis}'de toplandı ama ${String(eksik.length)} fon eksik `
-          + `(${eksik.slice(0, 5).join(', ')}${eksik.length > 5 ? '…' : ''}) — yeniden koşuluyor.`);
       }
     }
 
     const secili = process.argv.slice(2).filter((a) => !a.startsWith('-'));
-    const codes = secili.length > 0
+    const codes = new Set(secili.length > 0
       ? secili.map((c) => c.toUpperCase())
       : (await pool.query<{ fund_code: string }>(
           'SELECT fund_code FROM analytics.tracked_fund ORDER BY fund_code',
-        )).rows.map((r) => r.fund_code);
-
-    if (codes.length === 0) {
+        )).rows.map((r) => r.fund_code));
+    if (codes.size === 0) {
       console.log('Toplanacak fon yok.');
       return;
     }
@@ -117,84 +171,48 @@ async function main(): Promise<void> {
       `INSERT INTO ingest_run (source, status) VALUES ($1, 'running') RETURNING id`,
       [TEFAS_SOURCE],
     )).rows[0]!.id;
+    const bas = gunEkle(today, -PENCERE_GUN);
+    console.log(`tefas toplu toplama: ${String(codes.size)} fon, ${bas}..${today} (run ${String(runId)})`);
 
-    console.log(`tefas toplaması: ${String(codes.length)} fon, gün ${today} (run ${String(runId)})`);
-
-    const oncekiPay = await oncekiPayAdetleri(pool, codes, today);
-
-    // Bugünkü satırı zaten olan fona hiç istek atılmaz. Koşum gün içinde
-    // tekrarlandığında (elle tetikleme, eksik fon için yeniden koşma) aynı
-    // veriyi yeniden çekmek kaynağı boşuna yoruyordu.
-    const hazir = new Set((await pool.query<{ fund_code: string }>(
-      `SELECT fund_code FROM fact_fund_daily
-        WHERE trade_date = $1::date AND fund_code = ANY($2) AND nav_per_share IS NOT NULL`,
-      [today, [...codes]],
-    )).rows.map((r) => r.fund_code));
-    if (hazir.size > 0) {
-      console.log(`${String(hazir.size)} fonun bugünkü verisi zaten var, atlanıyor.`);
-    }
-
-    const rows: DailyRow[] = [];
     const errors: string[] = [];
-    let atlanan = 0;
-    for (const kod of codes) {
-      if (hazir.has(kod)) continue;
-      try {
-        const g = await fonBilgiGetir(kod);
-        if (g === null) {
-          errors.push(`${kod}: sonuç yok`);
-          console.log(`  ✗ ${kod}: sonuç yok`);
-        } else {
-          // Fiyatın AİT OLDUĞU gün kaynaktan sorulur, koşum günü varsayılmaz.
-          // Fon bugünün fiyatını açıklamadıysa dünkü fiyat dönüyor; onu
-          // bugüne yazmak uydurma bir günlük getiri üretirdi.
-          await bekle(THROTTLE_MS);
-          const gun = await sonFiyatTarihi(kod);
-          if (gun === null) {
-            errors.push(`${kod}: fiyat tarihi yok`);
-            console.log(`  ✗ ${kod}: fiyat tarihi yok`);
-            await bekle(THROTTLE_MS);
-            continue;
-          }
-          if (gun !== today) {
-            // Gün ilerlemiyor: fon henüz açıklamamış. Var olan güne tekrar
-            // yazmak zararsız, ileri kaydırmak değil.
-            atlanan++;
-            console.log(`  · ${kod}: ${gun} (bugünün fiyatı yok)`);
-          }
-          rows.push({
-            fund_code: g.fundCode,
-            trade_date: gun,
-            nav_per_share: g.navPerShare,
-            daily_return_pct: g.dailyReturnPct ?? undefined,
-            shares_active: g.sharesActive ?? undefined,
-            net_flow: netAkis(
-              g.sharesActive ?? undefined, oncekiPay.get(g.fundCode), g.navPerShare,
-            ),
-            investor_count: g.investorCount ?? undefined,
-            aum: g.aum ?? undefined,
-          });
-          console.log(`  ✓ ${kod}`);
-        }
-      } catch (err) {
-        errors.push(`${kod}: ${String(err)}`);
-        console.log(`  ✗ ${kod}: ${String(err)}`);
-      }
-      await bekle(THROTTLE_MS);
+    let yazilan = 0;
+    let bugunGelen = 0;
+
+    try {
+      const hepsi = await topluFonBilgisi(bas, today);
+      const bizim = hepsi.filter((g) => codes.has(g.fundCode));
+      const rows = topluSatirlar(bizim);
+      bugunGelen = new Set(bizim.filter((g) => g.tradeDate === today).map((g) => g.fundCode)).size;
+      const gelmeyen = [...codes].filter((c) => !bizim.some((g) => g.fundCode === c));
+      if (gelmeyen.length > 0) errors.push(`yanıtta yok: ${gelmeyen.join(', ')}`);
+      yazilan += await upsertDaily(pool, rows, runId, today);
+      console.log(`  günlük: ${String(rows.length)} satır, bugün fiyatı gelen ${String(bugunGelen)}/${String(codes.size)} fon`);
+    } catch (err) {
+      errors.push(`fon bilgisi: ${String(err)}`);
+      console.log(`  ✗ fon bilgisi: ${String(err)}`);
     }
 
-    const yazilan = await upsertDaily(pool, rows, runId, today);
+    await bekle(THROTTLE_MS);
+
+    try {
+      const dagilim = await topluDagilim(bas, today);
+      const n = await dagilimYaz(pool, dagilim, codes, runId);
+      yazilan += n;
+      console.log(`  dağılım: ${String(n)} satır`);
+    } catch (err) {
+      // Dağılım en iyi çaba: fiyat yazıldıysa Getiri Günü ilerler.
+      errors.push(`dağılım: ${String(err)}`);
+      console.log(`  ✗ dağılım: ${String(err)}`);
+    }
+
     const durum = errors.length === 0 ? 'passed' : 'partial';
     await pool.query(
       `UPDATE ingest_run SET status = $2, finished_at = now(), rows_upserted = $3,
               funds_ok = $4, funds_failed = $5, last_error = $6 WHERE id = $1`,
-      [runId, durum, yazilan, codes.length - errors.length, errors.length,
+      [runId, durum, yazilan, bugunGelen, codes.size - bugunGelen,
         errors.length === 0 ? null : errors.join('\n')],
     );
-    console.log(
-      `\nBitti: ${String(yazilan)} satır yazıldı, ` +
-      `${String(atlanan)} fonun bugünkü fiyatı yok, ${String(errors.length)} hata`,
-    );
+    console.log(`\nBitti: ${String(yazilan)} satır yazıldı, ${String(errors.length)} hata`);
     if (errors.length > 0) process.exitCode = 1;
   } finally {
     await pool.end();
@@ -206,11 +224,11 @@ if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
 }
 
 /**
- * Tek fonun günlük verisi: fiyat, getiri, yatırımcı, büyüklük, net akış.
+ * Tek fonun günlük verisi — takip listesine yeni fon eklendiğinde.
  *
- * Takip listesine yeni fon eklendiğinde çağrılır. Zamanlanmış koşumla aynı
- * veriyi aynı şekilde yazar — iki yol ayrışırsa fon nasıl eklendiğine göre
- * farklı veri oluşurdu.
+ * Aynı toplu uç, `fonKodu` süzgeciyle: tek istek, tarih yanıttan. Zamanlanmış
+ * koşumla aynı dönüşümden geçer; iki yol ayrışırsa fon nasıl eklendiğine
+ * göre farklı veri oluşurdu.
  */
 export async function tefasFonuTopla(
   pool: pg.Pool,
@@ -218,22 +236,8 @@ export async function tefasFonuTopla(
   runId: number,
   today: string = todayIso(),
 ): Promise<number> {
-  const g = await fonBilgiGetir(kod);
-  if (g === null) return 0;
-  // Zamanlanmış koşumla aynı kural: tarih kaynaktan gelir, koşum günü
-  // varsayılmaz. Fon bugünün fiyatını açıklamadıysa günü ilerletmeyiz.
-  const gun = await sonFiyatTarihi(kod);
-  if (gun === null) return 0;
-  const oncekiPay = await oncekiPayAdetleri(pool, [kod], gun);
-  const rows: DailyRow[] = [{
-    fund_code: g.fundCode,
-    trade_date: gun,
-    nav_per_share: g.navPerShare,
-    daily_return_pct: g.dailyReturnPct ?? undefined,
-    shares_active: g.sharesActive ?? undefined,
-    net_flow: netAkis(g.sharesActive ?? undefined, oncekiPay.get(g.fundCode), g.navPerShare),
-    investor_count: g.investorCount ?? undefined,
-    aum: g.aum ?? undefined,
-  }];
+  const gunler = await topluFonBilgisi(gunEkle(today, -PENCERE_GUN), today, kod);
+  const rows = topluSatirlar(gunler.filter((g) => g.fundCode === kod));
+  if (rows.length === 0) return 0;
   return upsertDaily(pool, rows, runId, today);
 }

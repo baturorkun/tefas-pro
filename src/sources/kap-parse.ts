@@ -7,10 +7,12 @@
  * İki şablon ailesi ölçüldü. Kurucular aynı fon muhasebe yazılımlarını
  * kullandığı için şablon sayısı kurucu sayısından az:
  *
- *   A (Ak Portföy vb.)   "III-FON PORTFÖY DEĞERİ TABLOSU", Türk sayı biçimi
- *                        (1.234,56), varlık sınıfları "a-)Hisse Senedi : 87,51"
- *   B (Yapı Kredi vb.)   "III- FON PORTFÖY DEĞERİ", ABD sayı biçimi
- *                        (1,234.56), varlık sınıfları "Hisse Senedi  16.64%"
+ *   A (Ak Portföy vb.)   "III-FON PORTFÖY DEĞERİ TABLOSU", Türk sayı biçimi (1.234,56)
+ *   B (Yapı Kredi vb.)   "III- FON PORTFÖY DEĞERİ", ABD sayı biçimi (1,234.56)
+ *
+ * Yalnız kalem düzeyi kırılım okunur. Varlık sınıfı dağılımı bir zamanlar
+ * buradan da okunuyordu; artık TEFAS'ın toplu ucundan geliyor (RQ-0076) ve
+ * PDF'teki şablon çeşitliliğiyle uğraşmaya gerek kalmadı.
  *
  * Kalem tablosunda sütun sayısı şablona göre değişiyor ama ölçülen kural her
  * ikisinde de aynı: satırın ilk token'ı menkul kıymet kodu, SON sayısı
@@ -35,11 +37,6 @@ const BASLIK_TOKENLARI = new Set([
   'KAMU', 'ÖZEL', 'KATILMA', 'TAKASBANK', 'VİOP', 'FON', 'TERS',
 ]);
 
-export interface KapVarlikSinifi {
-  /** Rapordaki ham etiket. */
-  label: string;
-  weightPct: number;
-}
 
 export interface KapKalem {
   /** Menkul kıymet kodu (AKBNK, TRT181028T14, BABA…). */
@@ -141,45 +138,4 @@ export function parseKalemler(metin: string): KapKalem[] {
     toplam.set(k, (toplam.get(k) ?? 0) + agirlik);
   }
   return [...toplam].map(([code, weightPct]) => ({ code, weightPct }));
-}
-
-/**
- * II. bölümdeki varlık sınıfı yüzdeleri — Dağılım ekranının verisi.
- *
- * Şablon A sabit bir etiket listesi kullanıyor ("a-)Hisse Senedi : 87,51"),
- * şablon B etiketi harf öneki olmadan ve yüzde işaretiyle yazıyor
- * ("Hisse Senedi  16.64%"). İkisi de aynı düzenle okunur: satırın sonundaki
- * sayı ağırlık, öncesindeki metin etiket.
- *
- * Etiketler HAM döner. Dağılım ekranı sınıfları fonlar arasında topladığı
- * için adlandırmanın tek biçime getirilmesi gerekiyor, ama o eşleme burada
- * değil: parse ne yazdığını bildirir, yorumlamaz.
- */
-export function parseVarlikSiniflari(ham: string): KapVarlikSinifi[] {
-  const metin = harfleriDuzelt(ham);
-  const bas = /MENKUL KIYMETLER|Menkul Kıymetler/.exec(metin);
-  if (bas === null) return [];
-  const kalan = metin.slice(bas.index + bas[0].length);
-  const son = /Portföy Devir Hızı|PORTFÖY DEVİR|(?:III|3)\s?[-.]\s?FON/.exec(kalan);
-  const govde = son === null ? kalan.slice(0, 2000) : kalan.slice(0, son.index);
-
-  const out: KapVarlikSinifi[] = [];
-  const gorulen = new Set<string>();
-  for (const satir of govde.split('\n')) {
-    const m = /^\s*(?:[A-Za-zçğıöşüÇĞİÖŞÜ]\d?-?\)\s*)?([A-Za-zÇĞİÖŞÜçğıöşü .\-/]{3,45}?)\s*:?\s+(-?[\d.,]+)\s*%?\s*$/
-      .exec(satir);
-    if (m === null) continue;
-    const label = (m[1] ?? '').replace(/\s+/g, ' ').trim().replace(/^[.\-]+|[.\-]+$/g, '');
-    const sayi = m[2] ?? '';
-    if (label.length < 3 || !/\d/.test(sayi)) continue;
-    // Aynı etiket iki kez yazılmışsa ilki geçerli: ikincisi genelde devir
-    // hızı tablosunun tekrarı.
-    if (gorulen.has(label)) continue;
-    gorulen.add(label);
-    // Bu bölümde binlik ayraç yok; tek ondalık ayracı hangisiyse o.
-    const weightPct = Number(sayi.includes(',') ? sayi.replace(',', '.') : sayi);
-    if (!Number.isFinite(weightPct)) continue;
-    out.push({ label, weightPct });
-  }
-  return out;
 }

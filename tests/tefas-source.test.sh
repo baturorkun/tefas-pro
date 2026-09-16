@@ -63,46 +63,49 @@ grep -n "ln(1 + d\.daily_return_pct" "${MIG}" | grep -v "greatest" && fail "migr
 grep -n "ln(1 + d\.daily_return_pct" "${R}" | grep -v "greatest" && fail "repository.ts'te hala korumasız ln() var"
 printf 'PASS: position_return ve position_slice ln(0) korumalı, korumasız çağrı kalmadı\n'
 
-# ─── Net akış TEFAS'tan türetiliyor ───
-# Fintables'ın net_flow serisi bağımsız veri değil, pay adedi değişimi ×
-# fiyat. Ölçüldü: 405 gözlemde medyan sapma sıfır. Türetme kaldırılırsa
-# Fintables çalışmadığı gün Nakit Akışı ekranı boşalır.
-grep -qE "export function netAkis" "${CT}" || fail "netAkis türetmesi yok"
-grep -qF "net_flow: netAkis(" "${CT}" || fail "toplanan satıra net akış yazılmıyor"
-# Önceki pay adedi DB'den gelmeli; yoksa değer üretilmemeli.
-grep -qF "shares_active IS NOT NULL" "${CT}" || fail "önceki pay adedi sorgulanmıyor"
-printf 'PASS: net akış TEFAS pay adedinden türetiliyor\n'
+# ─── Toplu uc: gunde iki istek ───
+# Onceki surum fon basina iki istek atiyordu (74 fon icin 148); tekrarlanan
+# kosumlar bir IP'nin engellenmesine yol acti. Toplu uc tum fonlari tek
+# yanitta veriyor: 8157 kayit = 2040 fon x 4 is gunu, tek istek (olculdu).
+grep -q "fonGnlBlgSiraliGetir" "${TS}" || fail "toplu fon bilgisi ucu yok"
+grep -q "dagilimSiraliGetirT" "${TS}" || fail "toplu dagilim ucu yok"
+grep -q "topluFonBilgisi" "${CT}" || fail "collector toplu ucu kullanmiyor"
+# Fon basina dongu geri gelmemeli.
+if grep -q "await fonBilgiGetir(" "${CT}"; then fail "collector hala fon basina istek atiyor"; fi
+if grep -q "sonFiyatTarihi" "${CT}"; then fail "tarih icin ayri istek atiliyor; toplu yanitta var"; fi
+printf 'PASS: gunluk veri tek toplu istekle geliyor\n'
 
-# Havuz yalniz finally blogunda kapatilmali.
-#
-# Idempotency yolunda return oncesi pool.end() cagriliyordu; return finally'yi
-# tetikleyince ikinci kez kapaniyor ve kosum "Called end on pool more than
-# once" ile dusuyordu. Gun icinde ikinci kez kosan her toplama basarisiz
-# gorunuyordu -- sunucudaki dogrulama kosusu boyle patladi.
+# Govdenin TAMAMI zorunlu: aramaMetni, sfonTurKod, dil, sFonTurKod eksikse
+# sunucu NullPointerException donduruyor (olculdu, bes farkli govde denendi).
+for alan in aramaMetni sfonTurKod sFonTurKod basSira bitSira; do
+  grep -q "${alan}" "${TS}" || fail "toplu govdede ${alan} eksik; sunucu NPE verir"
+done
+printf 'PASS: toplu govde tam\n'
+
+# ─── Tarih yanittan, kosum gunu varsayilmaz ───
+# Fon bugunun fiyatini aciklamadiysa yanitta bugunun satiri olmaz ve gun
+# ilerlemez. Kosum gununu yazmak uydurma bir gunluk getiri uretirdi.
+grep -Fq "trade_date: g.tradeDate" "${CT}" || fail "satir kosum gunuyle yaziliyor"
+if grep -Fq "trade_date: today" "${CT}"; then fail "hala kosum gunu varsayiliyor"; fi
+printf 'PASS: fiyatin tarihi yanittan geliyor\n'
+
+# ─── Getiri ve akis ayni yanit icindeki onceki gunden ───
+# Pencere geriye acilir ki bir onceki is gunu yanitta olsun; hafta sonu ve
+# tatil bosluklarini asacak kadar.
+grep -q "PENCERE_GUN" "${CT}" || fail "geriye donuk pencere yok"
+grep -q "export function gunlukGetiri" "${CT}" || fail "gunluk getiri turetilmiyor"
+grep -q "export function netAkis" "${CT}" || fail "netAkis turetmesi yok"
+grep -Fq "net_flow: netAkis(" "${CT}" || fail "satira net akis yazilmiyor"
+printf 'PASS: getiri ve akis toplu yanittan turetiliyor\n'
+
+# ─── Dagilim TEFAS'tan, kanonik adla ───
+grep -q "kanonikDagilim" "${CT}" || fail "dagilim kanonik ada eslenmiyor"
+grep -q "fact_fund_allocation" "${CT}" || fail "dagilim yazilmiyor"
+printf 'PASS: dagilim toplu uctan kanonik adla yaziliyor\n'
+
+# Havuz yalniz finally blogunda kapatilmali (bkz. RQ-0073).
 for f in collect-tefas collect-kap collect-hisse; do
   n="$(grep -c "pool.end()" "${PROJECT_ROOT}/src/${f}.ts" || true)"
   [ "${n}" = "1" ] || fail "${f}.ts icinde ${n} adet pool.end() var, bir tane olmali"
 done
 printf 'PASS: havuz tek yerde kapatiliyor\n'
-
-# Fiyatin AIT OLDUGU gun kaynaktan sorulmali, kosum gunu varsayilmamali.
-#
-# fonBilgiGetir yalniz "son fiyat" veriyor. Fon bugunun fiyatini
-# aciklamadiysa dunku fiyat donuyor; onu bugune yazmak uydurma bir gunluk
-# getiri uretir ve Getiri Gunu'nu yanlis ilerletir. Timer 10:00'da kostugu
-# icin bu risk somut.
-grep -q "sonFiyatTarihi" "${TS}" || fail "fiyat tarihi kaynaktan alinmiyor"
-grep -q "fonFiyatBilgiGetir" "${TS}" || fail "tarihli seri ucu kullanilmiyor"
-grep -q "trade_date: gun" "${CT}" || fail "satir kosum gunuyle yaziliyor"
-if grep -q "trade_date: today" "${CT}"; then fail "hala kosum gunu varsayiliyor"; fi
-printf 'PASS: fiyatin tarihi kaynaktan geliyor\n'
-
-# Bugunku verisi olan fona istek atilmamali.
-#
-# Kosum gun icinde tekrarlandiginda ayni veri yeniden cekiliyordu; tekrarlanan
-# tam kosumlar TEFAS'in bir IP'yi engellemesine yol acti.
-grep -q "hazir.has(kod)" "${CT}" || fail "verisi olan fon atlanmiyor"
-grep -q "nav_per_share IS NOT NULL" "${CT}" || fail "hazir fon sorgusu eksik"
-# Fon basina IKI istek gidiyor; bekleme buna gore olmali.
-grep -qE "TEFAS_THROTTLE_MS.*\|\| 3000" "${CT}" || fail "bekleme iki istege gore ayarlanmamis"
-printf 'PASS: gereksiz TEFAS istegi atilmiyor\n'
