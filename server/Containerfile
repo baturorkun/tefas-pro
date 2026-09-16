@@ -40,6 +40,13 @@ CMD ["sh", "-c", "pnpm exec tsc --project tsconfig.build.json --watch --preserve
 FROM docker.io/library/node:22-bookworm-slim
 
 WORKDIR /app
+# poppler-utils: takip listesine yeni fon eklendiginde tek fonluk toplama
+# SUNUCU surecinde kosuyor ve KAP'in portfoy raporunu PDF'ten okuyor. Bu
+# paket yalniz collector image'inda vardi; sunucuda "spawn pdftotext ENOENT"
+# ile patliyor ve kosum bosuna "failed" isaretleniyordu.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends poppler-utils \
+ && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
 COPY package.json pnpm-lock.yaml ./
