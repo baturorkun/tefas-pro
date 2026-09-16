@@ -926,6 +926,56 @@ export async function portfolioSummary(pool: pg.Pool, userId: number): Promise<P
   }));
 }
 
+/** Bugün satılan bir fonun, o çıkışın bugünkü hareketi. */
+export interface TodayExitRow {
+  fundCode: string;
+  title: string | null;
+  /** Bugün satılan toplam pay. */
+  units: string;
+  /** Fonun bugünkü getiri yüzdesi; fiyat yoksa null. */
+  dailyReturnPct: string | null;
+  /** Çıkış değeri, bugünkü fiyattan; fiyat yoksa null. */
+  exitValue: string | null;
+  /** Bu çıkışın bugünkü kazancı (değer × bugünkü getiri); fiyat yoksa null. */
+  dayGain: string | null;
+}
+
+/**
+ * Bugün (`sell_date = current_date`) satılan fonlar, o çıkışın bugünkü
+ * hareketiyle.
+ *
+ * Portföyüm'de görünür ama açık pozisyon toplamlarına karışmaz: kapanan
+ * pozisyon `position_return`'de yok ve olmamalı. Kullanıcı bugün çıktığı
+ * fonun o gün ne kattığını başka yerde göremiyordu — bugünkü kazanca
+ * dahil ama görünmez.
+ *
+ * Bugünkü kazanç: satış bugünkü fiyattan yapıldığı için çıkış değeri o
+ * günün getirisini içerir; kazanç = değer − değer/(1+getiri/100). Fiyat
+ * yoksa uydurulmaz, boş bırakılır.
+ */
+export async function todayExits(pool: pg.Pool, userId: number): Promise<TodayExitRow[]> {
+  const r = await pool.query(
+    `SELECT t.fund_code AS "fundCode", f.title,
+            sum(t.units)::text AS units,
+            round(d.daily_return_pct, 4)::text AS "dailyReturnPct",
+            CASE WHEN d.nav_per_share IS NULL THEN NULL
+                 ELSE round(sum(t.units) * d.nav_per_share, 2)::text END AS "exitValue",
+            CASE WHEN d.nav_per_share IS NULL OR d.daily_return_pct IS NULL THEN NULL
+                 ELSE round(sum(t.units) * d.nav_per_share
+                            * (d.daily_return_pct / 100) / (1 + d.daily_return_pct / 100), 2)::text
+            END AS "dayGain"
+       FROM portfolio_transaction t
+       LEFT JOIN dim_fund f ON f.fund_code = t.fund_code
+       LEFT JOIN fact_fund_daily d
+              ON d.fund_code = t.fund_code AND d.trade_date = t.sell_date
+      WHERE t.user_id = $1 AND t.sell_date = current_date
+      GROUP BY t.fund_code, f.title, d.nav_per_share, d.daily_return_pct
+      ORDER BY t.fund_code`,
+    [userId],
+  );
+  return r.rows as TodayExitRow[];
+}
+
 // ─── Dashboard ──────────────────────────────────────────────────────────────
 
 export interface RankEntry {

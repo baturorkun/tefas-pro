@@ -94,6 +94,7 @@ import {
   periodReturns,
   portfolioPerformance,
   portfolioSummary,
+  todayExits,
   removeFromWatchlist,
   revokeSession,
   revokeUserSessions,
@@ -671,6 +672,10 @@ export function createApp(pool: pg.Pool) {
       }
       if (path === '/api/portfolio' && method === 'GET') {
         sendJson(res, 200, await portfolioSummary(pool, user.id));
+        return;
+      }
+      if (path === '/api/portfolio/today-exits' && method === 'GET') {
+        sendJson(res, 200, await todayExits(pool, user.id));
         return;
       }
 

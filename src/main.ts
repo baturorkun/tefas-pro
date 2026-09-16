@@ -146,6 +146,16 @@ interface PortfolioRow {
   assets: { assetClass: string; weightPct: string; asOfDate: string }[];
 }
 
+/** Bugün satılan fon; Portföyüm'de rozetli satır olarak görünür. */
+interface TodayExitRow {
+  fundCode: string;
+  title: string | null;
+  units: string;
+  dailyReturnPct: string | null;
+  exitValue: string | null;
+  dayGain: string | null;
+}
+
 /** /api/portfolio/headline — Panel'in de okuduğu portfolioHeadline sonucu. */
 interface PortfolioHeadline {
   value: string;
@@ -5718,10 +5728,11 @@ async function portfolioView(me: Me): Promise<Node[]> {
   // Başlık rakamları Panel'le aynı uçtan. Burada yeniden hesaplanmıyor: aynı
   // kullanıcı iki ekranda iki farklı "kâr" görüyordu ve hangisinin doğru
   // olduğu sorulacaktı.
-  const [rows, bekleyen, h] = await Promise.all([
+  const [rows, bekleyen, h, cikislar] = await Promise.all([
     api('/api/portfolio') as Promise<PortfolioRow[]>,
     api('/api/portfolio/pending') as Promise<BekleyenAlim>,
     api('/api/portfolio/headline') as Promise<PortfolioHeadline>,
+    api('/api/portfolio/today-exits') as Promise<TodayExitRow[]>,
   ]);
   const sum = (f: (r: PortfolioRow) => number): number => rows.reduce((a, r) => a + f(r), 0);
   const cost = sum((r) => Number(r.cost));
@@ -5888,6 +5899,31 @@ async function portfolioView(me: Me): Promise<Node[]> {
       el('td', { class: 'num' }, [yaz(topla(liste, bekleyenAdet))]),
       el('td', { class: 'num' }, [yaz(topla(liste, bekleyenTutar))]),
       el('td', {}, []), el('td', {}, []), el('td', {}, []),
+      el('td', { class: 'actions' }, [detay]),
+    ]));
+  }
+
+  // Bugün çıkılan fonlar: açık pozisyon değiller, TOPLAM'a katılmazlar ama
+  // görünür olmalılar. Kullanıcı bugün sattığı fonun o gün ne kattığını
+  // başka yerde göremiyordu — bugünkü kazanca dahil ama görünmez.
+  for (const c of cikislar) {
+    const detay = iconButton('search', 'Fon detayı');
+    detay.addEventListener('click', () => { void openFundModal(c.fundCode); });
+    body.push(el('tr', { class: 'exit-row' }, [
+      el('td', {}, [
+        badge('Bugün çıkış', 'sold'),
+        el('span', { class: 'fund-code' }, [c.fundCode]),
+        el('span', { class: 'fund-title' }, [c.title ?? '']),
+      ]),
+      el('td', {}, [signed(c.dailyReturnPct, '')]),
+      el('td', {}, []), el('td', {}, []), el('td', {}, []),
+      el('td', { class: 'num' }, [num(c.units, 0)]),
+      el('td', {}, []),
+      // Çıkış değeri "değer" sütununda; maliyet sütunu boş çünkü bu satır
+      // bir kapanış, açık maliyet taşımıyor.
+      el('td', { class: 'num' }, [c.exitValue === null ? '—' : num(c.exitValue, 0)]),
+      el('td', {}, [signed(c.dayGain, ' ₺')]),
+      el('td', {}, []),
       el('td', { class: 'actions' }, [detay]),
     ]));
   }
