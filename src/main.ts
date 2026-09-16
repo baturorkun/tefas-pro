@@ -146,14 +146,17 @@ interface PortfolioRow {
   assets: { assetClass: string; weightPct: string; asOfDate: string }[];
 }
 
-/** Bugün satılan fon; Portföyüm'de rozetli satır olarak görünür. */
+/** Bugün satılan fon; Portföyüm'de açık satırlarla aynı sütunlarla, rozetli. */
 interface TodayExitRow {
   fundCode: string;
   title: string | null;
-  units: string;
   dailyReturnPct: string | null;
-  exitValue: string | null;
-  dayGain: string | null;
+  days: number;
+  units: string;
+  cost: string;
+  value: string;
+  gain: string;
+  returnPct: string;
 }
 
 /** /api/portfolio/headline — Panel'in de okuduğu portfolioHeadline sonucu. */
@@ -5909,6 +5912,10 @@ async function portfolioView(me: Me): Promise<Node[]> {
   for (const c of cikislar) {
     const detay = iconButton('search', 'Fon detayı');
     detay.addEventListener('click', () => { void openFundModal(c.fundCode); });
+    // Açık satırlarla aynı sütunlar: kapanan pozisyonun da maliyeti, süresi,
+    // K/Z'si ve getirisi var. "1 ay / 3 ay" boş — o pencereler elde tutmayı
+    // varsayıyor, satılan pozisyonda tanımsız. Değer sütunu çıkış değeri,
+    // K/Z sütunu gerçekleşen kâr; açık satırlardaki anlamla birebir.
     body.push(el('tr', { class: 'exit-row' }, [
       el('td', {}, [
         badge('Bugün çıkış', 'sold'),
@@ -5916,14 +5923,13 @@ async function portfolioView(me: Me): Promise<Node[]> {
         el('span', { class: 'fund-title' }, [c.title ?? '']),
       ]),
       el('td', {}, [signed(c.dailyReturnPct, '')]),
-      el('td', {}, []), el('td', {}, []), el('td', {}, []),
+      el('td', {}, []), el('td', {}, []),
+      el('td', { class: 'num' }, [`${String(c.days)}g`]),
       el('td', { class: 'num' }, [num(c.units, 0)]),
-      el('td', {}, []),
-      // Çıkış değeri "değer" sütununda; maliyet sütunu boş çünkü bu satır
-      // bir kapanış, açık maliyet taşımıyor.
-      el('td', { class: 'num' }, [c.exitValue === null ? '—' : num(c.exitValue, 0)]),
-      el('td', {}, [signed(c.dayGain, ' ₺')]),
-      el('td', {}, []),
+      el('td', { class: 'num' }, [num(c.cost, 0)]),
+      el('td', { class: 'num' }, [num(c.value, 0)]),
+      el('td', {}, [signed(c.gain, ' ₺')]),
+      el('td', {}, [signed(c.returnPct, '')]),
       el('td', { class: 'actions' }, [detay]),
     ]));
   }

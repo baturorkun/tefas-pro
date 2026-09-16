@@ -12,9 +12,9 @@ M="${PROJECT_ROOT}/src/main.ts"
 # --- backend: bugun cikilanlar sorgusu ---
 grep -q "export async function todayExits" "${R}" || fail "todayExits sorgusu yok"
 # Yalniz bugun: sell_date = current_date.
-grep -q "t.sell_date = current_date" "${R}" || fail "bugun disi cikislar da geliyor"
-# Fiyat yoksa cikis degeri ve kazanc bos; uydurma sifir yazilmamali.
-grep -q "d.nav_per_share IS NULL THEN NULL" "${R}" || fail "fiyat yokken deger uydurluyor"
+grep -q "c.sell_date = current_date" "${R}" || fail "bugun disi cikislar da geliyor"
+# Rakamlar acik satirlarla ayni hesaptan: closed_position (maliyet, sure, K/Z, getiri).
+grep -q "analytics.closed_position" "${R}" || fail "cikis satiri kapanan pozisyondan gelmiyor"
 printf 'PASS: bugun cikilanlar sorgusu dogru\n'
 
 # --- uc ---
