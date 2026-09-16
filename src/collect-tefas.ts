@@ -23,7 +23,11 @@ import {
 
 /** Zamanlanmış koşumun kaynağı; tanımı ingest-source.ts'te. */
 export const TEFAS_SOURCE = SCHEDULED_SOURCE;
-const THROTTLE_MS = Number(process.env['TEFAS_THROTTLE_MS'] ?? '') || 1500;
+// Fon başına İKİ istek gidiyor (bilgi + fiyat tarihi), yani bekleme fiilen
+// iki katı aralık demek. 1,5 saniyeyken geliştirme sırasında tekrarlanan
+// koşumlar TEFAS'ın bir IP'yi engellemesine yol açtı; kaynak bizim için
+// kritik, yormamak engellenmemekten daha önemli.
+const THROTTLE_MS = Number(process.env['TEFAS_THROTTLE_MS'] ?? '') || 3000;
 
 function bekle(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -118,10 +122,23 @@ async function main(): Promise<void> {
 
     const oncekiPay = await oncekiPayAdetleri(pool, codes, today);
 
+    // Bugünkü satırı zaten olan fona hiç istek atılmaz. Koşum gün içinde
+    // tekrarlandığında (elle tetikleme, eksik fon için yeniden koşma) aynı
+    // veriyi yeniden çekmek kaynağı boşuna yoruyordu.
+    const hazir = new Set((await pool.query<{ fund_code: string }>(
+      `SELECT fund_code FROM fact_fund_daily
+        WHERE trade_date = $1::date AND fund_code = ANY($2) AND nav_per_share IS NOT NULL`,
+      [today, [...codes]],
+    )).rows.map((r) => r.fund_code));
+    if (hazir.size > 0) {
+      console.log(`${String(hazir.size)} fonun bugünkü verisi zaten var, atlanıyor.`);
+    }
+
     const rows: DailyRow[] = [];
     const errors: string[] = [];
     let atlanan = 0;
     for (const kod of codes) {
+      if (hazir.has(kod)) continue;
       try {
         const g = await fonBilgiGetir(kod);
         if (g === null) {
