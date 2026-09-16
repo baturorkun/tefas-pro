@@ -45,3 +45,17 @@ printf 'PASS: bir fonun raporu okunmazsa kosum dusmuyor\n'
 # --- container ---
 grep -q "poppler-utils" "${CF}" || fail "pdftotext container'da yok"
 printf 'PASS: pdftotext container icinde\n'
+
+# Sunucu image'inda da pdftotext olmali.
+#
+# Yeni fon eklendiginde tek fonluk toplama SUNUCU surecinde kosuyor ve KAP'in
+# portfoy raporunu PDF'ten okuyor. Paket yalniz collector image'indaydi;
+# uretimde "spawn pdftotext ENOENT" ile kosum bosuna failed oluyordu.
+grep -q "poppler-utils" "${PROJECT_ROOT}/server/Containerfile" \
+  || fail "sunucu image'inda pdftotext yok"
+printf 'PASS: pdftotext sunucu image inda da var\n'
+
+# KAP adimi en iyi caba: gunluk veri yazildiysa fon kullanilabilir.
+grep -q "kapHatasi" "${PROJECT_ROOT}/src/collector.ts" \
+  || fail "KAP hatasi tum kosumu dusuruyor"
+printf 'PASS: KAP adimi basarisiz olsa da gunluk veri sayiliyor\n'

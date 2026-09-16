@@ -323,14 +323,26 @@ export async function collectSingleFund(
     // fonksiyonlar çağrılır: iki yol ayrışırsa fon nasıl eklendiğine göre
     // farklı veri oluşurdu.
     let upserted = await tefasFonuTopla(pool, code, runId, today);
-    const oid = (await fonListesi()).find((f) => f.fundCode === code)?.fundOid;
-    if (oid !== undefined) {
-      upserted += (await kapFonuTopla(pool, code, oid, runId)).yazilan;
+
+    // KAP adımı en iyi çaba: portföy kırılımı olmadan da fon kullanılabilir
+    // durumda — fiyatı, getirisi ve büyüklüğü yazıldı. Burada hata fırlatmak
+    // koşumu "failed" yapıyordu ve ekranda fon eklenememiş gibi görünüyordu,
+    // oysa günlük veri yerindeydi. Eksik kırılımı zamanlanmış KAP koşumu
+    // zaten tamamlıyor.
+    let kapHatasi: string | null = null;
+    try {
+      const oid = (await fonListesi()).find((f) => f.fundCode === code)?.fundOid;
+      if (oid !== undefined) {
+        upserted += (await kapFonuTopla(pool, code, oid, runId)).yazilan;
+      }
+    } catch (err) {
+      kapHatasi = String(err).split('\n')[0] ?? '';
+      console.error(`Tek fon KAP adımı atlandı: ${code}: ${kapHatasi}`);
     }
     await pool.query(
-      `UPDATE ingest_run SET status = 'passed', finished_at = now(), rows_upserted = $2,
-              funds_ok = 1 WHERE id = $1`,
-      [runId, upserted],
+      `UPDATE ingest_run SET status = $3, finished_at = now(), rows_upserted = $2,
+              funds_ok = 1, last_error = $4 WHERE id = $1`,
+      [runId, upserted, kapHatasi === null ? 'passed' : 'partial', kapHatasi],
     );
     return { runId, upserted };
   } catch (err) {
