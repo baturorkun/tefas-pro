@@ -96,3 +96,13 @@ grep -q "fonFiyatBilgiGetir" "${TS}" || fail "tarihli seri ucu kullanilmiyor"
 grep -q "trade_date: gun" "${CT}" || fail "satir kosum gunuyle yaziliyor"
 if grep -q "trade_date: today" "${CT}"; then fail "hala kosum gunu varsayiliyor"; fi
 printf 'PASS: fiyatin tarihi kaynaktan geliyor\n'
+
+# Bugunku verisi olan fona istek atilmamali.
+#
+# Kosum gun icinde tekrarlandiginda ayni veri yeniden cekiliyordu; tekrarlanan
+# tam kosumlar TEFAS'in bir IP'yi engellemesine yol acti.
+grep -q "hazir.has(kod)" "${CT}" || fail "verisi olan fon atlanmiyor"
+grep -q "nav_per_share IS NOT NULL" "${CT}" || fail "hazir fon sorgusu eksik"
+# Fon basina IKI istek gidiyor; bekleme buna gore olmali.
+grep -qE "TEFAS_THROTTLE_MS.*\|\| 3000" "${CT}" || fail "bekleme iki istege gore ayarlanmamis"
+printf 'PASS: gereksiz TEFAS istegi atilmiyor\n'
