@@ -93,8 +93,9 @@ if grep -q "windowSize\|windowInvestors" "${PROJECT_ROOT}/src/collector.ts"; the
   fail "pencere toplama geri gelmis; TEFAS bu veriyi gunluk veriyor"
 fi
 # Fon sayaci yalniz fonlari saymali.
-grep -Fq "codes.length - errors.length, errors.length" "${PROJECT_ROOT}/src/collect-tefas.ts" \
-  || fail "funds_failed yalniz fon hatalarini saymali"
+# Toplu ucta fon basina hata yok; sayac "bugunun fiyati gelen fon"dur.
+grep -Fq "bugunGelen, codes.size - bugunGelen" "${PROJECT_ROOT}/src/collect-tefas.ts" \
+  || fail "funds_ok/funds_failed bugun fiyati gelen fona gore sayilmali"
 printf 'PASS: pencere toplama yok, fon sayaci yalniz fonlari sayiyor\n'
 
 # Durum alanı yalnız bilinen değerleri alır; ekran bunlara göre rozet basıyor.

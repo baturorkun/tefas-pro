@@ -30,8 +30,13 @@ printf 'PASS: eski birim temizleniyor, varsayilan kosum TEFAS\n'
 
 # Varlik sinifi adlandirmasi tek bicim: Dagilim ekrani siniflari fonlar
 # arasinda topluyor, iki ad ayni sinifi ikiye bolerdi.
-grep -q "kanonikVarlikSinifi" "${PROJECT_ROOT}/src/collect-kap.ts" \
+# Dagilim artik TEFAS toplu ucundan, sabit alan kodlariyla; kodlar kanonik
+# ada tefas-dagilim.ts'te esleniyor. KAP yalniz hisse kirilimi yazar.
+grep -q "kanonikDagilim" "${PROJECT_ROOT}/src/collect-tefas.ts" \
   || fail "varlik sinifi adlari normallestirilmiyor"
+if grep -q "fact_fund_allocation" "${PROJECT_ROOT}/src/collect-kap.ts"; then
+  fail "KAP hala dagilim yaziyor; tek kaynak TEFAS olmali"
+fi
 [ -f "${PROJECT_ROOT}/db/migrations/047_varlik_sinifi_adlari.sql" ] \
   || fail "gecmis etiketleri donusturen migration yok"
 printf 'PASS: varlik sinifi adlandirmasi tek bicim\n'

@@ -1,6 +1,10 @@
 /**
  * KAP'tan hisse kırılımı toplaması.
  *
+ * Varlık sınıfı dağılımı artık buradan değil TEFAS'ın toplu ucundan geliyor
+ * (collect-tefas.ts): günlük, JSON, sabit alan kodlu. KAP yalnız TEFAS'ın
+ * vermediği kalem düzeyi kırılım için kalıyor.
+ *
  * fvt'nin yerini alır: aynı veri, ama kaynağın kendisinden. fvt veri merkezi
  * IP'lerini engellediği için sunucuda koşamıyordu; KAP'ta öyle bir kısıt yok,
  * bu yüzden bu koşum zamanlanmış olarak sunucuda çalışır.
@@ -22,8 +26,7 @@ import { promisify } from 'node:util';
 import pg from 'pg';
 
 import { KAP_SOURCE } from './ingest-source.js';
-import { parseKalemler, parseVarlikSiniflari, type KapKalem } from './sources/kap-parse.js';
-import { kanonikVarlikSinifi } from './sources/varlik-sinifi.js';
+import { parseKalemler, type KapKalem } from './sources/kap-parse.js';
 import {
   bildirimEkleri, ekIndir, fonListesi, portfoyBildirimleri, type KapBildirim,
 } from './sources/kap.js';
@@ -76,33 +79,15 @@ export function donemAnahtari(b: KapBildirim): string {
  * alışlar), portföy tablosu ikincisinde. Ölçüldü: IAE, IVY. İlk eke
  * sabitlenmek o fonları kaybettiriyordu.
  */
-async function raporuBul(
-  disclosureIndex: number,
-): Promise<{ kalemler: KapKalem[]; siniflar: { label: string; weightPct: number }[] }> {
+async function raporuBul(disclosureIndex: number): Promise<KapKalem[]> {
   const ekler = await bildirimEkleri(disclosureIndex);
   for (const ek of ekler) {
     if (!ek.fileName.toLowerCase().endsWith('.pdf')) continue;
     await bekle(THROTTLE_MS);
-    const metin = await pdfMetni(await ekIndir(ek.objId));
-    const kalemler = parseKalemler(metin);
-    if (kalemler.length === 0) continue;
-    // Varlık sınıfları aynı PDF'in II. bölümünde; ikinci indirme gerekmez.
-    //
-    // Toplanarak biriktirilir: normalleştirme birden fazla ham etiketi aynı
-    // kanonik ada çeviriyor ("Vadeli Mevduat TL" ve "Vadeli Mevduat Döviz"
-    // → "Mevduat") ve ağırlıkların toplanması gerekiyor. Ayrıca aynı
-    // anahtarı iki kez yazmak upsert'i "cannot affect row a second time"
-    // ile düşürüyordu.
-    const topla = new Map<string, number>();
-    for (const v of parseVarlikSiniflari(metin)) {
-      const ad = kanonikVarlikSinifi(v.label);
-      if (ad === null) continue;
-      topla.set(ad, (topla.get(ad) ?? 0) + v.weightPct);
-    }
-    const siniflar = [...topla].map(([label, weightPct]) => ({ label, weightPct }));
-    return { kalemler, siniflar };
+    const kalemler = parseKalemler(await pdfMetni(await ekIndir(ek.objId)));
+    if (kalemler.length > 0) return kalemler;
   }
-  return { kalemler: [], siniflar: [] };
+  return [];
 }
 
 /** Tek fonun KAP sonucu. */
@@ -142,7 +127,7 @@ export async function kapFonuTopla(
   if ((var_.rowCount ?? 0) > 0) return { durum: 'guncel', donem, ...bos };
 
   await bekle(THROTTLE_MS);
-  const { kalemler, siniflar } = await raporuBul(son.disclosureIndex);
+  const kalemler = await raporuBul(son.disclosureIndex);
   if (kalemler.length === 0) return { durum: 'okunamadi', donem, ...bos };
 
   // İki yazım tek transaction'da: hisse kırılımı yazılıp dağılım yazılamazsa
@@ -181,25 +166,6 @@ export async function kapFonuTopla(
         runId],
     );
     yazilan += r.rowCount ?? 0;
-
-    // Varlık sınıfı dağılımı: Dağılım ekranının verisi. Aynı rapordan geldiği
-    // için ayrı bir koşuma gerek yok.
-    if (siniflar.length > 0) {
-      const a = await baglanti.query(
-        `INSERT INTO fact_fund_allocation
-           (fund_code, as_of_date, asset_class, weight_pct, ingest_run_id)
-         SELECT $1, $2::date, x.asset_class, x.weight_pct, $4
-           FROM jsonb_to_recordset($3::jsonb) AS x(asset_class text, weight_pct numeric)
-         ON CONFLICT (fund_code, as_of_date, asset_class) DO UPDATE SET
-           weight_pct = EXCLUDED.weight_pct,
-           ingest_run_id = EXCLUDED.ingest_run_id, updated_at = now()
-          WHERE fact_fund_allocation.weight_pct IS DISTINCT FROM EXCLUDED.weight_pct`,
-        [kod, son.publishDate,
-          JSON.stringify(siniflar.map((v) => ({ asset_class: v.label, weight_pct: v.weightPct }))),
-          runId],
-      );
-      yazilan += a.rowCount ?? 0;
-    }
     await baglanti.query('COMMIT');
   } catch (e) {
     await baglanti.query('ROLLBACK').catch(() => undefined);
@@ -207,7 +173,7 @@ export async function kapFonuTopla(
   } finally {
     baglanti.release();
   }
-  return { durum: 'yazildi', donem, yazilan, kalem: kalemler.length, sinif: siniflar.length };
+  return { durum: 'yazildi', donem, yazilan, kalem: kalemler.length, sinif: 0 };
 }
 
 async function main(): Promise<void> {
