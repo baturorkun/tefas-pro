@@ -1101,6 +1101,9 @@ textarea:focus  { outline: none; border-color: var(--accent);
 /* Yalnız bekleyen alımı olan fonun satırı: para hücreleri boş olduğu için
    satır soluk, ama listede duruyor. */
 .pending-row td { color: var(--muted); }
+/* Bugün çıkılan fon: açık pozisyon değil, TOPLAM'a katılmıyor. Soluk zemin
+   satırı açık pozisyonlardan ayırıyor; K/Z ve günlük getiri rengini korur. */
+.exit-row td { background: var(--surface-2, rgba(128, 128, 128, 0.06)); }
 /* "tahmini" etiketi maliyetin durduğu yerde: rakamın ölçülmüş değil
    hesaplanmış olduğunu, okumadan önce söylüyor. */
 .est-label { color: var(--warn); font-size: .76rem; }

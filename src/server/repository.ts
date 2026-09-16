@@ -926,6 +926,69 @@ export async function portfolioSummary(pool: pg.Pool, userId: number): Promise<P
   }));
 }
 
+/**
+ * Bugün satılan bir fon. Açık pozisyon satırlarıyla AYNI alanları taşır:
+ * kapanan pozisyonun da maliyeti, süresi, kâr/zararı ve getirisi var. Yalnız
+ * varlık kırılımı yok — o açık pozisyona özgü değil ama satılan fonda
+ * göstermeye gerek yok.
+ */
+export interface TodayExitRow {
+  fundCode: string;
+  title: string | null;
+  /** Fonun bugünkü getiri yüzdesi; fiyat yoksa null. */
+  dailyReturnPct: string | null;
+  /** Fonun kendi 1/3 aylık getirisi — çıkarken karşılaştırma için. */
+  return1m: string | null;
+  return3m: string | null;
+  /** Elde tutulan gün, pay ağırlıklı. */
+  days: number;
+  /** Bugün satılan toplam pay. */
+  units: string;
+  /** Alış maliyeti (açık satırlardaki "maliyet" ile aynı anlam). */
+  cost: string;
+  /** Çıkış değeri, satış fiyatından (açık satırlardaki "değer" karşılığı). */
+  value: string;
+  /** Gerçekleşen kâr/zarar, TL (açık satırlardaki toplam K/Z karşılığı). */
+  gain: string;
+  /** Gerçekleşen getiri yüzdesi. */
+  returnPct: string;
+}
+
+/**
+ * Bugün (`sell_date = current_date`) satılan fonlar, tam pozisyon bilgisiyle.
+ *
+ * Portföyüm'de açık pozisyonlarla aynı sütunları gösterir ama toplamlara
+ * karışmaz: kapanan pozisyon `position_return`'de yok ve olmamalı. Kullanıcı
+ * bugün çıktığı fonu hiçbir yerde göremiyordu — Portföyüm'de yok (kapandı),
+ * Kapananlar'da tüm-zamanlı realize kâr var, bugünkü hareket değil.
+ *
+ * Rakamlar `closed_position`'dan (açık satırlarla aynı hesap); güncel günün
+ * fon getirisi ayrıca eklenir ki "Günlük %" sütunu da dolsun.
+ */
+export async function todayExits(pool: pg.Pool, userId: number): Promise<TodayExitRow[]> {
+  const r = await pool.query(
+    `SELECT c.fund_code AS "fundCode", c.title,
+            round(d.daily_return_pct, 4)::text AS "dailyReturnPct",
+            fr.return_1m::text AS "return1m",
+            fr.return_3m::text AS "return3m",
+            round(sum(c.held_days * c.units) / nullif(sum(c.units), 0))::int AS days,
+            sum(c.units)::text AS units,
+            round(sum(c.buy_value), 2)::text AS cost,
+            round(sum(c.sell_value), 2)::text AS value,
+            round(sum(c.realized_gain), 2)::text AS gain,
+            round(sum(c.realized_gain) / nullif(sum(c.buy_value), 0) * 100, 4)::text AS "returnPct"
+       FROM analytics.closed_position c
+       LEFT JOIN fact_fund_daily d
+              ON d.fund_code = c.fund_code AND d.trade_date = c.sell_date
+       LEFT JOIN analytics.fund_returns fr ON fr.fund_code = c.fund_code
+      WHERE c.user_id = $1 AND c.sell_date = current_date
+      GROUP BY c.fund_code, c.title, d.daily_return_pct, fr.return_1m, fr.return_3m
+      ORDER BY c.fund_code`,
+    [userId],
+  );
+  return r.rows as TodayExitRow[];
+}
+
 // ─── Dashboard ──────────────────────────────────────────────────────────────
 
 export interface RankEntry {

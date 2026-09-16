@@ -146,6 +146,21 @@ interface PortfolioRow {
   assets: { assetClass: string; weightPct: string; asOfDate: string }[];
 }
 
+/** Bugün satılan fon; Portföyüm'de açık satırlarla aynı sütunlarla, rozetli. */
+interface TodayExitRow {
+  fundCode: string;
+  title: string | null;
+  dailyReturnPct: string | null;
+  return1m: string | null;
+  return3m: string | null;
+  days: number;
+  units: string;
+  cost: string;
+  value: string;
+  gain: string;
+  returnPct: string;
+}
+
 /** /api/portfolio/headline — Panel'in de okuduğu portfolioHeadline sonucu. */
 interface PortfolioHeadline {
   value: string;
@@ -5718,10 +5733,11 @@ async function portfolioView(me: Me): Promise<Node[]> {
   // Başlık rakamları Panel'le aynı uçtan. Burada yeniden hesaplanmıyor: aynı
   // kullanıcı iki ekranda iki farklı "kâr" görüyordu ve hangisinin doğru
   // olduğu sorulacaktı.
-  const [rows, bekleyen, h] = await Promise.all([
+  const [rows, bekleyen, h, cikislar] = await Promise.all([
     api('/api/portfolio') as Promise<PortfolioRow[]>,
     api('/api/portfolio/pending') as Promise<BekleyenAlim>,
     api('/api/portfolio/headline') as Promise<PortfolioHeadline>,
+    api('/api/portfolio/today-exits') as Promise<TodayExitRow[]>,
   ]);
   const sum = (f: (r: PortfolioRow) => number): number => rows.reduce((a, r) => a + f(r), 0);
   const cost = sum((r) => Number(r.cost));
@@ -5888,6 +5904,35 @@ async function portfolioView(me: Me): Promise<Node[]> {
       el('td', { class: 'num' }, [yaz(topla(liste, bekleyenAdet))]),
       el('td', { class: 'num' }, [yaz(topla(liste, bekleyenTutar))]),
       el('td', {}, []), el('td', {}, []), el('td', {}, []),
+      el('td', { class: 'actions' }, [detay]),
+    ]));
+  }
+
+  // Bugün çıkılan fonlar: açık pozisyon değiller, TOPLAM'a katılmazlar ama
+  // görünür olmalılar. Kullanıcı bugün sattığı fonun o gün ne kattığını
+  // başka yerde göremiyordu — bugünkü kazanca dahil ama görünmez.
+  for (const c of cikislar) {
+    const detay = iconButton('search', 'Fon detayı');
+    detay.addEventListener('click', () => { void openFundModal(c.fundCode); });
+    // Açık satırlarla birebir aynı sütunlar: kapanan pozisyonun da maliyeti,
+    // süresi, K/Z'si, getirisi var; 1/3 aylık ise fonun kendi getirisi
+    // (fund_returns), satıştan bağımsız — çıkarken "bu fon ne getirmiş" diye
+    // bakılabilsin. Değer sütunu çıkış değeri, K/Z gerçekleşen kâr.
+    body.push(el('tr', { class: 'exit-row' }, [
+      el('td', {}, [
+        badge('Bugün çıkış', 'sold'),
+        el('span', { class: 'fund-code' }, [c.fundCode]),
+        el('span', { class: 'fund-title' }, [c.title ?? '']),
+      ]),
+      el('td', {}, [signed(c.dailyReturnPct, '')]),
+      el('td', {}, [signed(c.return1m, '')]),
+      el('td', {}, [signed(c.return3m, '')]),
+      el('td', { class: 'num' }, [`${String(c.days)}g`]),
+      el('td', { class: 'num' }, [num(c.units, 0)]),
+      el('td', { class: 'num' }, [num(c.cost, 0)]),
+      el('td', { class: 'num' }, [num(c.value, 0)]),
+      el('td', {}, [signed(c.gain, ' ₺')]),
+      el('td', {}, [signed(c.returnPct, '')]),
       el('td', { class: 'actions' }, [detay]),
     ]));
   }
